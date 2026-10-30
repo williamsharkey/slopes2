@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SLOPES 2 — The Slopes of a Town by the Sea</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23071014'/%3E%3Cpath d='M1 12 L6 5 L10 9 L15 3 L15 15 L1 15 Z' fill='%234ca89a'/%3E%3Crect x='11' y='2' width='3' height='3' fill='%23ffd43b'/%3E%3C/svg%3E">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+html,body{
+  position:fixed;inset:0;width:100%;height:100%;overflow:hidden;
+  background:#071014;color:#d8ece8;
+  touch-action:none;overscroll-behavior:none;
+}
+canvas{
+  image-rendering:-moz-crisp-edges;
+  image-rendering:-webkit-crisp-edges;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
+#bg{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+#shell{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+body.fullscreen-mode #shell{display:none}
+#screen{
+  position:fixed;z-index:2;background:#081419;overflow:hidden;
+  border:2px solid #28464e;
+}
+body.fullscreen-mode #screen{
+  border:none;
+}
+#pi-shift{
+  width:100%;height:100%;display:block;
+  background-color:rgb(42,161,152);
+  transition:background-color 12s ease;
+}
+#hud-canvas{
+  position:absolute;left:0;right:0;bottom:0;width:100%;height:22px;
+  pointer-events:none;z-index:3;display:block;
+  transition:opacity 0.6s ease, transform 0.4s ease;
+}
+.pad{
+  position:fixed;inset:0;z-index:3;pointer-events:none;
+  transition:opacity 0.45s ease;
+}
+body.fullscreen-mode .pad{
+  opacity:0.18;
+}
+body.fullscreen-mode .pad:hover,
+body.fullscreen-mode .pad.active-touch{
+  opacity:0.86;
+}
+.pad canvas.b{
+  position:absolute;pointer-events:auto;touch-action:none;cursor:pointer;display:block;
+}
+#osd{
+  position:fixed;top:max(4px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));
+  z-index:4;cursor:pointer;touch-action:none;display:block;
+  transition:opacity 0.4s ease;
+}
+body.fullscreen-mode #osd{
+  opacity:0.22;
+}
+body.fullscreen-mode #osd:hover{
+  opacity:0.92;
+}
+#fullscreen-btn{
+  position:fixed;z-index:4;cursor:pointer;touch-action:none;display:block;
+  transition:opacity 0.4s ease;
+}
+body.fullscreen-mode #fullscreen-btn{
+  opacity:0.24;
+}
+body.fullscreen-mode #fullscreen-btn:hover{
+  opacity:0.95;
+}
+#dlg{
+  position:fixed;inset:0;z-index:10;display:none;place-items:center;
+  background:rgba(4,9,12,0.78);
+}
+#dlg.open{display:grid}
+#dlg-canvas{cursor:pointer;touch-action:none;display:block}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+<canvas id="shell"></canvas>
+
+<div id="screen">
+  <canvas id="pi-shift" width="1008" height="630"></canvas>
+  <canvas id="hud-canvas"></canvas>
+</div>
+
+<div class="pad" id="padL">
+  <canvas class="b" data-k="u"></canvas>
+  <canvas class="b" data-k="d"></canvas>
+  <canvas class="b" data-k="l"></canvas>
+  <canvas class="b" data-k="r"></canvas>
+  <canvas class="b" data-k="sel"></canvas>
+  <canvas class="b" data-k="rotL"></canvas>
+  <canvas class="b" data-k="tabform"></canvas>
+  <canvas class="b" data-k="zoomOut"></canvas>
+</div>
+
+<div class="pad" id="padR">
+  <canvas class="b" data-k="tri"></canvas>
+  <canvas class="b" data-k="cir"></canvas>
+  <canvas class="b" data-k="crs"></canvas>
+  <canvas class="b" data-k="sqr"></canvas>
+  <canvas class="b" data-k="sta"></canvas>
+  <canvas class="b" data-k="rotR"></canvas>
+  <canvas class="b" data-k="dat"></canvas>
+  <canvas class="b" data-k="zoomIn"></canvas>
+</div>
+
+<canvas id="fullscreen-btn"></canvas>
+<canvas id="osd"></canvas>
+
+<div id="dlg">
+  <canvas id="dlg-canvas"></canvas>
+</div>
+
+<script src="font.js?v=17"></script>
+<script src="audio.js?v=17"></script>
+<script src="sim/wasm_bridge.js?v=17"></script>
+<script src="sim/ecology_design.js?v=17"></script>
+<script src="sim/cosmic_engine.js?v=17"></script>
+<script src="sim/pentagonal_rotation.js?v=17"></script>
+<script src="sim/hardcore_tab.js?v=17"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=17"></script>
+<script src="sim/tabform_lifeforms.js?v=17"></script>
+<script src="slopes2.js?v=17"></script>
+<script src="sim/ai_interface.js?v=17"></script>
+<script src="sim/lore_portal_dock.js?v=17"></script>
+<script>
+(() => {
+  "use strict";
+
+  // --- iOS Safari Gesture / Zoom / Callout Lock ---
+  const kill = (e) => { e.preventDefault(); };
+  ["gesturestart", "gesturechange", "gestureend", "dblclick", "contextmenu", "selectstart"].forEach((ev) =>
+    document.addEventListener(ev, kill, { passive: false })
+  );
+  document.addEventListener("touchmove", (e) => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  // Detect Desktop Keyboard vs Mobile Touch (updates dynamically if user switches input)
+  let isTouchMode = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+  // --- Hardcore Hairline Terminus Bitmap Font Renderer (1 font bit = exact integer device pixels) ---
+  const HF = window.HardcoreFonts || {};
+
+  function drawBitmapText(ctx, text, x, y, color, fontObj, scale = 1, tracking = 0) {
+    if (!fontObj || !text) return 0;
+    const { w, h, glyphs } = fontObj;
+    ctx.fillStyle = color;
+    let curX = Math.round(x);
+    const baseY = Math.round(y);
+    const s = Math.max(1, Math.round(scale));
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      const rows = glyphs[code - 32];
+      if (rows) {
+        for (let r = 0; r < h; r++) {
+          const bits = rows[r];
+          if (!bits) continue;
+          for (let c = 0; c < w; c++) {
+            if ((bits >> (w - 1 - c)) & 1) {
+              ctx.fillRect(curX + c * s, baseY + r * s, s, s);
+            }
+          }
+        }
+      }
+      curX += w * s + tracking;
+    }
+    return curX - Math.round(x);
+  }
+
+  function measureBitmapText(text, fontObj, scale = 1, tracking = 0) {
+    if (!fontObj || !text) return 0;
+    const s = Math.max(1, Math.round(scale));
+    return text.length * fontObj.w * s + Math.max(0, text.length - 1) * tracking;
+  }
+
+  // --- Procedural Hardware Primitives (Teenage Engineering / Industrial Pixel Aesthetic) ---
+  function drawSteppedBox(ctx, x, y, w, h, p, fillCol, borderCol, hiCol, shCol, chamfer = 2) {
+    x = Math.round(x);
+    y = Math.round(y);
+    w = Math.round(w);
+    h = Math.round(h);
+    const gw = Math.floor(w / p);
+    const gh = Math.floor(h / p);
+
+    for (let py = 0; py < gh; py++) {
+      const topDist = py;
+      const botDist = gh - 1 - py;
+      const edgeDist = Math.min(topDist, botDist);
+      const cut = Math.max(0, chamfer - edgeDist);
+      const x0 = cut;
+      const x1 = gw - 1 - cut;
+      if (x1 < x0) continue;
+
+      for (let px = x0; px <= x1; px++) {
+        const isTop = py === 0 || (py <= chamfer && (px === x0 || px === x1));
+        const isBot = py === gh - 1 || (botDist <= chamfer && (px === x0 || px === x1));
+        const isLeft = px === x0;
+        const isRight = px === x1;
+
+        if (isTop || isBot || isLeft || isRight) {
+          ctx.fillStyle = borderCol;
+        } else if (py === 1 || (px === x0 + 1 && py < gh - 2)) {
+          ctx.fillStyle = hiCol;
+        } else if (py === gh - 2 || px === x1 - 1) {
+          ctx.fillStyle = shCol;
+        } else {
+          ctx.fillStyle = fillCol;
+        }
+        ctx.fillRect(x + px * p, y + py * p, p, p);
+      }
+    }
+  }
+
+  // Draw a tactile recessed mechanical keycap switch (recessed well + raised cap + LED dot)
+  function drawKeycapSwitch(ctx, x, y, w, h, p, isPressed, accentCol, chamfer = 2) {
+    // 1. Dark recessed switch well
+    drawSteppedBox(ctx, x, y, w, h, p, "#060c0f", "#1e343c", "#04080a", "#091318", chamfer);
+
+    // 2. Raised mechanical keycap inside well (shifts down by p when pressed)
+    const pad = p;
+    const capY = y + pad + (isPressed ? p : 0);
+    const capH = h - pad * 3;
+    const fill = isPressed ? "#1c343c" : "#122127";
+    const brd  = isPressed ? accentCol : "#2b4a54";
+    const hi   = isPressed ? "#284a54" : "#1d353e";
+    const sh   = "#091216";
+    drawSteppedBox(ctx, x + pad, capY, w - pad * 2, capH, p, fill, brd, hi, sh, Math.max(1, chamfer - 1));
+
+    // 3. Subtle 2x2 pixel LED indicator in top-left of keycap
+    if (accentCol) {
+      ctx.fillStyle = accentCol;
+      ctx.fillRect(x + pad + p * 3, capY + p * 3, p * 2, p * 2);
+    }
+    return capY;
+  }
+
+  // Draw a 5x5 pixel fastener screw head for hardware chassis corners
+  function drawScrew(ctx, cx, cy, p) {
+    const ox = Math.round(cx - 2.5 * p);
+    const oy = Math.round(cy - 2.5 * p);
+    const pattern = [
+      ".###.",
+      "#.#.#",
+      "#####",
+      "#.#.#",
+      ".###.",
+    ];
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        const ch = pattern[r][c];
+        if (ch === "#") {
+          ctx.fillStyle = (r === 2 || c === 2) ? "#081014" : "#243b44";
+          ctx.fillRect(ox + c * p, oy + r * p, p, p);
+        }
+      }
+    }
+  }
+
+  // --- Hand-Drawn 9x9 Pixel-Art Icons for D-Pad & Mobile Action Buttons ---
+  const PIXEL_ICONS = {
+    u: [
+      "....#....",
+      "...###...",
+      "..#####..",
+      ".#######.",
+      "....#....",
+      "....#....",
+      "....#....",
+      "....#....",
+      ".........",
+    ],
+    d: [
+      ".........",
+      "....#....",
+      "....#....",
+      "....#....",
+      "....#....",
+      ".#######.",
+      "..#####..",
+      "...###...",
+      "....#....",
+    ],
+    l: [
+      ".........",
+      "...#.....",
+      "..##.....",
+      ".#######.",
+      "########.",
+      ".#######.",
+      "..##.....",
+      "...#.....",
+      ".........",
+    ],
+    r: [
+      ".........",
+      ".....#...",
+      ".....##..",
+      ".#######.",
+      ".########",
+      ".#######.",
+      ".....##..",
+      ".....#...",
+      ".........",
+    ],
+    tri: [
+      "....#....",
+      "...#.#...",
+      "...#.#...",
+      "..#...#..",
+      "..#...#..",
+      ".#.....#.",
+      ".#.....#.",
+      "#########",
+      ".........",
+    ],
+    cir: [
+      "..#####..",
+      ".#.....#.",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      ".#.....#.",
+      "..#####..",
+    ],
+    crs: [
+      "#.......#",
+      ".#.....#.",
+      "..#...#..",
+      "...#.#...",
+      "....#....",
+      "...#.#...",
+      "..#...#..",
+      ".#.....#.",
+      "#.......#",
+    ],
+    sqr: [
+      "#########",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#.......#",
+      "#########",
+    ],
+  };
+
+  function drawIcon9x9(ctx, iconKey, cx, cy, p, color) {
+    const rows = PIXEL_ICONS[iconKey];
+    if (!rows) return;
+    const ox = Math.round(cx - (9 * p) / 2);
+    const oy = Math.round(cy - (9 * p) / 2);
+    ctx.fillStyle = color;
+    for (let r = 0; r < 9; r++) {
+      const row = rows[r];
+      for (let c = 0; c < 9; c++) {
+        if (row[c] === "#") {
+          ctx.fillRect(ox + c * p, oy + r * p, p, p);
+        }
+      }
+    }
+  }
+
+  // --- Controller Button Specifications (Adaptive Desktop Key Labels vs Mobile Symbols) ---
+  const BTN_META = {
+    u:       { fn: "BUILD", key: "W",   color: "#c8e4de", led: "#4ca89a", type: "dpad" },
+    d:       { fn: "DIG",   key: "S",   color: "#c8e4de", led: "#4ca89a", type: "dpad" },
+    l:       { fn: "",      key: "A",   color: "#c8e4de", led: "#4ca89a", type: "dpad" },
+    r:       { fn: "",      key: "D",   color: "#c8e4de", led: "#4ca89a", type: "dpad" },
+    tri:     { fn: "HOP",   key: "I",   color: "#58d89c", led: "#58d89c", type: "face" },
+    cir:     { fn: "ROCK",  key: "L",   color: "#e87858", led: "#e87858", type: "face" },
+    crs:     { fn: "TAMP",  key: "K",   color: "#6cb4f0", led: "#6cb4f0", type: "face" },
+    sqr:     { fn: "TOWN",  key: "J",   color: "#dfa858", led: "#dfa858", type: "face" },
+    sel:     { fn: "RAGA",  key: "TAB", mob: "RAGA",   color: "#b8dcd6", led: "#58b8b0", type: "pill" },
+    sta:     { fn: "PAUSE", key: "ESC", mob: "START",  color: "#e87858", led: "#e87858", type: "pill" },
+    rotL:    { fn: "ROT L", key: "Q",   mob: "ROT 5X", color: "#6cd8f0", led: "#58c8e8", type: "pill" },
+    rotR:    { fn: "ROT R", key: "R",   mob: "ROT >>", color: "#6cd8f0", led: "#58c8e8", type: "pill" },
+    tabform: { fn: "TAB",   key: "F",   mob: "CLAUDE", color: "#78f0b8", led: "#58d89c", type: "pill" },
+    dat:     { fn: "CODEX", key: "B",   mob: "DAT307", color: "#d8dfd4", led: "#ffb84d", type: "pill" },
+    zoomOut: { fn: "ZM -",  key: "-",   mob: "ZOOM -", color: "#ffd43b", led: "#ffa94d", type: "pill" },
+    zoomIn:  { fn: "ZM +",  key: "+",   mob: "ZOOM +", color: "#ffd43b", led: "#ffa94d", type: "pill" },
+  };
+
+  const pressedButtons = new Set();
+
+  function renderButtonCanvas(el) {
+    const k = el.dataset.k;
+    const meta = BTN_META[k];
+    if (!meta) return;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssW = parseInt(el.style.width, 10) || 48;
+    const cssH = parseInt(el.style.height, 10) || 48;
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    if (el.width !== W || el.height !== H) {
+      el.width = W;
+      el.height = H;
+    }
+    const ctx = el.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W, H);
+
+    const isOn = pressedButtons.has(k);
+    const p = Math.max(1, dpr);
+    const capY = drawKeycapSwitch(ctx, 0, 0, W, H, p * 2, isOn, meta.led, 2);
+    const capH = H - p * 6;
+
+    // Pill switches (SELECT / START on mobile, TAB SCALE / ESC PAUSE on desktop)
+    if (meta.type === "pill") {
+      const f = dpr >= 2 ? (HF.h13x25 || HF.h12x26) : (HF.t8x16 || HF.h12x26);
+      const label = isTouchMode ? meta.mob : `${meta.key} ${meta.fn}`;
+      const tw = measureBitmapText(label, f, 1, 0);
+      const tx = Math.round((W - tw) / 2);
+      const ty = capY + Math.round((capH - f.h) / 2);
+      drawBitmapText(ctx, label, tx, ty, isOn ? "#f0fffc" : "#cde8e2", f, 1, 0);
+      return;
+    }
+
+    // Desktop Mode for Face Buttons: Show ONLY Key to press + Function (no triangle/circle/square symbols!)
+    if (!isTouchMode && meta.type === "face") {
+      const fKey = (H >= 96 && HF.h12x26) ? HF.h12x26 : (HF.t10x20 || HF.t8x16);
+      const fFn  = (H >= 112 && HF.h13x25) ? HF.h13x25 : (HF.t8x16 || HF.t10x20);
+      const keyW = measureBitmapText(meta.key, fKey, 1, 0);
+      const fnW  = measureBitmapText(meta.fn, fFn, 1, 0);
+      const keyY = capY + Math.round(capH * 0.16);
+      const fnY  = capY + Math.round(capH * 0.54);
+      drawBitmapText(ctx, meta.key, Math.round((W - keyW) / 2), keyY, isOn ? "#ffffff" : meta.color, fKey, 1, 0);
+      drawBitmapText(ctx, meta.fn,  Math.round((W - fnW) / 2),  fnY,  isOn ? "#e4fffb" : "#96beb8", fFn,  1, 0);
+      return;
+    }
+
+    // Mobile Mode (or D-pad arrows): Draw crisp 9x9 pixel symbol/arrow + key/function label
+    const dpadLbl = !isTouchMode && meta.type === "dpad"
+      ? (meta.fn ? `${meta.key} ${meta.fn}` : meta.key)
+      : meta.fn;
+    const iconP = Math.max(2, Math.floor(Math.min(W, H) / (dpadLbl ? 23 : 16)));
+    const iconCy = dpadLbl ? capY + Math.round(capH * 0.35) : capY + Math.round(capH * 0.5);
+    drawIcon9x9(ctx, k, Math.round(W * 0.5), iconCy, iconP, isOn ? "#f2fffc" : meta.color);
+
+    if (dpadLbl) {
+      const f = (H >= 112 && HF.h13x25) ? HF.h13x25 : (H >= 90 && HF.t10x20) ? HF.t10x20 : HF.t8x16;
+      if (f) {
+        const tw = measureBitmapText(dpadLbl, f, 1, 0);
+        const tx = Math.round((W - tw) / 2);
+        const ty = capY + Math.round(capH * 0.58);
+        drawBitmapText(ctx, dpadLbl, tx, ty, isOn ? "#e8fffb" : "#96beb8", f, 1, 0);
+      }
+    }
+  }
+
+  function renderAllButtons() {
+    document.querySelectorAll("canvas.b").forEach(renderButtonCanvas);
+  }
+
+  // --- Bottom-of-Screen HUD Bar in Hardcore Hairline Terminus Font ---
+  const hudCanvas = document.getElementById("hud-canvas");
+  let currentHudText = "MB 100%   CAVES 0   TOWN 1   ACT I: TACHIMA";
+
+  function renderHudBar() {
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const rect = hudCanvas.getBoundingClientRect();
+    const cssW = Math.max(120, Math.round(rect.width));
+    const cssH = 22;
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    if (hudCanvas.width !== W || hudCanvas.height !== H) {
+      hudCanvas.width = W;
+      hudCanvas.height = H;
+    }
+    const ctx = hudCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.fillStyle = "rgba(7, 16, 20, 0.86)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#24424a";
+    ctx.fillRect(0, 0, W, dpr);
+
+    // Status LED dot on left of HUD bar
+    const p = Math.max(1, dpr);
+    ctx.fillStyle = "#58d89c";
+    ctx.fillRect(6 * p, Math.round(H / 2) - p, 2 * p, 2 * p);
+
+    let f = dpr >= 2 ? HF.h12x26 : HF.t8x16;
+    if (f && measureBitmapText(currentHudText, f, 1, 0) > W - 18 * dpr) {
+      f = HF.t10x20 && measureBitmapText(currentHudText, HF.t10x20, 1, 0) <= W - 18 * dpr
+        ? HF.t10x20
+        : HF.t8x16;
+    }
+    if (f) {
+      const ty = Math.round((H - f.h) / 2) + dpr;
+      drawBitmapText(ctx, currentHudText, 12 * dpr, ty, "#c2e6e0", f, 1, 0);
+    }
+  }
+
+  window.SlopesHUD = {
+    breathPhase: 0,
+    update(txt) {
+      this.breathPhase = (this.breathPhase || 0) + 0.03;
+      const st = window.SlopesGame ? window.SlopesGame.state : null;
+      // Breathe HUD opacity between 0.26 and 0.88 from time to time, and dodge upward if player or entity is near bottom!
+      const alpha = 0.56 + 0.32 * Math.sin(this.breathPhase * 0.7);
+      const nearBot = st && st.playerY !== undefined && st.playerY < 15;
+      const dodgeY = nearBot ? -26 : 0;
+      hudCanvas.style.opacity = alpha.toFixed(2);
+      hudCanvas.style.transform = dodgeY !== 0 ? `translateY(${dodgeY}px)` : "translateY(0px)";
+      if (txt !== currentHudText) {
+        currentHudText = txt;
+        renderHudBar();
+      }
+    },
+  };
+
+  // --- Minimal Top-Right Fullscreen / Screensaver Button (#fullscreen-btn, positioned ABOVE #screen!) ---
+  const fsBtn = document.getElementById("fullscreen-btn");
+  let isFullscreenMode = false;
+
+  function renderFullscreenBtn() {
+    if (!fsBtn) return;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssW = 104;
+    const cssH = 22;
+    fsBtn.style.width = cssW + "px";
+    fsBtn.style.height = cssH + "px";
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    if (fsBtn.width !== W || fsBtn.height !== H) {
+      fsBtn.width = W;
+      fsBtn.height = H;
+    }
+    const ctx = fsBtn.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W, H);
+
+    const p = Math.max(1, dpr);
+    drawSteppedBox(ctx, 0, 0, W, H, p * 2, "#0a161b", isFullscreenMode ? "#58d89c" : "#2b525c", "#142a32", "#050b0e", 1);
+
+    // 4-Corner Pixel Frame Icon on left of button
+    const ix = 7 * p;
+    const iy = 5 * p;
+    const iw = 12 * p;
+    const ih = 12 * p;
+    ctx.fillStyle = isFullscreenMode ? "#58d89c" : "#78ead4";
+    // Top-left corner
+    ctx.fillRect(ix, iy, 4 * p, p);
+    ctx.fillRect(ix, iy, p, 4 * p);
+    // Top-right corner
+    ctx.fillRect(ix + iw - 4 * p, iy, 4 * p, p);
+    ctx.fillRect(ix + iw - p, iy, p, 4 * p);
+    // Bottom-left corner
+    ctx.fillRect(ix, iy + ih - p, 4 * p, p);
+    ctx.fillRect(ix, iy + ih - 4 * p, p, 4 * p);
+    // Bottom-right corner
+    ctx.fillRect(ix + iw - 4 * p, iy + ih - p, 4 * p, p);
+    ctx.fillRect(ix + iw - p, iy + ih - 4 * p, p, 4 * p);
+
+    const f = dpr >= 2 ? (HF.h13x25 || HF.h12x26) : (HF.t8x16 || HF.h12x26);
+    if (f) {
+      const lbl = isFullscreenMode ? "EXIT FS" : "FULLSCRN";
+      const ty = Math.round((H - f.h) / 2);
+      drawBitmapText(ctx, lbl, 24 * p, ty, isFullscreenMode ? "#69db7c" : "#cde8e2", f, 1, 0);
+    }
+  }
+
+  function toggleFullscreenMode() {
+    if (window.SlopesAudio) {
+      window.SlopesAudio.unlock();
+      window.SlopesAudio.playClick(true);
+    }
+    isFullscreenMode = !isFullscreenMode;
+    document.body.classList.toggle("fullscreen-mode", isFullscreenMode);
+    if (isFullscreenMode) {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      if (document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+    solve();
+  }
+
+  fsBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFullscreenMode();
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    const fsElem = Boolean(document.fullscreenElement);
+    if (fsElem !== isFullscreenMode) {
+      isFullscreenMode = fsElem;
+      document.body.classList.toggle("fullscreen-mode", isFullscreenMode);
+      solve();
+    }
+  });
+
+  // --- Hand-Drawn Pixel-Art Volume Module (Zero Emojis!) ---
+  const osdCanvas = document.getElementById("osd");
+  const SPEAKER_ICON = [
+    "....##...",
+    "...###.#.",
+    "######..#",
+    "######.#.",
+    "######..#",
+    "...###.#.",
+    "....##...",
+  ];
+  const MUTE_ICON = [
+    "....##...",
+    "...###...",
+    "######.#.",
+    "######...",
+    "######.#.",
+    "...###...",
+    "....##...",
+  ];
+
+  function renderOsd() {
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssW = 144;
+    const cssH = 26;
+    osdCanvas.style.width = cssW + "px";
+    osdCanvas.style.height = cssH + "px";
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    if (osdCanvas.width !== W || osdCanvas.height !== H) {
+      osdCanvas.width = W;
+      osdCanvas.height = H;
+    }
+    const ctx = osdCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W, H);
+
+    const p = Math.max(1, dpr);
+    drawSteppedBox(ctx, 0, 0, W, H, p * 2, "#0c181d", "#284850", "#162b32", "#060d10", 2);
+
+    const muted = window.SlopesAudio ? window.SlopesAudio.muted : false;
+    const vol = window.SlopesAudio ? (muted ? 0 : window.SlopesAudio.volume) : 0.8;
+
+    // 1. Pixel Speaker Icon
+    const spRows = muted ? MUTE_ICON : SPEAKER_ICON;
+    const spP = p * 2;
+    const spX = 8 * p;
+    const spY = Math.round((H - 7 * spP) / 2);
+    ctx.fillStyle = muted ? "#e87858" : "#7ad8c4";
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (spRows[r][c] === "#") {
+          ctx.fillRect(spX + c * spP, spY + r * spP, spP, spP);
+        }
+      }
+    }
+
+    // 2. Minus "-" button
+    ctx.fillStyle = "#b8dcd6";
+    ctx.fillRect(34 * p, Math.round(H / 2) - p, 8 * p, 2 * p);
+
+    // 3. 8-Bar Segmented Pixel Meter
+    const bars = 8;
+    const activeBars = Math.round(vol * bars);
+    for (let i = 0; i < bars; i++) {
+      const bx = (50 + i * 8) * p;
+      const bh = (6 + i * 1.2) * p;
+      const by = Math.round((H - bh) / 2);
+      ctx.fillStyle = i < activeBars ? (i >= 6 ? "#e89858" : "#58d4b8") : "#192e36";
+      ctx.fillRect(bx, by, 5 * p, Math.round(bh));
+    }
+
+    // 4. Plus "+" button
+    ctx.fillStyle = "#b8dcd6";
+    const px = 122 * p;
+    const py = Math.round(H / 2);
+    ctx.fillRect(px, py - p, 8 * p, 2 * p);
+    ctx.fillRect(px + 3 * p, py - 4 * p, 2 * p, 8 * p);
+  }
+
+  osdCanvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!window.SlopesAudio) return;
+    window.SlopesAudio.unlock();
+    window.SlopesAudio.playClick(true);
+    const r = osdCanvas.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width;
+    if (u < 0.22) {
+      window.SlopesAudio.setMuted(!window.SlopesAudio.muted);
+    } else if (u < 0.35) {
+      window.SlopesAudio.setMuted(false);
+      window.SlopesAudio.setVolume(window.SlopesAudio.volume - 0.125);
+    } else if (u < 0.82) {
+      window.SlopesAudio.setMuted(false);
+      window.SlopesAudio.setVolume((u - 0.35) / 0.47);
+    } else {
+      window.SlopesAudio.setMuted(false);
+      window.SlopesAudio.setVolume(window.SlopesAudio.volume + 0.125);
+    }
+    renderOsd();
+  });
+
+  // --- Teenage Engineering Style Procedural Hardware Pause Deck (#dlg-canvas) ---
+  const dlg = document.getElementById("dlg");
+  const dlgCanvas = document.getElementById("dlg-canvas");
+  let activeDlgBtn = -1; // 0 = SCALE, 1 = NEW SEED, 2 = RESUME
+
+  function renderDialog() {
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssW = Math.min(396, Math.round(window.innerWidth * 0.94));
+    const cssH = 304;
+    dlgCanvas.style.width = cssW + "px";
+    dlgCanvas.style.height = cssH + "px";
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    dlgCanvas.width = W;
+    dlgCanvas.height = H;
+
+    const ctx = dlgCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    const p = Math.max(1, dpr);
+
+    // 1. Outer Machined Anodized Chassis Plate
+    drawSteppedBox(ctx, 0, 0, W, H, p * 2, "#111a1e", "#34525c", "#1c2c34", "#070d10", 3);
+
+    // Inner recessed chassis seam
+    ctx.strokeStyle = "#223840";
+    ctx.lineWidth = p;
+    ctx.strokeRect(6 * p, 6 * p, W - 12 * p, H - 12 * p);
+
+    // 4 Corner Fastener Screws
+    drawScrew(ctx, 14 * p, 14 * p, p);
+    drawScrew(ctx, W - 14 * p, 14 * p, p);
+    drawScrew(ctx, 14 * p, H - 14 * p, p);
+    drawScrew(ctx, W - 14 * p, H - 14 * p, p);
+
+    const fTitle = dpr >= 2 ? HF.h12x26 : HF.t10x20;
+    const fSmall = dpr >= 2 ? HF.h13x25 : HF.t8x16;
+    const padX = 22 * p;
+
+    // 2. Top Hardware Model Silkscreen + Status LED
+    drawBitmapText(ctx, "TE-307 // FIELD CONTROLLER", padX, 12 * p, "#92bab4", fSmall, 1, 0);
+    // Ochre-orange + green status diodes
+    ctx.fillStyle = "#e87858";
+    ctx.fillRect(W - padX - 14 * p, 16 * p, 4 * p, 4 * p);
+    ctx.fillStyle = "#58d89c";
+    ctx.fillRect(W - padX - 6 * p, 16 * p, 4 * p, 4 * p);
+
+    // 3. Recessed OLED Topographic / Telemetry Screen (y = 32..106)
+    const oledX = padX;
+    const oledY = 30 * p;
+    const oledW = W - padX * 2;
+    const oledH = 74 * p;
+    drawSteppedBox(ctx, oledX, oledY, oledW, oledH, p * 2, "#050b0e", "#243e46", "#030709", "#0a161b", 1);
+
+    // Subtle 1px calibration grid inside OLED
+    ctx.fillStyle = "#0b1a20";
+    for (let gx = oledX + 16 * p; gx < oledX + oledW - 4 * p; gx += 16 * p) {
+      for (let gy = oledY + 8 * p; gy < oledY + oledH - 4 * p; gy += 8 * p) {
+        ctx.fillRect(gx, gy, p, p);
+      }
+    }
+
+    // Live Terrain Contour Oscilloscope Plot inside OLED
+    const st = window.SlopesGame ? window.SlopesGame.state : null;
+    const scaleName = window.SlopesAudio ? window.SlopesAudio.scaleName : "PI-SHIFT 2082";
+    if (st && st.blocks) {
+      const plotW = oledW - 16 * p;
+      const plotX0 = oledX + 8 * p;
+      const plotBottom = oledY + oledH - 8 * p;
+      for (let i = 0; i < st.blocks.length; i++) {
+        const bx = plotX0 + Math.round((i / (st.blocks.length - 1)) * plotW);
+        const bh = Math.min(40, Math.max(2, st.blocks[i]));
+        const by = plotBottom - Math.round(bh * 0.85 * p);
+        // Vertical dithered stem under contour
+        ctx.fillStyle = "#12323a";
+        ctx.fillRect(bx, by + p * 2, p, Math.max(0, plotBottom - by - p * 2));
+        // Bright phosphor contour dot
+        ctx.fillStyle = Math.abs(i - st.playerX) <= 1 ? "#e87858" : "#58d8c0";
+        ctx.fillRect(bx, by, p * 2, p * 2);
+      }
+    }
+
+    // OLED Telemetry Overlay Text
+    const intPct = st ? Math.round(st.health) : 100;
+    const wl = st && st.worldLayer != null ? st.worldLayer : 0;
+    const bLbl = st && st.biomeLabel ? st.biomeLabel : "SEA SLOPES";
+    const modStr = st && st.attachments ? st.attachments : "NONE";
+    const popCnt = st && st.orangePop != null ? st.orangePop : 5;
+    const vatCnt = st && st.vats != null ? st.vats : 1;
+    const botCnt = st && st.automata != null ? st.automata : 1;
+    drawBitmapText(ctx, `MB:${intPct}%  L:${wl >= 0 ? "+" + wl : wl} ${bLbl}`, oledX + 8 * p, oledY + 6 * p, "#74e4d0", fSmall, 1, 0);
+    drawBitmapText(ctx, `POP:${popCnt} VAT:${vatCnt} BOT:${botCnt}  ${scaleName}`, oledX + 8 * p, oledY + 20 * p, "#e89868", fSmall, 1, 0);
+
+    // 4. Mechanical Key-Matrix Silkscreen Table (y = 114..234)
+    const rows = isTouchMode
+      ? [
+          ["[X] TAMP",  "PURIFY GOO / VEXARI",  "#6cb4f0"],
+          ["[O] ROCK",  "FEED CAVE / CRUSH GOO","#e87858"],
+          ["ROT 5X",    "3X=REVERSE / 5X=ORIGIN","#6cd8f0"],
+          ["CLAUDE",    "TAB-FORM ROBOT SHELL", "#58d89c"],
+          ["[#] TOWN",  "BUILD TOWN / VAT CA",  "#dfa858"],
+        ]
+      : [
+          ["K : TAMP",      "PURIFY GOO / VEXARI",  "#6cb4f0"],
+          ["L : ROCK",      "FEED CAVE / CRUSH GOO","#e87858"],
+          ["Q / R : ROT 5X","3X=REVERSE / 5X=ORIGIN","#6cd8f0"],
+          ["F : TAB-FORM",  "CLAUDE CODE ROBOT BODY","#58d89c"],
+          ["J : TOWN",      "BUILD TOWN / VAT CA",  "#dfa858"],
+        ];
+
+    rows.forEach(([keyLbl, descLbl, ledCol], idx) => {
+      const ry = (112 + idx * 24) * p;
+      // Recessed row slot
+      ctx.fillStyle = "#0b1317";
+      ctx.fillRect(padX, ry, oledW, 20 * p);
+      ctx.fillStyle = "#1c2e36";
+      ctx.fillRect(padX, ry + 19 * p, oledW, p);
+
+      // Color-coded LED square
+      ctx.fillStyle = ledCol;
+      ctx.fillRect(padX + 6 * p, ry + 8 * p, 3 * p, 3 * p);
+
+      drawBitmapText(ctx, keyLbl,  padX + 14 * p, ry + 4 * p, "#d8f0ec", fSmall, 1, 0);
+      drawBitmapText(ctx, descLbl, padX + 116 * p, ry + 4 * p, "#8ab2ac", fSmall, 1, 0);
+    });
+
+    // 5. Four Tactile Mechanical Hardware Push-Buttons at Bottom (y = 240..286)
+    const btnY = H - 58 * p;
+    const btnH = 42 * p;
+    const gap = 6 * p;
+    const btnW = Math.floor((oledW - gap * 3) / 4);
+
+    const hwBtns = [
+      { id: 0, num: "01", label: "RAGA",    led: "#6cb4f0" },
+      { id: 1, num: "02", label: "SEED",    led: "#58d89c" },
+      { id: 2, num: "03", label: "TE-307",  led: "#dfa858" },
+      { id: 3, num: "04", label: "RESUME",  led: "#e87858" },
+    ];
+
+    hwBtns.forEach((b, i) => {
+      const bx = padX + i * (btnW + gap);
+      const isPressed = activeDlgBtn === b.id;
+      const cy = drawKeycapSwitch(ctx, bx, btnY, btnW, btnH, p * 2, isPressed, b.led, 2);
+      const ch = btnH - p * 6;
+
+      // Small switch number in top-right of keycap
+      const numW = measureBitmapText(b.num, fSmall, 1, 0);
+      drawBitmapText(ctx, b.num, bx + btnW - numW - 6 * p, cy + 4 * p, "#5c8288", fSmall, 1, 0);
+
+      // Centered primary switch legend
+      const lw = measureBitmapText(b.label, fSmall, 1, 0);
+      drawBitmapText(
+        ctx,
+        b.label,
+        bx + Math.round((btnW - lw) / 2),
+        cy + Math.round(ch * 0.46),
+        isPressed ? "#ffffff" : "#e4f8f4",
+        fSmall,
+        1,
+        0
+      );
+    });
+  }
+
+  function hitDialogBtn(e) {
+    const r = dlgCanvas.getBoundingClientRect();
+    const uX = (e.clientX - r.left) / r.width;
+    const uY = (e.clientY - r.top) / r.height;
+    if (uY < 0.78 || uY > 0.96) return -1;
+    if (uX < 0.27) return 0;
+    if (uX < 0.50) return 1;
+    if (uX < 0.73) return 2;
+    return 3;
+  }
+
+  dlgCanvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const b = hitDialogBtn(e);
+    if (b >= 0) {
+      activeDlgBtn = b;
+      if (window.SlopesAudio) {
+        window.SlopesAudio.unlock();
+        window.SlopesAudio.playClick(true);
+      }
+      renderDialog();
+    }
+  });
+
+  const endDlgPointer = (e) => {
+    if (activeDlgBtn < 0) return;
+    const released = activeDlgBtn;
+    activeDlgBtn = -1;
+    if (window.SlopesAudio) window.SlopesAudio.playClick(false);
+
+    if (released === 0) {
+      // 01: Cycle Harmonic Scale right inside the hardware deck & update OLED
+      if (window.SlopesGame) window.SlopesGame.action("sel");
+      renderDialog();
+    } else if (released === 1) {
+      // 02: Generate New Random Seed & Resume
+      if (window.SlopesGame) {
+        window.SlopesGame.newWorld();
+        window.SlopesGame.setPaused(false);
+      }
+      dlg.classList.remove("open");
+    } else if (released === 2) {
+      // 03: Open In-World `TE-307` Multi-User Mainframe TUI inside Hardcore-Tab!
+      if (window.SlopesGame) window.SlopesGame.setPaused(false);
+      dlg.classList.remove("open");
+      if (window.SlopesTabForms && typeof window.SlopesTabForms.openMainframeTui === "function") {
+        window.SlopesTabForms.openMainframeTui();
+      }
+    } else if (released === 3) {
+      // 04: Resume Game
+      if (window.SlopesGame) window.SlopesGame.setPaused(false);
+      dlg.classList.remove("open");
+    }
+  };
+  dlgCanvas.addEventListener("pointerup", endDlgPointer);
+  dlgCanvas.addEventListener("pointercancel", () => {
+    activeDlgBtn = -1;
+    renderDialog();
+  });
+
+  // --- Pixel-Art Coastal Backdrop (#bg) & Stepped Pixel Controller Chassis (#shell) ---
+  const bgCanvas = document.getElementById("bg");
+  const shellCanvas = document.getElementById("shell");
+  let lastLayout = null;
+
+  function drawBackdrop(W, H) {
+    const P = 4;
+    const cw = Math.ceil(W / P);
+    const ch = Math.ceil(H / P);
+    bgCanvas.width = cw;
+    bgCanvas.height = ch;
+    const g = bgCanvas.getContext("2d");
+    g.imageSmoothingEnabled = false;
+
+    const bands = [
+      [0.00, "#060e13"],
+      [0.18, "#08151d"],
+      [0.36, "#0c1f28"],
+      [0.54, "#102832"],
+      [0.72, "#0c1f27"],
+      [0.86, "#08151b"],
+      [1.00, "#050d11"],
+    ];
+    for (let y = 0; y < ch; y++) {
+      const t = y / (ch - 1 || 1);
+      let c = bands[0][1];
+      for (let i = 0; i < bands.length - 1; i++) {
+        if (t >= bands[i][0] && t <= bands[i + 1][0]) {
+          const u = (t - bands[i][0]) / (bands[i + 1][0] - bands[i][0]);
+          const useNext = u > ((y & 1) ? 0.35 : 0.65);
+          c = bands[useNext ? i + 1 : i][1];
+          break;
+        }
+      }
+      g.fillStyle = c;
+      g.fillRect(0, y, cw, 1);
+    }
+
+    let s = 0x5109e52;
+    const rnd = () => {
+      s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+      return (s >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < 80; i++) {
+      const x = (rnd() * cw) | 0;
+      const y = (rnd() * ch * 0.65) | 0;
+      g.fillStyle = rnd() < 0.3 ? "#4ea89c" : "#7cb8b0";
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+
+  function drawShell(L) {
+    if (!L) return;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const { W, H, port, lCx, rCx, cy, R, btn } = L;
+    shellCanvas.width = W * dpr;
+    shellCanvas.height = H * dpr;
+    const ctx = shellCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W * dpr, H * dpr);
+
+    const p = 2 * dpr;
+    const padR = R + btn * 0.68;
+    if (port) {
+      const top = Math.round((cy - padR - 12) * dpr);
+      const h = H * dpr - top + p * 2;
+      const sx = 4 * dpr;
+      const sw = (W - 8) * dpr;
+      drawSteppedBox(ctx, sx, top, sw, h, p, "#0b161b", "#244048", "#12242c", "#060c0f", 3);
+      drawScrew(ctx, sx + 10 * dpr, top + 10 * dpr, dpr);
+      drawScrew(ctx, sx + sw - 10 * dpr, top + 10 * dpr, dpr);
+    } else {
+      const w = Math.round((padR * 2 + 26) * dpr);
+      const h = Math.round((padR * 2 + 64) * dpr);
+      const y = Math.round((cy - padR - 20) * dpr);
+      [lCx, rCx].forEach((cx) => {
+        const x = Math.round(cx * dpr - w / 2);
+        drawSteppedBox(ctx, x, y, w, h, p, "#0b161b", "#244048", "#12242c", "#060c0f", 3);
+        drawScrew(ctx, x + 10 * dpr, y + 10 * dpr, dpr);
+        drawScrew(ctx, x + w - 10 * dpr, y + 10 * dpr, dpr);
+        drawScrew(ctx, x + 10 * dpr, y + h - 10 * dpr, dpr);
+        drawScrew(ctx, x + w - 10 * dpr, y + h - 10 * dpr, dpr);
+      });
+    }
+  }
+
+  // --- Zorb-Inspired Compact Responsive Layout Solver (Portrait/Narrow & Landscape, Zero Scroll!) ---
+  const scr = document.getElementById("screen");
+  const padL = document.getElementById("padL");
+  const padR = document.getElementById("padR");
+  const q = (sel) => document.querySelector(sel);
+  const place = (el, cx, cy, w, h) => {
+    if (!el) return;
+    const s = el.style;
+    s.left = Math.round(cx - w / 2) + "px";
+    s.top = Math.round(cy - h / 2) + "px";
+    s.width = Math.round(w) + "px";
+    s.height = Math.round(h) + "px";
+  };
+
+  function solve() {
+    const vv = window.visualViewport;
+    const W = Math.round(vv ? vv.width : window.innerWidth);
+    const H = Math.round(vv ? vv.height : window.innerHeight);
+    // Zorb-style adaptive bottom controller mode whenever window is narrow or portrait (`W < 920 || H >= W * 0.82`)
+    const port = W < 920 || H >= W * 0.82;
+    const AR = 144 / 90;
+    const pad = 6;
+    const topBarH = 34;
+
+    let sx, sy, sw, sh, lCx, rCx, cy, span;
+
+    if (isFullscreenMode) {
+      sx = 0;
+      sy = 0;
+      sw = W;
+      sh = H;
+      span = Math.min(148, Math.max(108, Math.min(W, H) * 0.22));
+      cy = H - span * 0.72 - 12;
+      lCx = span * 0.72 + 16;
+      rCx = W - span * 0.72 - 16;
+    } else if (port) {
+      const usableH = Math.max(220, H - topBarH);
+      const topH = Math.round(usableH * 0.57);
+      sw = Math.min(W - pad * 2, (topH - pad * 2) * AR);
+      sh = sw / AR;
+      sx = (W - sw) / 2;
+      sy = topBarH + Math.max(4, (topH - sh) / 2);
+
+      const botTop = sy + sh + pad;
+      const botH = Math.max(120, H - botTop - pad);
+      span = Math.min(W * 0.46, botH * 0.90, 224);
+      cy = botTop + botH * 0.47;
+      lCx = Math.max(span * 0.52 + pad, W * 0.25);
+      rCx = Math.min(W - span * 0.52 - pad, W * 0.75);
+    } else {
+      const sideMin = Math.max(145, Math.min(228, W * 0.22));
+      const availW = W - sideMin * 2 - pad * 4;
+      const availH = Math.max(180, H - topBarH - pad * 2);
+      sh = Math.min(availH, availW / AR);
+      sw = sh * AR;
+      sx = (W - sw) / 2;
+      sy = topBarH + (availH - sh) / 2;
+
+      const wing = sx - pad;
+      span = Math.min(wing * 0.92, availH * 0.68, 220);
+      cy = topBarH + availH * 0.52;
+      lCx = wing / 2 + pad / 2;
+      rCx = W - wing / 2 - pad / 2;
+    }
+
+    scr.style.left = Math.round(sx) + "px";
+    scr.style.top = Math.round(sy) + "px";
+    scr.style.width = Math.round(sw) + "px";
+    scr.style.height = Math.round(sh) + "px";
+
+    // Position the minimal Fullscreen button ABOVE the main display on top-right (never obscuring #screen in framed mode!)
+    if (fsBtn) {
+      const fsW = 104;
+      const fsH = 22;
+      if (isFullscreenMode) {
+        fsBtn.style.left = Math.max(8, W - fsW - 160) + "px";
+        fsBtn.style.top = "6px";
+      } else {
+        const fsLeft = Math.min(W - fsW - 158, Math.max(8, Math.round(sx + sw - fsW)));
+        const fsTop = Math.max(4, Math.round(sy - fsH - 4));
+        fsBtn.style.left = fsLeft + "px";
+        fsBtn.style.top = fsTop + "px";
+      }
+      renderFullscreenBtn();
+    }
+
+    const btn = isFullscreenMode ? Math.max(32, Math.min(44, span * 0.29)) : Math.max(40, Math.min(66, span * 0.32));
+    const R = Math.max(btn * 0.90, span * 0.34);
+
+    // D-pad
+    place(q('[data-k="u"]'), lCx, cy - R, btn, btn);
+    place(q('[data-k="d"]'), lCx, cy + R, btn, btn);
+    place(q('[data-k="l"]'), lCx - R, cy, btn, btn);
+    place(q('[data-k="r"]'), lCx + R, cy, btn, btn);
+
+    // Action buttons
+    place(q('[data-k="tri"]'), rCx, cy - R, btn, btn);
+    place(q('[data-k="cir"]'), rCx + R, cy, btn, btn);
+    place(q('[data-k="crs"]'), rCx, cy + R, btn, btn);
+    place(q('[data-k="sqr"]'), rCx - R, cy, btn, btn);
+
+    // SELECT / START / ZOOM pills + Top Shoulder ROT L / TAB-FORM / ROT R / DAT-307 pills
+    const pw = Math.max(62, btn * 1.18);
+    const ph = Math.max(22, btn * 0.44);
+    const py = Math.min(H - ph / 2 - 6, cy + R + btn * 0.56 + ph * 0.58);
+    place(q('[data-k="sel"]'), lCx - pw * 0.52, py, pw, ph);
+    place(q('[data-k="zoomOut"]'), lCx + pw * 0.52, py, pw, ph);
+    place(q('[data-k="sta"]'), rCx - pw * 0.52, py, pw, ph);
+    place(q('[data-k="zoomIn"]'), rCx + pw * 0.52, py, pw, ph);
+
+    const topPy = Math.max(topBarH + ph / 2 + 4, cy - R - btn * 0.56 - ph * 0.56);
+    const shW = Math.max(58, btn * 1.12);
+    place(q('[data-k="rotL"]'), lCx - shW * 0.52, topPy, shW, ph);
+    place(q('[data-k="tabform"]'), lCx + shW * 0.52, topPy, shW, ph);
+    place(q('[data-k="rotR"]'), rCx - shW * 0.52, topPy, shW, ph);
+    place(q('[data-k="dat"]'), rCx + shW * 0.52, topPy, shW, ph);
+
+    lastLayout = { W, H, port, lCx, rCx, cy, R, btn };
+    drawBackdrop(W, H);
+    if (!isFullscreenMode) drawShell(lastLayout);
+    renderAllButtons();
+    renderHudBar();
+    renderOsd();
+    renderDialog();
+  }
+
+  window.addEventListener("resize", solve);
+  window.addEventListener("orientationchange", () => setTimeout(solve, 60));
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", solve);
+  solve();
+
+  // --- Multi-Touch Pointer Input + Auto-Repeat for D-Pad ---
+  const repeatTimers = new Map();
+
+  function triggerKey(k, down) {
+    if (down) pressedButtons.add(k);
+    else pressedButtons.delete(k);
+
+    const el = document.querySelector(`[data-k="${k}"]`);
+    if (el) renderButtonCanvas(el);
+
+    if (!down) {
+      if (repeatTimers.has(k)) {
+        clearInterval(repeatTimers.get(k));
+        repeatTimers.delete(k);
+      }
+      return;
+    }
+
+    if (window.SlopesAudio) window.SlopesAudio.unlock();
+
+    if (k === "dat") {
+      if (window.SlopesDatPuter && typeof window.SlopesDatPuter.toggle === "function") {
+        window.SlopesDatPuter.toggle();
+      }
+      return;
+    }
+
+    if (k === "sta") {
+      if (window.SlopesAudio) window.SlopesAudio.playClick(true);
+      const opening = !dlg.classList.contains("open");
+      dlg.classList.toggle("open", opening);
+      if (opening) renderDialog();
+      if (window.SlopesGame) window.SlopesGame.setPaused(opening);
+      return;
+    }
+
+    if (window.SlopesGame) {
+      window.SlopesGame.action(k);
+    }
+
+    if ((k === "l" || k === "r" || k === "u" || k === "d") && !repeatTimers.has(k)) {
+      const iv = setInterval(() => {
+        if (window.SlopesGame) window.SlopesGame.action(k);
+      }, 95);
+      repeatTimers.set(k, iv);
+    }
+  }
+
+  const activePointers = new Map();
+  const hitButton = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    return el && el.dataset && el.dataset.k ? el.dataset.k : null;
+  };
+
+  function syncButtons(prevSet) {
+    const nextSet = new Set(activePointers.values());
+    prevSet.forEach((k) => { if (k && !nextSet.has(k)) triggerKey(k, false); });
+    nextSet.forEach((k) => { if (k && !prevSet.has(k)) triggerKey(k, true); });
+  }
+
+  [padL, padR].forEach((pad) => {
+    pad.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if (e.pointerType === "touch" && !isTouchMode) {
+        isTouchMode = true;
+        renderAllButtons();
+      }
+      if (window.SlopesAudio) window.SlopesAudio.unlock();
+      const k = e.target.closest("[data-k]")?.dataset.k;
+      if (!k) return;
+      try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+      const prev = new Set(activePointers.values());
+      activePointers.set(e.pointerId, k);
+      syncButtons(prev);
+    });
+    pad.addEventListener("pointermove", (e) => {
+      if (!activePointers.has(e.pointerId)) return;
+      const k = hitButton(e.clientX, e.clientY);
+      if (k !== activePointers.get(e.pointerId)) {
+        const prev = new Set(activePointers.values());
+        activePointers.set(e.pointerId, k);
+        syncButtons(prev);
+      }
+    });
+    const endPointer = (e) => {
+      if (!activePointers.has(e.pointerId)) return;
+      const prev = new Set(activePointers.values());
+      activePointers.delete(e.pointerId);
+      syncButtons(prev);
+    };
+    pad.addEventListener("pointerup", endPointer);
+    pad.addEventListener("pointercancel", endPointer);
+  });
+
+  scr.addEventListener("pointerdown", () => {
+    if (window.SlopesAudio) window.SlopesAudio.unlock();
+  });
+
+  // --- Desktop Keyboard Mapping ---
+  // Note: `KeyF` (Tab-Form Terminal), `Backquote` (TE-307 Mainframe TUI), and `KeyB`/`KeyP` (DAT-307 Codex)
+  // are handled directly by `tabform_lifeforms.js` and `lore_portal_dock.js` to avoid double-toggling.
+  const KEY_MAP = {
+    ArrowUp: "u", KeyW: "u",
+    ArrowDown: "d", KeyS: "d",
+    ArrowLeft: "l", KeyA: "l",
+    ArrowRight: "r", KeyD: "r",
+    Space: "crs", KeyK: "crs",
+    KeyX: "cir", KeyL: "cir",
+    KeyC: "conduit", KeyI: "tri",
+    KeyZ: "sqr", KeyJ: "sqr",
+    KeyQ: "rotL", BracketLeft: "rotL",
+    KeyR: "rotR", BracketRight: "rotR",
+    KeyT: "time",
+    KeyE: "portal",
+    KeyV: "craft",
+    KeyG: "wasm",
+    KeyY: "slice",
+    Minus: "zoomOut",
+    Equal: "zoomIn",
+    ShiftLeft: "sel", ShiftRight: "sel", Tab: "sel",
+    Enter: "sta", Escape: "sta",
+  };
+  const heldKeys = new Set();
+  window.addEventListener("keydown", (e) => {
+    if (window.SlopesTabForms && window.SlopesTabForms.state && window.SlopesTabForms.state.terminalOpen) return;
+    if (window.SlopesDatPuter && window.SlopesDatPuter.state && window.SlopesDatPuter.state.open) return;
+    if (isTouchMode) {
+      isTouchMode = false;
+      renderAllButtons();
+    }
+    const k = KEY_MAP[e.code];
+    if (!k) return;
+    e.preventDefault();
+    if (heldKeys.has(k)) return;
+    heldKeys.add(k);
+    triggerKey(k, true);
+  });
+  window.addEventListener("keyup", (e) => {
+    if (window.SlopesTabForms && window.SlopesTabForms.state && window.SlopesTabForms.state.terminalOpen) return;
+    if (window.SlopesDatPuter && window.SlopesDatPuter.state && window.SlopesDatPuter.state.open) return;
+    const k = KEY_MAP[e.code];
+    if (!k) return;
+    e.preventDefault();
+    heldKeys.delete(k);
+    triggerKey(k, false);
+  });
+})();
+</script>
+</body>
+</html>

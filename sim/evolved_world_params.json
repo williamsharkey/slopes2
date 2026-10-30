@@ -1,0 +1,539 @@
+{
+  "engine": "Slopes 2 - C-to-WASM Evolutionary Simulator & WFC City Architect",
+  "societies": [
+    {
+      "faction_id": 0,
+      "faction_name": "HUMAN_ORANGE",
+      "labs": [
+        {
+          "lab_type": 0,
+          "best_fitness": 9985,
+          "dna_genome": 2700735743,
+          "dna_hex": "0xA0F9F4FF",
+          "craft_type": 0,
+          "craft_name": "EVOLVED_FLORA_SEED",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 15,
+            "branching_wing": 15,
+            "spore_thrust": 4,
+            "color_freq": 15,
+            "symbiosis_armor": 9,
+            "conduit_conductance": 15,
+            "craft_archetype": 0,
+            "topology_affinity": 10
+          }
+        },
+        {
+          "lab_type": 1,
+          "best_fitness": 9506,
+          "dna_genome": 33549309,
+          "dna_hex": "0x01FFEBFD",
+          "craft_type": 1,
+          "craft_name": "ORNITHOPTER_SKY_SKIFF",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 13,
+            "branching_wing": 15,
+            "spore_thrust": 11,
+            "color_freq": 14,
+            "symbiosis_armor": 15,
+            "conduit_conductance": 15,
+            "craft_archetype": 1,
+            "topology_affinity": 0
+          }
+        },
+        {
+          "lab_type": 2,
+          "best_fitness": 9985,
+          "dna_genome": 1711191549,
+          "dna_hex": "0x65FEB5FD",
+          "craft_type": 2,
+          "craft_name": "SUBTERRANEAN_MOLE_DRILLER",
+          "recommended_conduit": 0,
+          "conduit_name": "COPPER_PIPE",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 13,
+            "branching_wing": 15,
+            "spore_thrust": 5,
+            "color_freq": 11,
+            "symbiosis_armor": 14,
+            "conduit_conductance": 15,
+            "craft_archetype": 5,
+            "topology_affinity": 6
+          }
+        },
+        {
+          "lab_type": 3,
+          "best_fitness": 9985,
+          "dna_genome": 4177449915,
+          "dna_hex": "0xF8FED3BB",
+          "craft_type": 6,
+          "craft_name": "CHRONOS_TIME_CRYSTAL",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 11,
+            "branching_wing": 11,
+            "spore_thrust": 3,
+            "color_freq": 13,
+            "symbiosis_armor": 14,
+            "conduit_conductance": 15,
+            "craft_archetype": 8,
+            "topology_affinity": 15
+          }
+        }
+      ],
+      "evolved_blueprint_15x12": {
+        "fitness": 8296,
+        "width": 15,
+        "height": 12,
+        "compute_core_cells": 18,
+        "harvester_cells": 7,
+        "conduit_ports": 7,
+        "luminous_windows": 16,
+        "roof_dome_spires": 17,
+        "rows": [
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,5,0,0,8,0,8,0,0,5,0,0,0],
+          [0,0,0,6,0,0,5,8,5,0,0,6,0,0,0],
+          [0,5,0,2,8,8,3,5,3,8,8,2,0,5,0],
+          [0,2,5,7,5,5,5,2,5,5,5,7,5,2,0],
+          [0,2,3,4,2,4,3,7,3,4,2,4,3,2,0],
+          [0,0,2,3,4,7,7,7,7,7,4,3,2,0,0],
+          [0,5,3,4,2,7,4,7,4,7,2,4,2,5,0],
+          [0,3,7,2,4,7,7,7,7,7,4,2,7,3,0],
+          [0,6,2,4,2,4,3,6,3,4,2,4,6,6,0],
+          [0,1,1,1,1,1,1,1,1,1,1,1,3,6,0],
+          [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0]
+        ]
+      },
+      "wfc_sample_collapsed_cells": 980,
+      "hypertime_10000_metrics": {
+        "pop_delta": 625,
+        "energy_delta": 16950,
+        "compute_delta": 82434,
+        "buildings_evolved": 1051,
+        "crafts_birthed": 1861,
+        "dna_mutations": 1250,
+        "total_compute_work": 30235352
+      }
+    },
+    {
+      "faction_id": 1,
+      "faction_name": "CORVUS_SKY",
+      "labs": [
+        {
+          "lab_type": 0,
+          "best_fitness": 9338,
+          "dna_genome": 4042324479,
+          "dna_hex": "0xF0F0F9FF",
+          "craft_type": 1,
+          "craft_name": "ORNITHOPTER_SKY_SKIFF",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 15,
+            "branching_wing": 15,
+            "spore_thrust": 9,
+            "color_freq": 15,
+            "symbiosis_armor": 0,
+            "conduit_conductance": 15,
+            "craft_archetype": 0,
+            "topology_affinity": 15
+          }
+        },
+        {
+          "lab_type": 1,
+          "best_fitness": 9658,
+          "dna_genome": 4093050864,
+          "dna_hex": "0xF3F6FFF0",
+          "craft_type": 1,
+          "craft_name": "ORNITHOPTER_SKY_SKIFF",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 0,
+            "branching_wing": 15,
+            "spore_thrust": 15,
+            "color_freq": 15,
+            "symbiosis_armor": 6,
+            "conduit_conductance": 15,
+            "craft_archetype": 3,
+            "topology_affinity": 15
+          }
+        },
+        {
+          "lab_type": 2,
+          "best_fitness": 9401,
+          "dna_genome": 4043306739,
+          "dna_hex": "0xF0FFF6F3",
+          "craft_type": 4,
+          "craft_name": "AETHER_LEVITATION_BARGE",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 3,
+            "branching_wing": 15,
+            "spore_thrust": 6,
+            "color_freq": 15,
+            "symbiosis_armor": 15,
+            "conduit_conductance": 15,
+            "craft_archetype": 0,
+            "topology_affinity": 15
+          }
+        },
+        {
+          "lab_type": 3,
+          "best_fitness": 9985,
+          "dna_genome": 4110214130,
+          "dna_hex": "0xF4FCE3F2",
+          "craft_type": 6,
+          "craft_name": "CHRONOS_TIME_CRYSTAL",
+          "recommended_conduit": 1,
+          "conduit_name": "AETHER_LASER",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 99,
+          "traits": {
+            "root_chassis": 2,
+            "branching_wing": 15,
+            "spore_thrust": 3,
+            "color_freq": 14,
+            "symbiosis_armor": 12,
+            "conduit_conductance": 15,
+            "craft_archetype": 4,
+            "topology_affinity": 15
+          }
+        }
+      ],
+      "evolved_blueprint_15x12": {
+        "fitness": 8148,
+        "width": 15,
+        "height": 12,
+        "compute_core_cells": 18,
+        "harvester_cells": 11,
+        "conduit_ports": 8,
+        "luminous_windows": 16,
+        "roof_dome_spires": 12,
+        "rows": [
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,5,0,8,8,8,0,5,0,0,0,0],
+          [0,0,5,0,2,8,5,2,5,8,2,0,0,0,0],
+          [0,0,8,8,3,5,2,6,2,5,4,8,8,0,0],
+          [0,8,4,5,4,2,2,2,2,2,4,5,5,8,0],
+          [0,5,3,7,3,4,3,2,3,4,3,7,3,5,0],
+          [0,6,2,7,6,7,7,7,7,7,6,4,2,4,0],
+          [0,6,2,4,3,7,7,7,7,7,3,4,2,4,0],
+          [0,1,3,2,2,7,7,7,7,7,4,2,3,6,0],
+          [0,1,1,1,1,4,2,2,2,4,2,4,0,6,0],
+          [0,1,1,1,3,1,1,1,1,1,4,2,2,6,0],
+          [0,0,0,0,3,0,0,3,0,0,1,1,1,1,0]
+        ]
+      },
+      "wfc_sample_collapsed_cells": 980,
+      "hypertime_10000_metrics": {
+        "pop_delta": 625,
+        "energy_delta": 9121,
+        "compute_delta": 60772,
+        "buildings_evolved": 1052,
+        "crafts_birthed": 1878,
+        "dna_mutations": 1250,
+        "total_compute_work": 30570472
+      }
+    },
+    {
+      "faction_id": 2,
+      "faction_name": "CERVUS_MYCELIAL",
+      "labs": [
+        {
+          "lab_type": 0,
+          "best_fitness": 9985,
+          "dna_genome": 1122462650,
+          "dna_hex": "0x42E76BBA",
+          "craft_type": 0,
+          "craft_name": "EVOLVED_FLORA_SEED",
+          "recommended_conduit": 2,
+          "conduit_name": "MYCELIAL_HYPHAE",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 10,
+            "branching_wing": 11,
+            "spore_thrust": 11,
+            "color_freq": 6,
+            "symbiosis_armor": 7,
+            "conduit_conductance": 14,
+            "craft_archetype": 2,
+            "topology_affinity": 4
+          }
+        },
+        {
+          "lab_type": 1,
+          "best_fitness": 9985,
+          "dna_genome": 301465197,
+          "dna_hex": "0x11F7FE6D",
+          "craft_type": 5,
+          "craft_name": "MYCELIAL_SPORE_GLIDER",
+          "recommended_conduit": 2,
+          "conduit_name": "MYCELIAL_HYPHAE",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 13,
+            "branching_wing": 6,
+            "spore_thrust": 14,
+            "color_freq": 15,
+            "symbiosis_armor": 7,
+            "conduit_conductance": 15,
+            "craft_archetype": 1,
+            "topology_affinity": 1
+          }
+        },
+        {
+          "lab_type": 2,
+          "best_fitness": 9985,
+          "dna_genome": 2949899181,
+          "dna_hex": "0xAFD3E3AD",
+          "craft_type": 3,
+          "craft_name": "AMPHIBIOUS_WAVE_STRIDER",
+          "recommended_conduit": 2,
+          "conduit_name": "MYCELIAL_HYPHAE",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 13,
+            "branching_wing": 10,
+            "spore_thrust": 3,
+            "color_freq": 14,
+            "symbiosis_armor": 3,
+            "conduit_conductance": 13,
+            "craft_archetype": 15,
+            "topology_affinity": 10
+          }
+        },
+        {
+          "lab_type": 3,
+          "best_fitness": 9985,
+          "dna_genome": 3181753005,
+          "dna_hex": "0xBDA5B2AD",
+          "craft_type": 6,
+          "craft_name": "CHRONOS_TIME_CRYSTAL",
+          "recommended_conduit": 2,
+          "conduit_name": "MYCELIAL_HYPHAE",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 13,
+            "branching_wing": 10,
+            "spore_thrust": 2,
+            "color_freq": 11,
+            "symbiosis_armor": 5,
+            "conduit_conductance": 10,
+            "craft_archetype": 13,
+            "topology_affinity": 11
+          }
+        }
+      ],
+      "evolved_blueprint_15x12": {
+        "fitness": 7903,
+        "width": 15,
+        "height": 12,
+        "compute_core_cells": 18,
+        "harvester_cells": 11,
+        "conduit_ports": 8,
+        "luminous_windows": 15,
+        "roof_dome_spires": 15,
+        "rows": [
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,5,6,0,6,5,0,0,0,0,0],
+          [0,0,0,0,0,6,7,8,7,6,0,0,0,0,0],
+          [0,0,3,8,8,8,4,5,4,8,8,8,3,5,0],
+          [0,8,3,5,5,5,4,2,4,5,5,5,3,8,0],
+          [0,5,3,5,3,4,3,6,3,4,3,2,5,0,0],
+          [0,5,2,3,4,7,7,7,7,7,4,3,2,5,0],
+          [0,0,6,7,8,7,7,7,7,7,8,4,2,0,0],
+          [0,0,2,2,4,7,7,7,7,7,4,2,6,0,0],
+          [0,0,1,4,2,4,3,3,3,4,2,4,2,6,0],
+          [0,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+          [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0]
+        ]
+      },
+      "wfc_sample_collapsed_cells": 980,
+      "hypertime_10000_metrics": {
+        "pop_delta": 625,
+        "energy_delta": 17005,
+        "compute_delta": 61865,
+        "buildings_evolved": 1185,
+        "crafts_birthed": 1984,
+        "dna_mutations": 1250,
+        "total_compute_work": 35412288
+      }
+    },
+    {
+      "faction_id": 3,
+      "faction_name": "SKEKSIS_GOO",
+      "labs": [
+        {
+          "lab_type": 0,
+          "best_fitness": 9985,
+          "dna_genome": 1241494958,
+          "dna_hex": "0x49FFB5AE",
+          "craft_type": 7,
+          "craft_name": "DARK_CRYSTAL_STRIDER",
+          "recommended_conduit": 3,
+          "conduit_name": "DARK_VEIN",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 14,
+            "branching_wing": 10,
+            "spore_thrust": 5,
+            "color_freq": 11,
+            "symbiosis_armor": 15,
+            "conduit_conductance": 15,
+            "craft_archetype": 9,
+            "topology_affinity": 4
+          }
+        },
+        {
+          "lab_type": 1,
+          "best_fitness": 9985,
+          "dna_genome": 3254767296,
+          "dna_hex": "0xC1FFCEC0",
+          "craft_type": 7,
+          "craft_name": "DARK_CRYSTAL_STRIDER",
+          "recommended_conduit": 3,
+          "conduit_name": "DARK_VEIN",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 85,
+          "traits": {
+            "root_chassis": 0,
+            "branching_wing": 12,
+            "spore_thrust": 14,
+            "color_freq": 12,
+            "symbiosis_armor": 15,
+            "conduit_conductance": 15,
+            "craft_archetype": 1,
+            "topology_affinity": 12
+          }
+        },
+        {
+          "lab_type": 2,
+          "best_fitness": 9985,
+          "dna_genome": 1761345398,
+          "dna_hex": "0x68FBFF76",
+          "craft_type": 2,
+          "craft_name": "SUBTERRANEAN_MOLE_DRILLER",
+          "recommended_conduit": 3,
+          "conduit_name": "DARK_VEIN",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 100,
+          "traits": {
+            "root_chassis": 6,
+            "branching_wing": 7,
+            "spore_thrust": 15,
+            "color_freq": 15,
+            "symbiosis_armor": 11,
+            "conduit_conductance": 15,
+            "craft_archetype": 8,
+            "topology_affinity": 6
+          }
+        },
+        {
+          "lab_type": 3,
+          "best_fitness": 9985,
+          "dna_genome": 3537803966,
+          "dna_hex": "0xD2DE9ABE",
+          "craft_type": 7,
+          "craft_name": "DARK_CRYSTAL_STRIDER",
+          "recommended_conduit": 3,
+          "conduit_name": "DARK_VEIN",
+          "energy_yield_gain_pct": 350,
+          "time_dilation_factor": 100,
+          "transdimensional_resonance": 75,
+          "traits": {
+            "root_chassis": 14,
+            "branching_wing": 11,
+            "spore_thrust": 10,
+            "color_freq": 9,
+            "symbiosis_armor": 14,
+            "conduit_conductance": 13,
+            "craft_archetype": 2,
+            "topology_affinity": 13
+          }
+        }
+      ],
+      "evolved_blueprint_15x12": {
+        "fitness": 7743,
+        "width": 15,
+        "height": 12,
+        "compute_core_cells": 18,
+        "harvester_cells": 10,
+        "conduit_ports": 8,
+        "luminous_windows": 16,
+        "roof_dome_spires": 13,
+        "rows": [
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,2,0,8,0,0,0,8,0,0,0],
+          [0,0,0,5,0,4,8,5,8,0,0,5,0,0,0],
+          [0,0,5,6,0,8,5,4,5,8,0,6,5,0,0],
+          [0,0,6,4,8,5,7,2,3,5,8,4,6,0,0],
+          [0,8,6,4,5,4,2,3,2,4,5,2,6,8,0],
+          [0,5,2,2,4,7,7,7,7,7,3,2,2,5,0],
+          [0,4,2,7,4,7,7,7,7,7,4,4,2,2,0],
+          [0,6,2,7,4,7,7,2,7,7,4,7,2,6,0],
+          [0,3,3,3,2,4,3,3,3,4,2,3,1,1,0],
+          [0,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+          [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0]
+        ]
+      },
+      "wfc_sample_collapsed_cells": 980,
+      "hypertime_10000_metrics": {
+        "pop_delta": 625,
+        "energy_delta": 17775,
+        "compute_delta": 43862,
+        "buildings_evolved": 1051,
+        "crafts_birthed": 1866,
+        "dna_mutations": 1250,
+        "total_compute_work": 30299481
+      }
+    }
+  ],
+  "sweep_summary": {
+    "total_cells_simulated": 25165824,
+    "total_blueprints_evolved": 3200,
+    "total_wfc_cells_collapsed": 3920,
+    "execution_time_ms": 98.77
+  }
+}

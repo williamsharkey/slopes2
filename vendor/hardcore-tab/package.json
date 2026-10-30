@@ -1,0 +1,21 @@
+{
+  "name": "hardcore-tab",
+  "version": "1.0.0",
+  "description": "Hardcore Hairline Terminus pixel-grid terminal emulator & TabComputer POSIX/Claude Code shell for Embodied Tab-Form Lifeforms in Slopes 2",
+  "main": "src/hardcore_tab.js",
+  "scripts": {
+    "test": "node test/test.js",
+    "build": "cp src/hardcore_tab.js ../slopes2/sim/hardcore_tab.js"
+  },
+  "keywords": [
+    "hardcore",
+    "tabcomputer",
+    "terminal",
+    "claude-code",
+    "embodied-agents",
+    "bitmap-font",
+    "slopes2"
+  ],
+  "author": "William Sharkey",
+  "license": "MIT"
+}
