@@ -1,0 +1,207 @@
+{
+ "format": 1,
+ "apps": [
+  {
+   "id": "converter",
+   "name": "Convert Old Files",
+   "description": "Drop Publisher, WordPerfect, Works, Lotus 1-2-3, ClarisWorks and Access files and get modern files back. The files stay on this computer.",
+   "version": "0.2.0",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "55587c631438deb2951a4d3152272a9056eb51ec9c35643d29b0e74ea3f173ee",
+     "size": 671
+    },
+    {
+     "path": "public/app.js",
+     "sha256": "afce7454c7251fe617c0ef511a68201ec4ec7a4562ff5436b6b36729b3b74271",
+     "size": 25435
+    },
+    {
+     "path": "public/icon.svg",
+     "sha256": "475b4c5eeaf98a103d0e613a5ac09808b9baae9f862805089d03a21e52ed9edd",
+     "size": 261
+    },
+    {
+     "path": "public/index.html",
+     "sha256": "8918a9112332ad0137cf0720b1d9dd4003d2807210bb27db65196d933585f2cc",
+     "size": 2375
+    },
+    {
+     "path": "public/style.css",
+     "sha256": "db4df608bc352b29955d36b3a2bbab64ba271cc06fd39f89fad3e6b38beb7bc3",
+     "size": 3517
+    }
+   ]
+  },
+  {
+   "id": "expenses",
+   "name": "Expenses",
+   "description": "A list of what was spent, with a total.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "ffc8485a62cd72e917d816acce65fa89248181e4e91f119a0d13f31d6ed2c209",
+     "size": 346
+    }
+   ]
+  },
+  {
+   "id": "files-to-iso",
+   "name": "Put files into an ISO image",
+   "description": "Makes one .iso disc image that holds the files you give it.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "ba2fdcac16c7b81abbd3de9c89862ce1c38b60c71226c1584ec49eee7ed743e9",
+     "size": 236
+    }
+   ]
+  },
+  {
+   "id": "flatten-pdf",
+   "name": "Turn a PDF's pages into pictures",
+   "description": "Makes a PDF whose pages are pictures only, so text under a black box cannot be copied out.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "6fa2f28d8a9f6914dc34680d5ee10e9153a7f2a0f5fa8b3bf3924871ee038f58",
+     "size": 330
+    }
+   ]
+  },
+  {
+   "id": "heic-to-jpeg",
+   "name": "iPhone photos to JPEG",
+   "description": "Turns HEIC photos from an iPhone into JPEG pictures any program opens.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "d5ebed1446068d1ae212a4fe9b6774d834419e1478f9740bbc091b69094ec825",
+     "size": 253
+    }
+   ]
+  },
+  {
+   "id": "jq-playground",
+   "name": "jq playground",
+   "description": "Try a jq filter on some JSON. The result changes as you type.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "10ef0039d1289eddd01eb88b340be68dc95850d9a19fb54a6fc73ea40fddc537",
+     "size": 481
+    }
+   ]
+  },
+  {
+   "id": "markdown-to-word",
+   "name": "Markdown to Word",
+   "description": "Turns Markdown or plain text files into Word documents.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "21b7fbbcc4fc02e71bebfe733171459b4d66d07211cf83b3de9e09357076dcfe",
+     "size": 225
+    }
+   ]
+  },
+  {
+   "id": "merge-pdfs",
+   "name": "Join PDFs into one",
+   "description": "Puts the PDFs you give it into one PDF, in the order of their names.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "5d7db83ab2f95ad30996da27487b9c6095d7ccb7dacd25ee7ed3f13dc369cc35",
+     "size": 248
+    }
+   ]
+  },
+  {
+   "id": "pdf-to-text",
+   "name": "Get the text out of a PDF",
+   "description": "Writes the text of each PDF to a plain text file, keeping its columns.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "fa957645db3b04aaa63b5d202bc4e80488ed1e65aa5b063263478cc43caa4d0e",
+     "size": 239
+    }
+   ]
+  },
+  {
+   "id": "resize-pictures",
+   "name": "Make pictures smaller",
+   "description": "Shrinks each picture to fit a size, keeping its shape. A picture that is already smaller is left as it is.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "b4c9f640e6f54ab87c999138f58b90fc5229b6c0eb05aab0b617a18433e4e3d9",
+     "size": 533
+    }
+   ]
+  },
+  {
+   "id": "searchable-pdf",
+   "name": "Make scans searchable",
+   "description": "Turns photos or scans of pages into PDFs whose text can be searched and copied.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "4479fcee1108398f40b420ffa4b73ca4db96f722299d6c6639f6999c38ef4817",
+     "size": 279
+    }
+   ]
+  },
+  {
+   "id": "shrink-pdf",
+   "name": "Shrink a PDF",
+   "description": "Makes a scanned or photo-heavy PDF smaller by storing its pictures at a lower resolution.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "66c020e68e5a3c2d717160b9e0d073f517f32647f5cdd1abf817d737999e4cdb",
+     "size": 511
+    }
+   ]
+  },
+  {
+   "id": "wav-to-mp3",
+   "name": "WAV to MP3",
+   "description": "Turns WAV or AIFF recordings into MP3 files a tenth of the size.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "7331ab77e7f37dec9893362e93e9b05b80147ab5ef7ae14282d48e79f205ba35",
+     "size": 230
+    }
+   ]
+  },
+  {
+   "id": "word-to-markdown",
+   "name": "Word to Markdown",
+   "description": "Turns Word, OpenDocument or web pages into Markdown text.",
+   "version": "",
+   "files": [
+    {
+     "path": "app.json",
+     "sha256": "a3b4a179633f3eaf0320d569ea4f093d22f6255364b2bc0f04d5a79cf904b0d6",
+     "size": 250
+    }
+   ]
+  }
+ ]
+}

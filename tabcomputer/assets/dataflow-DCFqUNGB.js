@@ -1,0 +1,5 @@
+import{c as n,d as i}from"./data-flow-DmLNsEnD.js";import"./index-C6zxlZK4.js";import"./credentials-CrExaRSJ.js";const l=Object.freeze(Object.defineProperty({__proto__:null,get dataflowCmd(){return d}},Symbol.toStringTag,{value:"Module"})),s=`Usage: dataflow           where this tab's files, sign-ins and traffic go
+       dataflow -v        the same, with a paragraph and the route for each row
+       dataflow --json    the state it is drawn from (presence of sign-ins only, never a value)
+`,d={name:"dataflow",description:"How your data flows: what leaves this tab, by which path, and what the server can read",async exec(e){const t=e.args[0];if(t==="-h"||t==="--help"||t==="help")return e.stdout=s,0;const a=t==="-v"||t==="--verbose";if(t&&t!=="--json"&&!a)return e.stderr=s,2;const o=await n(e.fs);if(t==="--json")return e.stdout=JSON.stringify(o,null,2)+`
+`,0;const r=Number(e.env.COLUMNS)||(e.stdoutIsTTY!==!1?e.terminal?.getSize?.().cols:0)||80;return e.stdout=i(o,r,a),0}};(globalThis.__tabcomputerLive??=new Map).set("src/commands/dataflow.ts",l);export{d as dataflowCmd};

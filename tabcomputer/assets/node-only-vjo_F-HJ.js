@@ -1,0 +1,1 @@
+const e=Object.freeze(Object.defineProperty({__proto__:null,get default(){return t}},Symbol.toStringTag,{value:"Module"})),t={};(globalThis.__tabcomputerLive??=new Map).set("src/postgres/node-only.ts",e);export{t as default};

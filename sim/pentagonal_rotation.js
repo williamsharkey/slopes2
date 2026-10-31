@@ -50,7 +50,7 @@
   const FACET_ANGLE_RAD = (Math.PI * 2) / NUM_FACETS; // 72 deg in radians
   const PIVOT_X = 71.5; // Center of 0..143 coarse columns
   const PIVOT_Y = 45.0; // Center of 0..89 coarse rows
-  const ROTATION_FRAMES = 24;
+  const ROTATION_FRAMES = 44;
 
   const FACET_TITLES = [
     "FACET 1/5 • 0° [ORIGIN]",
@@ -1185,6 +1185,236 @@
     }
 
     // ========================================================================
+    // 3D REYNOLDS BOIDS FLOCKING SWARM FOR DYNAMIC SLICE TRANSITIONS
+    // ========================================================================
+    function spawnFlockingSwarmForRotation(fromScene, toScene, steps) {
+      const swarm = [];
+      const fBlocks = (fromScene && fromScene.Blocks) || [];
+      const tBlocks = (toScene && toScene.Blocks) || [];
+      const dirSign = steps >= 0 ? 1 : -1;
+
+      const fEco = (fromScene && fromScene.ecoEntities) || {};
+      const tEco = (toScene && toScene.ecoEntities) || {};
+      const fWorld = (fromScene && fromScene.worldEntities) || {};
+      const tWorld = (toScene && toScene.worldEntities) || {};
+
+      // Collect paired start -> target coordinates from Crows, Raptors, Villagers, Critters & Crystal Wisps
+      const sources = [];
+      const fCrows = fEco.SeerCrows || [];
+      const tCrows = tEco.SeerCrows || [];
+      for (let i = 0; i < Math.max(6, fCrows.length); i++) {
+        const fc = fCrows[i % Math.max(1, fCrows.length)];
+        const tc = tCrows[i % Math.max(1, tCrows.length)];
+        const sx = fc && Number.isFinite(fc.x) ? fc.x : 18 + ((i * 23) % (COARSE_W - 36));
+        const sy = fc && Number.isFinite(fc.y) ? fc.y : (fBlocks[clampCol(sx)] || 20) + 12 + (i % 5) * 3;
+        const tx = tc && Number.isFinite(tc.x) ? tc.x : mirrorX(sx);
+        const ty = tc && Number.isFinite(tc.y) ? tc.y : (tBlocks[clampCol(tx)] || 20) + 12 + (i % 5) * 3;
+        sources.push({ kind: "crow", sx, sy, tx, ty, color: [120, 240, 255], flockGroup: 0 });
+      }
+
+      const fRaptors = fWorld.Raptors || [];
+      const tRaptors = tWorld.Raptors || [];
+      for (let i = 0; i < Math.max(4, fRaptors.length); i++) {
+        const fr = fRaptors[i % Math.max(1, fRaptors.length)];
+        const tr = tRaptors[i % Math.max(1, tRaptors.length)];
+        const sx = fr && Number.isFinite(fr.x) ? fr.x : 28 + ((i * 31) % (COARSE_W - 56));
+        const sy = fr && Number.isFinite(fr.y) ? fr.y : 46 + (i % 4) * 5;
+        const tx = tr && Number.isFinite(tr.x) ? tr.x : mirrorX(sx);
+        const ty = tr && Number.isFinite(tr.y) ? tr.y : 46 + (i % 4) * 5;
+        sources.push({ kind: "raptor", sx, sy, tx, ty, color: [135, 255, 205], flockGroup: 0 });
+      }
+
+      const fPpl = fEco.OrangePeople || [];
+      const tPpl = tEco.OrangePeople || [];
+      for (let i = 0; i < Math.min(8, Math.max(4, fPpl.length)); i++) {
+        const fp = fPpl[i % Math.max(1, fPpl.length)];
+        const tp = tPpl[i % Math.max(1, tPpl.length)];
+        const sx = fp && Number.isFinite(fp.x) ? fp.x : 24 + ((i * 19) % (COARSE_W - 48));
+        const sy = (fBlocks[clampCol(sx)] || 18) + 2;
+        const tx = tp && Number.isFinite(tp.x) ? tp.x : mirrorX(sx);
+        const ty = (tBlocks[clampCol(tx)] || 18) + 2;
+        sources.push({ kind: "villager", sx, sy, tx, ty, color: [255, 165, 65], flockGroup: 1 });
+      }
+
+      // Add shimmering Aether Wisps & Spore-Motes that murmurate in a tight 3D helix across slices
+      for (let i = 0; i < 12; i++) {
+        const sx = 16 + ((i * 11 + 7) % (COARSE_W - 32));
+        const sy = (fBlocks[clampCol(sx)] || 18) + 6 + (i % 6) * 4;
+        const tx = clamp(COARSE_W - 1 - sx + Math.sin(i * 1.7) * 14, 12, COARSE_W - 12);
+        const ty = (tBlocks[clampCol(tx)] || 18) + 5 + ((i + 2) % 6) * 4;
+        sources.push({
+          kind: i % 2 === 0 ? "wisp" : "critter",
+          sx,
+          sy,
+          tx,
+          ty,
+          color: i % 2 === 0 ? [255, 220, 95] : [105, 245, 175],
+          flockGroup: i % 2,
+        });
+      }
+
+      for (let i = 0; i < sources.length; i++) {
+        const s = sources[i];
+        const zStart = (detNorm(i, 17, state.totalRotations) - 0.5) * 32;
+        const ang = (i / sources.length) * Math.PI * 2;
+        swarm.push({
+          id: i,
+          kind: s.kind,
+          flockGroup: s.flockGroup,
+          x: s.sx,
+          y: s.sy,
+          z: zStart,
+          vx: dirSign * (0.9 + detNorm(i, 3, 1) * 0.8),
+          vy: 0.45 + Math.sin(ang) * 0.4,
+          vz: -dirSign * (0.8 + Math.cos(ang) * 0.6),
+          startX: s.sx,
+          startY: s.sy,
+          targetX: s.tx,
+          targetY: s.ty,
+          color: s.color,
+          phase: i * 0.75,
+          trail: [],
+        });
+      }
+      state.flockingSwarm = swarm;
+      state.postSettleFlockFrames = 32;
+    }
+
+    function stepFlockingSwarm(progress, dirSign) {
+      const swarm = state.flockingSwarm;
+      if (!Array.isArray(swarm) || swarm.length === 0) return;
+
+      const p = clamp(progress, 0, 1);
+      // Homing weight ramps up smoothly in the second half so every boid lands cleanly on its 2D slice destination
+      const homeWeight = 0.035 + Math.pow(p, 1.8) * 0.22;
+      const flockWeight = Math.max(0.08, 1.0 - Math.pow(p, 2.2));
+      const swirlLift = Math.sin(p * Math.PI) * 14;
+
+      for (let i = 0; i < swarm.length; i++) {
+        const b = swarm[i];
+        b.trail.push({ x: b.x, y: b.y, z: b.z });
+        if (b.trail.length > 6) b.trail.shift();
+
+        // 3D Reynolds Boids: Separation, Alignment, Cohesion within same/nearby flock
+        let sepX = 0, sepY = 0, sepZ = 0;
+        let aliX = 0, aliY = 0, aliZ = 0;
+        let cohX = 0, cohY = 0, cohZ = 0;
+        let neighbors = 0;
+
+        for (let j = 0; j < swarm.length; j++) {
+          if (i === j) continue;
+          const o = swarm[j];
+          const dx = o.x - b.x;
+          const dy = o.y - b.y;
+          const dz = (o.z - b.z) * 0.5;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < 320 && d2 > 0.001) {
+            const d = Math.sqrt(d2);
+            if (d < 6.5) {
+              sepX -= (dx / d) * (6.5 - d) * 0.14;
+              sepY -= (dy / d) * (6.5 - d) * 0.14;
+              sepZ -= (dz / d) * (6.5 - d) * 0.14;
+            }
+            if (o.flockGroup === b.flockGroup) {
+              aliX += o.vx;
+              aliY += o.vy;
+              aliZ += o.vz;
+              cohX += o.x;
+              cohY += o.y;
+              cohZ += o.z;
+              neighbors++;
+            }
+          }
+        }
+
+        if (neighbors > 0) {
+          aliX = (aliX / neighbors - b.vx) * 0.09;
+          aliY = (aliY / neighbors - b.vy) * 0.09;
+          aliZ = (aliZ / neighbors - b.vz) * 0.09;
+          cohX = (cohX / neighbors - b.x) * 0.032;
+          cohY = (cohY / neighbors - b.y) * 0.032;
+          cohZ = (cohZ / neighbors - b.z) * 0.032;
+        }
+
+        // Helical 3D arc waypoint between start slice and target slice
+        const arcGoalX = b.startX * (1 - p) + b.targetX * p + Math.sin(p * Math.PI * 2 + b.phase) * 6 * flockWeight;
+        const arcGoalY = b.startY * (1 - p) + b.targetY * p + swirlLift * (b.kind === "villager" ? 0.55 : 1.0);
+        const arcGoalZ = Math.sin(p * Math.PI) * dirSign * 26 * (b.flockGroup === 0 ? 1 : -0.75);
+
+        b.vx += (sepX + aliX + cohX) * flockWeight + (arcGoalX - b.x) * homeWeight;
+        b.vy += (sepY + aliY + cohY) * flockWeight + (arcGoalY - b.y) * homeWeight;
+        b.vz += (sepZ + aliZ + cohZ) * flockWeight + (arcGoalZ - b.z) * homeWeight;
+
+        // Clamp 3D velocity & damp
+        const maxSpd = 3.4;
+        const spd = Math.hypot(b.vx, b.vy, b.vz);
+        if (spd > maxSpd) {
+          b.vx = (b.vx / spd) * maxSpd;
+          b.vy = (b.vy / spd) * maxSpd;
+          b.vz = (b.vz / spd) * maxSpd;
+        } else {
+          b.vx *= 0.88;
+          b.vy *= 0.88;
+          b.vz *= 0.88;
+        }
+
+        b.x = clamp(b.x + b.vx, 4, COARSE_W - 5);
+        b.y = clamp(b.y + b.vy, 6, COARSE_H - 6);
+        b.z = clamp(b.z + b.vz, -65, 65);
+        b.phase += 0.32;
+      }
+    }
+
+    function renderFlockingSwarm(primeRenderer, pivX, pivY, alphaScale) {
+      const swarm = state.flockingSwarm;
+      if (!primeRenderer || !Array.isArray(swarm) || swarm.length === 0) return;
+
+      for (let i = 0; i < swarm.length; i++) {
+        const b = swarm[i];
+        const scale = 1 / (1 + clamp(b.z, -60, 60) * 0.0055);
+        const screenX = pivX + (b.x - pivX) * scale;
+        const screenY = pivY + (COARSE_H - b.y - pivY) * scale;
+        const px = Math.round(screenX * SCALE);
+        const py = Math.round(screenY * SCALE);
+        if (px < 2 || px >= NATIVE_W - 2 || py < 2 || py >= NATIVE_H - 2) continue;
+
+        const c = b.color || [120, 240, 255];
+        const a = clamp((alphaScale !== undefined ? alphaScale : 0.95) * clamp(1 - b.z * 0.006, 0.45, 1.0), 0.1, 1.0);
+
+        // Draw 3D motion trail ribbon
+        if (Array.isArray(b.trail)) {
+          for (let t = 0; t < b.trail.length; t++) {
+            const tp = b.trail[t];
+            const tScale = 1 / (1 + clamp(tp.z, -60, 60) * 0.0055);
+            const tx = Math.round((pivX + (tp.x - pivX) * tScale) * SCALE);
+            const ty = Math.round((pivY + (COARSE_H - tp.y - pivY) * tScale) * SCALE);
+            const ta = a * ((t + 1) / (b.trail.length + 2)) * 0.55;
+            primeRenderer.fillNativeRect(tx, ty, 2, 2, c[0], c[1], c[2], ta);
+          }
+        }
+
+        const unit = Math.max(1, Math.round(2 * scale));
+        if (b.kind === "crow" || b.kind === "raptor") {
+          const flap = Math.round(Math.sin(b.phase) * 3 * scale);
+          // Body + Beak + Flapping V-wings in 3D perspective
+          primeRenderer.fillNativeRect(px - unit, py - unit, unit * 2 + 1, unit * 2, 28, 38, 54, a);
+          primeRenderer.fillNativeRect(px + (b.vx >= 0 ? unit * 2 : -unit * 2), py - 1, 2, 2, 255, 215, 90, a);
+          primeRenderer.fillNativeRect(px - unit * 3, py - flap, unit * 2, Math.max(1, unit), c[0], c[1], c[2], a);
+          primeRenderer.fillNativeRect(px + unit * 2, py + flap, unit * 2, Math.max(1, unit), c[0], c[1], c[2], a);
+        } else if (b.kind === "villager") {
+          // Gliding / leaping villager in 3D slice transition
+          primeRenderer.fillNativeRect(px - 1, py - 4, 3, 2, 255, 225, 165, a);
+          primeRenderer.fillNativeRect(px - 2, py - 2, 5, 4, c[0], c[1], c[2], a);
+          primeRenderer.fillNativeRect(px - 3, py - 3, 7, 1, 110, 245, 235, a * 0.85); // parachute/glider cape
+        } else {
+          // Glowing Aether Wisp / Critter
+          primeRenderer.fillNativeRect(px - unit, py - unit, unit * 2 + 1, unit * 2 + 1, c[0], c[1], c[2], a);
+          primeRenderer.fillNativeRect(px, py, 1, 1, 255, 255, 245, a);
+        }
+      }
+    }
+
+    // ========================================================================
     // START 5-FOLD ROTATION & APPLY TARGET FACET SCENE
     // ========================================================================
     function startRotation(a0, a1, a2, a3, a4) {
@@ -1223,6 +1453,9 @@
       state.steppedThisTick = false;
       state.arrivalSignature = computeLiveSignature(wb, eco);
 
+      // Spawn the 3D Reynolds Boids Flocking Swarm to transition dynamically between slices!
+      spawnFlockingSwarmForRotation(fromScene, toScene, steps);
+
       if (typeof wb.announceSky === "function") {
         const deg = toFacet * FACET_ANGLE_DEG;
         const tag = toFacet === 3 || toFacet === 4 ? "MIRROR WORLD" : toFacet === 0 ? "ORIGIN WORLD" : "ORTHO WORLD";
@@ -1243,12 +1476,19 @@
         state.rotFrame = Math.min(ROTATION_FRAMES, state.rotFrame + n);
         state.rotProgress = clamp(state.rotFrame / ROTATION_FRAMES, 0, 1);
         state.steppedThisTick = true;
+        stepFlockingSwarm(state.rotProgress, (state.rotSteps || 1) >= 0 ? 1 : -1);
         if (state.rotFrame >= ROTATION_FRAMES) {
           state.rotProgress = 1.0;
           state.isAnimating = false;
         }
-      } else if (lastWorldRef) {
-        syncMirrorPair(lastWorldRef, lastEcoRef, lastCosmicRef, lastTabFormsRef, false);
+      } else {
+        if (state.postSettleFlockFrames > 0) {
+          state.postSettleFlockFrames--;
+          stepFlockingSwarm(1.0, (state.rotSteps || 1) >= 0 ? 1 : -1);
+        }
+        if (lastWorldRef) {
+          syncMirrorPair(lastWorldRef, lastEcoRef, lastCosmicRef, lastTabFormsRef, false);
+        }
       }
       return getStatus();
     }
@@ -1791,6 +2031,10 @@
         }
       }
 
+      // Render 3D Reynolds Boids Flocking Swarm swooping across the rotating 3D slices!
+      const cPivYMain = ridingAirship ? clamp(COARSE_H - (as.y || 50), 12, COARSE_H - 12) : PIVOT_Y;
+      renderFlockingSwarm(primeRenderer, activePivX, cPivYMain, 0.96);
+
       // If riding the Airship Castle-Village, also render the crisp live Airship Castle-Village at the pivot
       // so the ship interior, rigging, and boarding rope remain seamless while the world rotates around it!
       if (ridingAirship && global.SlopesTabForms && typeof global.SlopesTabForms.render === "function" && wb) {
@@ -1871,6 +2115,10 @@
       render(primeRenderer, wb, eco, cosmic, tabForms) {
         if (state.isAnimating) {
           return renderRotationAnimation(primeRenderer, wb, eco, cosmic, tabForms);
+        }
+        if (state.postSettleFlockFrames > 0) {
+          const aScale = clamp(state.postSettleFlockFrames / 32, 0.08, 0.92);
+          renderFlockingSwarm(primeRenderer, PIVOT_X, PIVOT_Y, aScale);
         }
         renderCompassOverlay(primeRenderer, 1.0);
         return false;

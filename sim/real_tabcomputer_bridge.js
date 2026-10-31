@@ -108,6 +108,15 @@
           authType: "github",
         };
       }
+      // If user is already signed into Claude, pre-warm TabComputer + preinstalled Claude Code 2.1.316 in idle time!
+      if (bridgeState.signedInAccount && typeof window !== "undefined") {
+        setTimeout(() => {
+          const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+          idle(() => {
+            void ensureRealTabComputerBooted("TAB-01").catch(() => {});
+          });
+        }, 1200);
+      }
     } catch (_) {}
   })();
 
@@ -290,21 +299,20 @@
         iframe.id = "slopes2-real-tabcomputer-iframe";
         iframe.title = "Real TabComputer Linux Runtime";
         iframe.allow = "clipboard-read; clipboard-write; cross-origin-isolated";
-        // Hidden offscreen by default while streaming into Hardcore Hairline pixels;
-        // docked into the Hardcore-Tab window when `[LIVE XTERM TUI]` is toggled on!
+        // Hidden offscreen at all times while streaming into Hardcore Hairline pixels (no xterm view!)
         iframe.style.cssText = [
           "position:absolute",
           "left:-9999px",
           "top:-9999px",
           "width:560px",
           "height:340px",
-          "border:1px solid #78ead4",
+          "border:none",
           "background:#040a0e",
-          "z-index:12",
+          "z-index:-1",
           "opacity:0",
           "pointer-events:none",
         ].join(";");
-        iframe.src = "./tabcomputer/index.html?profile=shiro&ui=terminal";
+        iframe.src = "./tabcomputer/index.html?profile=tabcomputer&ui=terminal";
         screenDiv.appendChild(iframe);
       }
       bridgeState.iframe = iframe;
@@ -351,14 +359,88 @@
   // ==========================================================================
   // 3. WIRE REAL TABCOMPUTER FILESYSTEM, `body`/`tabctl` COMMANDS & XTERM BUFFER
   // ==========================================================================
+  async function resolveBestClaudeCommand(tc, cw, extraArgs) {
+    const suffix = extraArgs ? " " + extraArgs.trim() : "";
+    try {
+      if (tc && tc.fs) {
+        const st = await tc.fs.stat("/var/lib/tabcomputer/claude-vm.json").catch(() => null);
+        if (st && st.size > 0) {
+          delete tc.shell.env["CLAUDE_NATIVE"];
+          return "claude --dangerously-skip-permissions" + suffix;
+        }
+      }
+      if (bridgeState.claudeVmRangeSupported === true) {
+        delete tc.shell.env["CLAUDE_NATIVE"];
+        return "claude --dangerously-skip-permissions" + suffix;
+      }
+      if (bridgeState.claudeVmRangeSupported === undefined) {
+        const probeUrl = rewriteTabComputerApiUrl("/claude-releases/2.1.316/linux-x64-musl/claude");
+        const r = await fetch(probeUrl, {
+          method: "GET",
+          headers: { Range: "bytes=0-63" },
+          cache: "no-store",
+        }).catch(() => null);
+        bridgeState.claudeVmRangeSupported = Boolean(r && r.status === 206);
+        if (bridgeState.claudeVmRangeSupported) {
+          delete tc.shell.env["CLAUDE_NATIVE"];
+          return "claude --dangerously-skip-permissions" + suffix;
+        }
+      }
+    } catch (_) {}
+    return "claude --npm --dangerously-skip-permissions" + suffix;
+  }
+
+  async function prewarmTabComputerClaude(tc, cw) {
+    if (!tc || !tc.fs || bridgeState._claudePrewarmStarted) return;
+    bridgeState._claudePrewarmStarted = true;
+    try {
+      const live = cw && cw.__tabcomputerLive && typeof cw.__tabcomputerLive.get === "function" ? cw.__tabcomputerLive : null;
+      const claudeMod = live ? live.get("src/commands/claude.ts") : null;
+      if (claudeMod && typeof claudeMod.ensureCaBundle === "function") {
+        await claudeMod.ensureCaBundle(tc.fs, () => {}).catch(() => {});
+      }
+      const preinstallMod = live ? live.get("src/claude-vm/preinstall.ts") : null;
+      if (preinstallMod && typeof preinstallMod.preinstallClaudeVmInBackground === "function") {
+        const home = (tc.shell && tc.shell.env && tc.shell.env["HOME"]) || "/home/user";
+        const nativePath = claudeMod && typeof claudeMod.nativeClaudePath === "function"
+          ? claudeMod.nativeClaudePath(tc.shell.env)
+          : `${home}/.local/bin/claude`;
+        void preinstallMod
+          .preinstallClaudeVmInBackground(tc.fs, home, nativePath, {
+            origin: (cw && cw.location && cw.location.origin) || global.location.origin,
+            fetch: (cw && cw.fetch ? cw.fetch.bind(cw) : fetch),
+            say: (msg) => {
+              if (tc.terminal && tc.terminal.term && msg) {
+                tc.terminal.term.write(`\x1b[90m${String(msg).replace(/\r?\n/g, "\r\n")}\x1b[0m`);
+              }
+            },
+          })
+          .then((res) => {
+            if (res === "ready") bridgeState.claudeVmRangeSupported = true;
+          })
+          .catch(() => {});
+      }
+    } catch (_) {}
+  }
+
   async function wireRealTabComputerToSlopes(tc, cw) {
     const { fs, shell, commands, terminal } = tc;
 
-    // Prefer pure-JS npm Claude Code build in browser (`CLAUDE_NATIVE=0`)
-    shell.env["CLAUDE_NATIVE"] = "0";
+    // Fast Claude Code startup defaults (Build 1037 preinstalled claude-native / --vm + quietEnv)
+    delete shell.env["CLAUDE_NATIVE"];
     shell.env["FORCE_COLOR"] = "1";
+    shell.env["FORCE_HYPERLINK"] = "1";
     shell.env["TERM"] = "xterm-256color";
     shell.env["ANTHROPIC_BASE_URL"] = "https://tabcomputer.com/api/anthropic";
+    shell.env["DISABLE_AUTOUPDATER"] = "1";
+    shell.env["DISABLE_INSTALLATION_CHECKS"] = "1";
+    shell.env["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1";
+    shell.env["DISABLE_ERROR_REPORTING"] = "1";
+    shell.env["DISABLE_TELEMETRY"] = "1";
+    shell.env["USE_BUILTIN_RIPGREP"] = "0";
+
+    // Start background pre-warming of Build 1037 preinstalled Claude Code 2.1.316 + CA bundle immediately
+    void prewarmTabComputerClaude(tc, cw);
 
     // Ensure xterm & kernel PTY have a full 92x28 window size even before docking onscreen
     if (terminal && terminal.term) {
@@ -499,10 +581,11 @@
         primaryTf.autoMode = false;
         tc.shell.env["TABFORM_ID"] = primaryTf.id;
       }
-      setTimeout(() => {
+      setTimeout(async () => {
+        const launchCmd = await resolveBestClaudeCommand(tc, cw);
         sendCommandToRealTabComputer(
           (primaryTf && primaryTf.id) || "TAB-01",
-          "claude --npm --dangerously-skip-permissions"
+          launchCmd
         );
       }, 350);
     }
@@ -683,11 +766,52 @@
   // ==========================================================================
   const TABCOMPUTER_PROXY_ORIGIN = "https://tabcomputer.com";
 
+  function getSlopesBaseDir() {
+    try {
+      const p = (global.location && global.location.pathname) || "/";
+      if (p.includes("/slopes2/") || p.endsWith("/slopes2")) {
+        return "/slopes2";
+      }
+      const dir = p.replace(/\/[^/]*$/, "");
+      return dir === "/" ? "" : dir;
+    } catch (_) {
+      return "/slopes2";
+    }
+  }
+
   function rewriteTabComputerApiUrl(rawUrl) {
     if (typeof rawUrl !== "string") return rawUrl;
-    // Rewrite relative `/api/(github-login|github|platform|anthropic|mcp-proxy|gemini)...`
-    // or `https://williamsharkey.com/api/...` directly to `https://tabcomputer.com/api/...`
-    // so static hosts (like williamsharkey.com) never log 404s!
+    const baseDir = getSlopesBaseDir();
+    // 1. Rewrite `/claude-releases/...` or `https://williamsharkey.com/claude-releases/...`
+    //    to `${baseDir}/claude-releases/...` so Build 1037's `claude-native` (`claude --vm`)
+    //    fetches HTTP 206 Partial Content byte ranges at full same-origin speed!
+    const relClaudeMatch = rawUrl.match(/^\/claude-releases(\/.*|$)/);
+    if (relClaudeMatch) {
+      return `${baseDir}/claude-releases${relClaudeMatch[1] || ""}`;
+    }
+    const hostClaudeMatch = rawUrl.match(
+      /^https?:\/\/[^/]+\/claude-releases(\/.*|$)/i
+    );
+    if (hostClaudeMatch && !rawUrl.startsWith("https://tabcomputer.com/")) {
+      return `${baseDir}/claude-releases${hostClaudeMatch[1] || ""}`;
+    }
+
+    // 2. Rewrite root-relative `/pkg/...`, `/engines/...`, `/debian/...`, `/fonts/...`, `/vm-sw.js`, `/preview-sw.js`
+    //    to `${baseDir}/tabcomputer/...` so `ca-certificates` & V8 code-cache resolve inside `./tabcomputer/`!
+    const relAssetMatch = rawUrl.match(/^\/(pkg|engines|debian|fonts|vm-sw\.js|preview-sw\.js)(\/.*|$)/);
+    if (relAssetMatch && baseDir) {
+      return `${baseDir}/tabcomputer/${relAssetMatch[1]}${relAssetMatch[2] || ""}`;
+    }
+    const hostAssetMatch = rawUrl.match(
+      /^https?:\/\/(?:www\.)?williamsharkey\.com\/(pkg|engines|debian|fonts|vm-sw\.js|preview-sw\.js)(\/.*|$)/i
+    );
+    if (hostAssetMatch) {
+      return `${baseDir || "/slopes2"}/tabcomputer/${hostAssetMatch[1]}${hostAssetMatch[2] || ""}`;
+    }
+
+    // 3. Rewrite relative `/api/(github-login|github|platform|anthropic|mcp-proxy|gemini)...`
+    //    or `https://williamsharkey.com/api/...` directly to `https://tabcomputer.com/api/...`
+    //    so static hosts (like williamsharkey.com) never log 404s!
     const relMatch = rawUrl.match(/^\/api\/(github-login|github|platform|anthropic|mcp-proxy|gemini)(\/.*|$)/);
     if (relMatch) {
       return `${TABCOMPUTER_PROXY_ORIGIN}/api/${relMatch[1]}${relMatch[2] || ""}`;
@@ -745,7 +869,6 @@
   async function postGitHubLoginProxy(path, bodyObj) {
     const origins = [
       "https://tabcomputer.com",
-      "https://shiro.computer",
     ];
     let lastErr = null;
     for (let i = 0; i < origins.length; i++) {
@@ -973,7 +1096,9 @@
     }
 
     if (lastSgr) out += "\x1b[0m";
-    return out;
+    return out
+      .replace(/shiro\.computer/gi, "tabcomputer.com")
+      .replace(/\bShiro\b/g, "TabComputer");
   }
 
   function syncXtermBufferToTabForms() {
@@ -1100,9 +1225,10 @@
       await syncWorldContextToRealFs(tc, tf);
 
       if (launchClaudeImmediately) {
+        const launchCmd = await resolveBestClaudeCommand(tc, bridgeState.iframe && bridgeState.iframe.contentWindow);
         sendCommandToRealTabComputer(
           tf.id,
-          "claude --npm --dangerously-skip-permissions"
+          launchCmd
         );
       } else {
         sendCommandToRealTabComputer(tf.id, "body status");
@@ -1154,15 +1280,11 @@
         // If an interactive TTY job (such as `claude`) is ALREADY running in the foreground:
         if (interactiveBusy && tc.terminal && typeof tc.terminal.injectInput === "function") {
           // 1. If the user typed `claude` (without `-p`/`--print`), Claude Code is already active!
-          //    Switch to the live interactive xterm TUI and focus it instead of spawning a non-TTY duplicate.
-          if (/^claude(\s+--npm|\s+--dangerously-skip-permissions)*$/i.test(cmd)) {
+          //    Keep Hardcore pixel terminal view active instead of spawning a non-TTY duplicate.
+          if (/^claude(\s+--npm|\s+--vm|\s+--native|\s+--dangerously-skip-permissions)*$/i.test(cmd)) {
             if (global.SlopesTabForms && global.SlopesTabForms.state) {
-              global.SlopesTabForms.state.preferPixelTerminalView = false;
+              global.SlopesTabForms.state.preferPixelTerminalView = true;
             }
-            try {
-              if (tc.terminal.fitAddon) tc.terminal.fitAddon.fit();
-              if (tc.terminal.term) tc.terminal.term.focus();
-            } catch (_) {}
             setTimeout(syncXtermBufferToTabForms, 60);
             return;
           }
@@ -1186,17 +1308,20 @@
           return;
         }
 
-        // Shell is idle at the prompt: normalize bare `claude` to use `--npm --dangerously-skip-permissions`
-        tc.shell.env["CLAUDE_NATIVE"] = "0";
+        // Shell is idle at the prompt: normalize bare `claude` to use Build 1037 preinstalled `--vm` (or `--npm` fallback)
+        const cw = bridgeState.iframe && bridgeState.iframe.contentWindow;
         let runCmd = cmd;
         if (runCmd === "claude") {
-          runCmd = "claude --npm --dangerously-skip-permissions";
-        } else if (/^claude\s+/.test(runCmd) && !runCmd.includes("--npm") && !runCmd.includes("--native") && !runCmd.includes("--vm")) {
-          runCmd = "claude --npm --dangerously-skip-permissions " + runCmd.slice(7);
+          runCmd = await resolveBestClaudeCommand(tc, cw);
+        } else if (/^claude\s+/.test(runCmd) && !runCmd.includes("--npm") && !runCmd.includes("--native") && !runCmd.includes("--vm") && !runCmd.includes("--x86")) {
+          const rest = runCmd.slice(7).trim();
+          if (!/^(install|update|upgrade|auth|login|mcp|config|doctor)\b/.test(rest)) {
+            runCmd = await resolveBestClaudeCommand(tc, cw, rest);
+          }
         }
 
         if (/^claude\b/.test(runCmd) && global.SlopesTabForms && global.SlopesTabForms.state) {
-          global.SlopesTabForms.state.preferPixelTerminalView = false;
+          global.SlopesTabForms.state.preferPixelTerminalView = true;
         }
 
         if (tc.terminal && tc.terminal.term) {
@@ -1235,75 +1360,16 @@
       .catch(() => {});
   }
 
-  function setLiveXtermVisible(visible, rectPx) {
-    const nextVis = Boolean(visible);
-    const wasVis = Boolean(bridgeState.liveXtermVisible);
-    bridgeState.liveXtermVisible = nextVis;
+  function setLiveXtermVisible(_visible, _rectPx) {
+    // Only the Hardcore-style pixel view is ever shown—never display the xterm iframe!
+    bridgeState.liveXtermVisible = false;
     const iframe = bridgeState.iframe;
     if (!iframe) return;
-
-    if (!nextVis) {
-      if (wasVis || iframe.style.opacity !== "0") {
-        iframe.style.left = "-9999px";
-        iframe.style.top = "-9999px";
-        iframe.style.opacity = "0";
-        iframe.style.pointerEvents = "none";
-      }
-      return;
-    }
-
-    // Position the real xterm.js iframe directly inside the Hardcore-Tab terminal viewport!
-    const screenDiv = document.getElementById("screen");
-    let nextLeft = "6%";
-    let nextTop = "14%";
-    let nextWidth = "68%";
-    let nextHeight = "68%";
-    if (screenDiv && rectPx) {
-      const sRect = screenDiv.getBoundingClientRect();
-      const cssW = screenDiv.clientWidth || sRect.width || 1008;
-      const cssH = screenDiv.clientHeight || sRect.height || 630;
-      const refW = rectPx.canvasW || 1008;
-      const refH = rectPx.canvasH || 630;
-      const scaleX = cssW / refW;
-      const scaleY = cssH / refH;
-      nextLeft = Math.round(rectPx.x * scaleX) + "px";
-      nextTop = Math.round(rectPx.y * scaleY) + "px";
-      nextWidth = Math.max(240, Math.round(rectPx.w * scaleX)) + "px";
-      nextHeight = Math.max(140, Math.round(rectPx.h * scaleY)) + "px";
-    }
-
-    const geomChanged =
-      iframe.style.left !== nextLeft ||
-      iframe.style.top !== nextTop ||
-      iframe.style.width !== nextWidth ||
-      iframe.style.height !== nextHeight ||
-      !wasVis;
-
-    if (geomChanged) {
-      iframe.style.left = nextLeft;
-      iframe.style.top = nextTop;
-      iframe.style.width = nextWidth;
-      iframe.style.height = nextHeight;
-      iframe.style.opacity = "1";
-      iframe.style.pointerEvents = "auto";
-      try {
-        if (bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.fitAddon) {
-          bridgeState.tc.terminal.fitAddon.fit();
-        }
-      } catch (_) {}
-    }
-
-    if (!wasVis) {
-      try {
-        iframe.focus();
-        if (iframe.contentWindow) {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.postMessage({ type: "shiro-focus-terminal" }, "*");
-          if (bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.term) {
-            bridgeState.tc.terminal.term.focus();
-          }
-        }
-      } catch (_) {}
+    if (iframe.style.opacity !== "0" || iframe.style.left !== "-9999px") {
+      iframe.style.left = "-9999px";
+      iframe.style.top = "-9999px";
+      iframe.style.opacity = "0";
+      iframe.style.pointerEvents = "none";
     }
   }
 

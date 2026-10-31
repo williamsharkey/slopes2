@@ -1,0 +1,60 @@
+[
+ {
+  "id": "shiro",
+  "name": "Shiro",
+  "hostname": "shiro",
+  "description": "shiro.computer: the full-page terminal, Claude Code first; keeps its own name (no brand on the app shell).",
+  "hosts": [
+   "shiro.computer",
+   "*.shiro.computer"
+  ],
+  "ui": "terminal",
+  "brand": null,
+  "banner": "hud",
+  "preinstall": [
+   "claude-code",
+   "ca-certificates"
+  ],
+  "shims": {
+   "claude": "npm",
+   "claudeInstallSh": true,
+   "tabSsh": true,
+   "binCommandStat": true,
+   "debianOverlay": true,
+   "python": "cpython"
+  }
+ },
+ {
+  "id": "tabcomputer",
+  "name": "tabcomputer",
+  "hostname": "tabcomputer",
+  "description": "The Unix edition: the desktop UI, the TCP relay on, Debian and native programs to the fore.",
+  "hosts": [
+   "tabcomputer.com",
+   "*.tabcomputer.com"
+  ],
+  "default": true,
+  "ui": "desktop",
+  "brand": {
+   "name": "tabcomputer",
+   "domain": "tabcomputer.com",
+   "tagline": "a Unix-like computer in your browser tab",
+   "description": "A Unix-like computer that runs in a browser tab: a real shell, Debian packages, a desktop, and apps you can share as a link.",
+   "favicon": "/tabcomputer-favicon.svg",
+   "image": "/og.jpg"
+  },
+  "banner": "desktop",
+  "preinstall": [
+   "claude-native",
+   "ca-certificates"
+  ],
+  "shims": {
+   "claude": "native",
+   "claudeInstallSh": true,
+   "tabSsh": true,
+   "binCommandStat": true,
+   "debianOverlay": true,
+   "python": "cpython"
+  }
+ }
+]

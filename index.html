@@ -56,7 +56,7 @@ body.fullscreen-mode .pad.active-touch{
   position:absolute;pointer-events:auto;touch-action:none;cursor:pointer;display:block;
 }
 #osd{
-  position:fixed;top:max(4px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));
+  position:fixed;top:4px;right:8px;
   z-index:4;cursor:pointer;touch-action:none;display:block;
   transition:opacity 0.4s ease;
 }
@@ -86,6 +86,17 @@ body.fullscreen-mode #minimap-canvas{
   opacity:0.22;
 }
 body.fullscreen-mode #minimap-canvas:hover{
+  opacity:0.95;
+}
+#social-tui-canvas{
+  position:fixed;z-index:4;cursor:pointer;touch-action:none;display:block;
+  background:transparent;
+  transition:opacity 0.4s ease;
+}
+body.fullscreen-mode #social-tui-canvas{
+  opacity:0.18;
+}
+body.fullscreen-mode #social-tui-canvas:hover{
   opacity:0.95;
 }
 #dlg{
@@ -131,25 +142,26 @@ body.fullscreen-mode #minimap-canvas:hover{
 <canvas id="minimap-canvas" title="World Radar & Pocket Micro-Scope (Click to cycle mode)"></canvas>
 <canvas id="fullscreen-btn"></canvas>
 <canvas id="osd"></canvas>
+<canvas id="social-tui-canvas" title="Hardcore Hairline Social Mesh, Claude Agents (<user>.cc.<selfname>), Group/DM Chat & Code Drift Hot-Reload"></canvas>
 
 <div id="dlg">
   <canvas id="dlg-canvas"></canvas>
 </div>
 
-<script src="font.js?v=23"></script>
-<script src="audio.js?v=23"></script>
-<script src="sim/wasm_bridge.js?v=23"></script>
-<script src="sim/ecology_design.js?v=23"></script>
-<script src="sim/cosmic_engine.js?v=23"></script>
-<script src="sim/pentagonal_rotation.js?v=23"></script>
-<script src="sim/hardcore_tab.js?v=23"></script>
-<script src="sim/real_tabcomputer_bridge.js?v=23"></script>
-<script src="sim/tabform_lifeforms.js?v=23"></script>
-<script src="sim/genetic_flora_engine.js?v=23"></script>
-<script src="sim/parallax_dither_art.js?v=23"></script>
-<script src="slopes2.js?v=23"></script>
-<script src="sim/ai_interface.js?v=23"></script>
-<script src="sim/lore_portal_dock.js?v=23"></script>
+<script src="font.js?v=24"></script>
+<script src="audio.js?v=24"></script>
+<script src="sim/wasm_bridge.js?v=24"></script>
+<script src="sim/ecology_design.js?v=24"></script>
+<script src="sim/cosmic_engine.js?v=24"></script>
+<script src="sim/pentagonal_rotation.js?v=24"></script>
+<script src="sim/hardcore_tab.js?v=24"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=24"></script>
+<script src="sim/tabform_lifeforms.js?v=24"></script>
+<script src="sim/genetic_flora_engine.js?v=24"></script>
+<script src="sim/parallax_dither_art.js?v=24"></script>
+<script src="slopes2.js?v=24"></script>
+<script src="sim/ai_interface.js?v=24"></script>
+<script src="sim/lore_portal_dock.js?v=24"></script>
 <script>
 (() => {
   "use strict";
@@ -540,6 +552,9 @@ body.fullscreen-mode #minimap-canvas:hover{
         renderHudBar();
       }
       renderMinimapCanvas();
+      if (typeof renderSocialTuiCanvas === "function") {
+        renderSocialTuiCanvas();
+      }
     },
   };
 
@@ -727,8 +742,8 @@ body.fullscreen-mode #minimap-canvas:hover{
   function renderFullscreenBtn() {
     if (!fsBtn) return;
     const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
-    const cssW = 104;
-    const cssH = 22;
+    const cssW = parseInt(fsBtn.style.width, 10) || 96;
+    const cssH = parseInt(fsBtn.style.height, 10) || 26;
     fsBtn.style.width = cssW + "px";
     fsBtn.style.height = cssH + "px";
     const W = cssW * dpr;
@@ -745,10 +760,10 @@ body.fullscreen-mode #minimap-canvas:hover{
     drawSteppedBox(ctx, 0, 0, W, H, p * 2, "#0a161b", isFullscreenMode ? "#58d89c" : "#2b525c", "#142a32", "#050b0e", 1);
 
     // 4-Corner Pixel Frame Icon on left of button
-    const ix = 7 * p;
-    const iy = 5 * p;
-    const iw = 12 * p;
-    const ih = 12 * p;
+    const ix = 6 * p;
+    const iy = Math.max(3 * p, Math.round((H - 12 * p) / 2));
+    const iw = 11 * p;
+    const ih = 11 * p;
     ctx.fillStyle = isFullscreenMode ? "#58d89c" : "#78ead4";
     // Top-left corner
     ctx.fillRect(ix, iy, 4 * p, p);
@@ -763,11 +778,11 @@ body.fullscreen-mode #minimap-canvas:hover{
     ctx.fillRect(ix + iw - 4 * p, iy + ih - p, 4 * p, p);
     ctx.fillRect(ix + iw - p, iy + ih - 4 * p, p, 4 * p);
 
-    const f = dpr >= 2 ? (HF.h13x25 || HF.h12x26) : (HF.t8x16 || HF.h12x26);
+    const f = cssW < 88 ? (HF.t8x16 || HF.h12x26) : (dpr >= 2 ? (HF.h13x25 || HF.h12x26) : (HF.t8x16 || HF.h12x26));
     if (f) {
-      const lbl = isFullscreenMode ? "EXIT FS" : "FULLSCRN";
+      const lbl = isFullscreenMode ? "EXIT FS" : (cssW < 88 ? "FULL" : "FULLSCRN");
       const ty = Math.round((H - f.h) / 2);
-      drawBitmapText(ctx, lbl, 24 * p, ty, isFullscreenMode ? "#69db7c" : "#cde8e2", f, 1, 0);
+      drawBitmapText(ctx, lbl, 21 * p, ty, isFullscreenMode ? "#69db7c" : "#cde8e2", f, 1, 0);
     }
   }
 
@@ -828,8 +843,8 @@ body.fullscreen-mode #minimap-canvas:hover{
 
   function renderOsd() {
     const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
-    const cssW = 144;
-    const cssH = 26;
+    const cssW = parseInt(osdCanvas.style.width, 10) || 136;
+    const cssH = parseInt(osdCanvas.style.height, 10) || 26;
     osdCanvas.style.width = cssW + "px";
     osdCanvas.style.height = cssH + "px";
     const W = cssW * dpr;
@@ -851,7 +866,7 @@ body.fullscreen-mode #minimap-canvas:hover{
     // 1. Pixel Speaker Icon
     const spRows = muted ? MUTE_ICON : SPEAKER_ICON;
     const spP = p * 2;
-    const spX = 8 * p;
+    const spX = 6 * p;
     const spY = Math.round((H - 7 * spP) / 2);
     ctx.fillStyle = muted ? "#e87858" : "#7ad8c4";
     for (let r = 0; r < 7; r++) {
@@ -864,25 +879,30 @@ body.fullscreen-mode #minimap-canvas:hover{
 
     // 2. Minus "-" button
     ctx.fillStyle = "#b8dcd6";
-    ctx.fillRect(34 * p, Math.round(H / 2) - p, 8 * p, 2 * p);
+    const minusX = Math.round(cssW * 0.24) * p;
+    ctx.fillRect(minusX, Math.round(H / 2) - p, 6 * p, 2 * p);
 
-    // 3. 8-Bar Segmented Pixel Meter
-    const bars = 8;
+    // 3. Segmented Pixel Meter (scales cleanly to compact mobile width)
+    const bars = cssW < 116 ? 6 : 8;
     const activeBars = Math.round(vol * bars);
+    const barStart = Math.round(cssW * 0.35);
+    const barSpan = Math.max(24, Math.round(cssW * 0.45));
+    const stepX = Math.floor(barSpan / bars);
+    const barW = Math.max(3, stepX - 2);
     for (let i = 0; i < bars; i++) {
-      const bx = (50 + i * 8) * p;
+      const bx = (barStart + i * stepX) * p;
       const bh = (6 + i * 1.2) * p;
       const by = Math.round((H - bh) / 2);
-      ctx.fillStyle = i < activeBars ? (i >= 6 ? "#e89858" : "#58d4b8") : "#192e36";
-      ctx.fillRect(bx, by, 5 * p, Math.round(bh));
+      ctx.fillStyle = i < activeBars ? (i >= bars - 2 ? "#e89858" : "#58d4b8") : "#192e36";
+      ctx.fillRect(bx, by, barW * p, Math.round(bh));
     }
 
     // 4. Plus "+" button
     ctx.fillStyle = "#b8dcd6";
-    const px = 122 * p;
+    const px = (cssW - 14) * p;
     const py = Math.round(H / 2);
-    ctx.fillRect(px, py - p, 8 * p, 2 * p);
-    ctx.fillRect(px + 3 * p, py - 4 * p, 2 * p, 8 * p);
+    ctx.fillRect(px, py - p, 7 * p, 2 * p);
+    ctx.fillRect(px + 2.5 * p, py - 3.5 * p, 2 * p, 7 * p);
   }
 
   osdCanvas.addEventListener("pointerdown", (e) => {
@@ -906,6 +926,679 @@ body.fullscreen-mode #minimap-canvas:hover{
     }
     renderOsd();
   });
+
+  // --- Hardcore Hairline Social Mesh, Claude Agents (<username>.cc.<selfname>), Group/DM Chat & Code Drift Hot-Reload TUI (#social-tui-canvas) ---
+  const socialCanvas = document.getElementById("social-tui-canvas");
+  const socialState = {
+    username: (function () {
+      try {
+        return (
+          localStorage.getItem("slopes2_social_username") ||
+          localStorage.getItem("slopes2_player_name") ||
+          "william"
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, "")
+          .slice(0, 16) || "william";
+      } catch (_) {
+        return "william";
+      }
+    })(),
+    editingName: false,
+    nameDraft: "",
+    activeTab: "group", // "group" | "dm" | "drift"
+    selectedPeerId: "claude:TAB-01",
+    chatInputFocused: false,
+    chatDraft: "",
+    activeDriftFork: "0:main",
+    hotReloadCount: 0,
+    lastHotReloadMsg: "",
+    hitBoxes: [],
+    humanPeers: [
+      {
+        id: "peer:mira.k",
+        handle: "mira.k",
+        online: true,
+        statusText: "ONLINE · S0,L0",
+        driftFork: "+3:7f9a·bloom-v2",
+        driftDesc: "Prime-period bioluminescent kelp + 1.15x solar dome yield",
+        driftParams: { skyShift: 18, floraBoost: 1.25, gravScale: 0.96, label: "+3:7f9a·bloom-v2" },
+        accent: "#69db7c",
+      },
+      {
+        id: "peer:soren.v",
+        handle: "soren.v",
+        online: true,
+        statusText: "ONLINE · S1,L0",
+        driftFork: "0:main",
+        driftDesc: "Canonical mainline simulation build (in sync)",
+        driftParams: { skyShift: 0, floraBoost: 1.0, gravScale: 1.0, label: "0:main" },
+        accent: "#78ead4",
+      },
+      {
+        id: "peer:kael.9",
+        handle: "kael.9",
+        online: false,
+        signedOffAgo: "14m ago",
+        statusText: "OFF 14m ago",
+        driftFork: "+5:c41e·neon-mist",
+        driftDesc: "High-contrast cyan/amber moiré dither veil + fast rocket-arms",
+        driftParams: { skyShift: 42, floraBoost: 1.1, gravScale: 0.88, label: "+5:c41e·neon-mist" },
+        accent: "#ffd43b",
+      },
+      {
+        id: "peer:anya.t",
+        handle: "anya.t",
+        online: false,
+        signedOffAgo: "1h ago",
+        statusText: "OFF 1h ago",
+        driftFork: "+2:91b0·low-grav",
+        driftDesc: "Low-gravity high-altitude telescoping pole sky-docking preset",
+        driftParams: { skyShift: -14, floraBoost: 1.05, gravScale: 0.72, label: "+2:91b0·low-grav" },
+        accent: "#cc5de8",
+      },
+    ],
+    groupMessages: [
+      { from: "mira.k", text: "deployed +3:7f9a·bloom-v2 fork — click [HOT-RELOAD] to test!", color: "#69db7c", ts: "10:14" },
+      { from: "william.cc.rover", text: "sky-docked on telescoping steel pole; rocket-arm ready for domes & farms.", color: "#78ead4", ts: "10:16", isClaude: true },
+      { from: "william.cc.corvus", text: "scanning sector strata; DM or @mention any .cc.<selfname> agent!", color: "#ffd43b", ts: "10:17", isClaude: true },
+    ],
+    dmThreads: {
+      "claude:TAB-01": [
+        { from: "william.cc.rover", text: "Hey! I'm your embodied Claude (selfname: rover). Ask me to build a dome, deploy a farm, sky-dock on my pole, or pick a new selfname!", color: "#78ead4" },
+      ],
+      "claude:TAB-02": [
+        { from: "william.cc.corvus", text: "Corvus online. My rocket-thruster grapple arm can reach anywhere on screen while stationary.", color: "#ffd43b" },
+      ],
+      "claude:TAB-03": [
+        { from: "william.cc.synth", text: "Synth standing by on TabComputer 2.1.316 VM.", color: "#69db7c" },
+      ],
+      "peer:mira.k": [
+        { from: "mira.k", text: "Try hot-reloading into my +3:7f9a·bloom-v2 branch from the DRIFT panel!", color: "#69db7c" },
+      ],
+    },
+    bc: null,
+  };
+
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      socialState.bc = new BroadcastChannel("slopes2_social_mesh_v1");
+      socialState.bc.onmessage = (ev) => {
+        const d = ev && ev.data;
+        if (!d || typeof d !== "object") return;
+        if (d.type === "group_chat" && d.from && d.text) {
+          socialState.groupMessages.push({
+            from: d.from,
+            text: d.text,
+            color: d.color || "#78ead4",
+            ts: new Date().toTimeString().slice(0, 5),
+            isClaude: Boolean(d.isClaude),
+          });
+          if (socialState.groupMessages.length > 40) socialState.groupMessages.shift();
+          renderSocialTuiCanvas();
+        } else if (d.type === "dm_chat" && d.peerKey && d.from && d.text) {
+          if (!socialState.dmThreads[d.peerKey]) socialState.dmThreads[d.peerKey] = [];
+          socialState.dmThreads[d.peerKey].push({
+            from: d.from,
+            text: d.text,
+            color: d.color || "#78ead4",
+          });
+          renderSocialTuiCanvas();
+        }
+      };
+    }
+  } catch (_) {}
+
+  function getRosterEntries() {
+    const uName = socialState.username || "william";
+    const entries = [];
+    const tfApi = window.SlopesTabForms;
+    const forms = tfApi && Array.isArray(tfApi.tabForms) ? tfApi.tabForms : [];
+    const defaultSelfnames = ["rover", "corvus", "synth"];
+    for (let i = 0; i < Math.max(3, forms.length); i++) {
+      const tf = forms[i] || null;
+      const tfId = (tf && tf.id) || `TAB-0${i + 1}`;
+      const selfname = (tf && tf.selfname) || defaultSelfnames[i % defaultSelfnames.length];
+      const handle = `${uName}.cc.${selfname}`;
+      const poleDocked = tf && (tf.poleDockState === "docked" || tf.poleDockState === "extending_pole");
+      const realLive = tf && tf.realTabActive;
+      entries.push({
+        id: `claude:${tfId}`,
+        tfId,
+        handle,
+        selfname,
+        isClaude: true,
+        online: true,
+        statusText: realLive ? "CC:2.1.316" : poleDocked ? "POLE-DOCK" : "ONLINE·AI",
+        driftFork: "0:main",
+        accent: (tf && tf.accentHex) || (i === 0 ? "#78ead4" : i === 1 ? "#ffd43b" : "#69db7c"),
+      });
+    }
+    for (let i = 0; i < socialState.humanPeers.length; i++) {
+      entries.push(socialState.humanPeers[i]);
+    }
+    return entries;
+  }
+
+  function applyUsernameChange(newName) {
+    const prev = socialState.username;
+    const clean =
+      String(newName || "william")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 16) || "william";
+    socialState.username = clean;
+    try {
+      localStorage.setItem("slopes2_social_username", clean);
+      localStorage.setItem("slopes2_player_name", clean);
+    } catch (_) {}
+    if (window.SlopesTabForms && typeof window.SlopesTabForms.setOwnerUsername === "function") {
+      window.SlopesTabForms.setOwnerUsername(clean);
+    }
+    // Update existing Claude handles in group & DM history so `<username>.cc.<selfname>` stays consistent
+    const prefixOld = `${prev}.cc.`;
+    const prefixNew = `${clean}.cc.`;
+    socialState.groupMessages.forEach((m) => {
+      if (m.from && m.from.startsWith(prefixOld)) {
+        m.from = prefixNew + m.from.slice(prefixOld.length);
+      }
+    });
+    Object.keys(socialState.dmThreads).forEach((k) => {
+      socialState.dmThreads[k].forEach((m) => {
+        if (m.from && m.from.startsWith(prefixOld)) {
+          m.from = prefixNew + m.from.slice(prefixOld.length);
+        }
+      });
+    });
+    renderSocialTuiCanvas();
+  }
+
+  function hotReloadIntoDriftFork(peerObj) {
+    if (!peerObj) return;
+    const forkLabel = peerObj.driftFork || "0:main";
+    socialState.activeDriftFork = forkLabel;
+    socialState.hotReloadCount++;
+    socialState.lastHotReloadMsg = `HOT-RELOADED -> ${forkLabel} (${peerObj.handle})`;
+    if (window.SlopesAudio) {
+      window.SlopesAudio.unlock();
+      window.SlopesAudio.playClick(true);
+    }
+    // Apply live hot-reload modulation into the running world without dropping state!
+    const dp = peerObj.driftParams || { skyShift: 0, floraBoost: 1.0, gravScale: 1.0, label: forkLabel };
+    window.__SLOPES_ACTIVE_DRIFT__ = dp;
+    const piCanvas = document.getElementById("pi-shift");
+    if (piCanvas) {
+      if (dp.skyShift > 25) {
+        piCanvas.style.backgroundColor = "rgb(26, 138, 168)";
+      } else if (dp.skyShift > 0) {
+        piCanvas.style.backgroundColor = "rgb(34, 168, 142)";
+      } else if (dp.skyShift < 0) {
+        piCanvas.style.backgroundColor = "rgb(58, 132, 164)";
+      } else {
+        piCanvas.style.backgroundColor = "rgb(42, 161, 152)";
+      }
+    }
+    socialState.groupMessages.push({
+      from: "DRIFT-HOTSWAP",
+      text: `Hot-reloaded live engine into ${forkLabel} (${peerObj.driftDesc || "synced"})`,
+      color: "#ffd43b",
+      ts: new Date().toTimeString().slice(0, 5),
+    });
+    if (socialState.groupMessages.length > 40) socialState.groupMessages.shift();
+    renderSocialTuiCanvas();
+  }
+
+  function submitSocialChatMessage(rawText) {
+    const text = String(rawText || "").trim();
+    if (!text) return;
+    const uName = socialState.username || "william";
+    const roster = getRosterEntries();
+
+    if (socialState.activeTab === "dm") {
+      const target = roster.find((r) => r.id === socialState.selectedPeerId) || roster[0];
+      const peerKey = target ? target.id : "claude:TAB-01";
+      if (!socialState.dmThreads[peerKey]) socialState.dmThreads[peerKey] = [];
+      socialState.dmThreads[peerKey].push({
+        from: uName,
+        text,
+        color: "#e8fffb",
+      });
+      if (socialState.bc) {
+        try {
+          socialState.bc.postMessage({ type: "dm_chat", peerKey, from: uName, text, color: "#e8fffb" });
+        } catch (_) {}
+      }
+      if (target && target.isClaude && window.SlopesTabForms && typeof window.SlopesTabForms.receiveExternalSocialMessage === "function") {
+        window.SlopesTabForms.receiveExternalSocialMessage({
+          channel: "dm",
+          from: uName,
+          to: target.handle,
+          targetTfId: target.tfId,
+          text,
+        });
+      } else if (target && !target.isClaude) {
+        setTimeout(() => {
+          const reply = target.online
+            ? `@${uName} copy that — running on branch ${target.driftFork}.`
+            : `[auto-away ${target.signedOffAgo || "offline"}] queued DM for @${target.handle}.`;
+          socialState.dmThreads[peerKey].push({
+            from: target.handle,
+            text: reply,
+            color: target.accent || "#69db7c",
+          });
+          renderSocialTuiCanvas();
+        }, 420);
+      }
+    } else {
+      // #GROUP chat
+      socialState.groupMessages.push({
+        from: uName,
+        text,
+        color: "#e8fffb",
+        ts: new Date().toTimeString().slice(0, 5),
+      });
+      if (socialState.groupMessages.length > 40) socialState.groupMessages.shift();
+      if (socialState.bc) {
+        try {
+          socialState.bc.postMessage({ type: "group_chat", from: uName, text, color: "#e8fffb" });
+        } catch (_) {}
+      }
+      if (window.SlopesTabForms && typeof window.SlopesTabForms.receiveExternalSocialMessage === "function") {
+        window.SlopesTabForms.receiveExternalSocialMessage({
+          channel: "group",
+          from: uName,
+          text,
+        });
+      }
+    }
+    socialState.chatDraft = "";
+    renderSocialTuiCanvas();
+  }
+
+  function renderSocialTuiCanvas() {
+    if (!socialCanvas) return;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssW = parseInt(socialCanvas.style.width, 10) || 420;
+    const cssH = parseInt(socialCanvas.style.height, 10) || 96;
+    const W = cssW * dpr;
+    const H = cssH * dpr;
+    if (socialCanvas.width !== W || socialCanvas.height !== H) {
+      socialCanvas.width = W;
+      socialCanvas.height = H;
+    }
+    const ctx = socialCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, W, H);
+    socialState.hitBoxes = [];
+
+    const p = Math.max(1, dpr);
+    const f = dpr >= 2 && cssH >= 96 ? (HF.h12x26 || HF.t8x16) : (HF.t8x16 || HF.h12x26);
+    const fSmall = HF.t8x16 || f;
+    if (!f) return;
+
+    // Default opacity 0.60 Hardcore Hairline TUI background + 1px hairline border
+    ctx.fillStyle = "rgba(6, 15, 20, 0.60)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#2b5864";
+    ctx.lineWidth = p;
+    ctx.strokeRect(0.5 * p, 0.5 * p, W - p, H - p);
+
+    // Top Header Bar (y = 0 .. hdrH)
+    const hdrH = Math.max(fSmall.h + 6 * p, 20 * p);
+    ctx.fillStyle = "rgba(10, 26, 34, 0.68)";
+    ctx.fillRect(p, p, W - 2 * p, hdrH);
+    ctx.fillStyle = "#244a54";
+    ctx.fillRect(p, p + hdrH, W - 2 * p, p);
+
+    let curX = 6 * p;
+    const hdrTextY = p + Math.max(1, Math.floor((hdrH - fSmall.h) / 2));
+
+    // Status LED
+    ctx.fillStyle = "#58d89c";
+    ctx.fillRect(curX, p + Math.floor((hdrH - 3 * p) / 2), 3 * p, 3 * p);
+    curX += 6 * p;
+
+    // 1. [NAME: <username>] interactive button
+    const nameStr = socialState.editingName
+      ? `[NAME: ${socialState.nameDraft}_]`
+      : `[NAME: ${socialState.username}]`;
+    const nameBtnW = measureBitmapText(nameStr, fSmall, 1, 0) + 8 * p;
+    ctx.fillStyle = socialState.editingName ? "rgba(42, 98, 88, 0.85)" : "rgba(18, 44, 54, 0.75)";
+    ctx.fillRect(curX, 2 * p, nameBtnW, hdrH - 2 * p);
+    ctx.strokeStyle = socialState.editingName ? "#78ead4" : "#366874";
+    ctx.strokeRect(curX + 0.5, 2 * p + 0.5, nameBtnW - 1, hdrH - 2 * p - 1);
+    drawBitmapText(ctx, nameStr, curX + 4 * p, hdrTextY, "#78ead4", fSmall, 1, 0);
+    socialState.hitBoxes.push({ id: "edit_name", x: curX, y: 0, w: nameBtnW, h: hdrH + 2 * p });
+    curX += nameBtnW + 4 * p;
+
+    // 2. Tabs: [#GROUP] [@DM] [DRIFT]
+    const roster = getRosterEntries();
+    const selPeer = roster.find((r) => r.id === socialState.selectedPeerId) || roster[0];
+    const tabs = [
+      { id: "group", label: "#GROUP" },
+      { id: "dm", label: selPeer ? `@DM:${selPeer.handle.slice(0, 13)}` : "@DM" },
+      { id: "drift", label: `DRIFT[${socialState.activeDriftFork.slice(0, 7)}]` },
+    ];
+    tabs.forEach((tb) => {
+      const active = socialState.activeTab === tb.id;
+      const tw = measureBitmapText(tb.label, fSmall, 1, 0) + 8 * p;
+      if (curX + tw > W - 4 * p) return;
+      ctx.fillStyle = active ? "rgba(34, 82, 92, 0.85)" : "rgba(12, 28, 36, 0.65)";
+      ctx.fillRect(curX, 2 * p, tw, hdrH - 2 * p);
+      ctx.strokeStyle = active ? "#ffd43b" : "#284c56";
+      ctx.strokeRect(curX + 0.5, 2 * p + 0.5, tw - 1, hdrH - 2 * p - 1);
+      drawBitmapText(ctx, tb.label, curX + 4 * p, hdrTextY, active ? "#ffd43b" : "#9ec8c2", fSmall, 1, 0);
+      socialState.hitBoxes.push({ id: `tab:${tb.id}`, x: curX, y: 0, w: tw, h: hdrH + 2 * p });
+      curX += tw + 4 * p;
+    });
+
+    // Body split: Left Roster (Online/Signed-off + <user>.cc.<selfname> Claudes) | Right Chat/Drift Viewport
+    const bodyY = hdrH + 2 * p;
+    const footerH = Math.max(fSmall.h + 6 * p, 19 * p);
+    const bodyH = Math.max(12 * p, H - bodyY - footerH - p);
+    const leftW = Math.min(Math.round(W * 0.43), 240 * p);
+    const rightX = leftW + 2 * p;
+    const rightW = W - rightX - 2 * p;
+
+    // Divider line
+    ctx.fillStyle = "#22444e";
+    ctx.fillRect(leftW, bodyY, p, bodyH);
+
+    // Left Roster: show signed-in Claudes (<username>.cc.<selfname>) + human peers (online & signed-off + drift badge)
+    const rowH = Math.max(fSmall.h + 2 * p, Math.floor(bodyH / Math.min(6, roster.length)));
+    const maxRosterRows = Math.max(1, Math.floor(bodyH / rowH));
+    for (let i = 0; i < Math.min(roster.length, maxRosterRows); i++) {
+      const r = roster[i];
+      const ry = bodyY + i * rowH;
+      const isSel = socialState.selectedPeerId === r.id;
+      if (isSel) {
+        ctx.fillStyle = "rgba(28, 66, 76, 0.62)";
+        ctx.fillRect(2 * p, ry, leftW - 3 * p, rowH);
+      }
+      // Online/offline dot
+      ctx.fillStyle = r.online ? (r.isClaude ? "#78ead4" : "#58d89c") : "#6c8288";
+      ctx.fillRect(5 * p, ry + Math.floor((rowH - 3 * p) / 2), 3 * p, 3 * p);
+
+      const statusBadge = r.isClaude
+        ? `[CC]`
+        : r.online
+        ? (r.driftFork !== "0:main" ? `[${r.driftFork.slice(0, 7)}]` : "[ON]")
+        : `[${r.signedOffAgo || "OFF"}]`;
+      const maxHandleChars = Math.max(8, Math.floor((leftW - 14 * p) / Math.max(6, fSmall.w)) - statusBadge.length - 1);
+      const dispHandle = r.handle.length > maxHandleChars ? r.handle.slice(0, maxHandleChars) : r.handle;
+      const lineStr = `${dispHandle} ${statusBadge}`;
+      drawBitmapText(
+        ctx,
+        lineStr,
+        10 * p,
+        ry + Math.max(0, Math.floor((rowH - fSmall.h) / 2)),
+        r.online ? r.accent || "#d8f4ee" : "#7a9a9e",
+        fSmall,
+        1,
+        0
+      );
+      socialState.hitBoxes.push({
+        id: `peer:${r.id}`,
+        peer: r,
+        x: 2 * p,
+        y: ry,
+        w: leftW - 3 * p,
+        h: rowH,
+      });
+    }
+
+    // Right Pane: #GROUP Chat, @DM Thread, or DRIFT Hot-Reload Inspector
+    const lineH = fSmall.h + 2 * p;
+    const maxLines = Math.max(1, Math.floor((bodyH - 2 * p) / lineH));
+    if (socialState.activeTab === "drift") {
+      const driftPeers = socialState.humanPeers;
+      for (let i = 0; i < Math.min(driftPeers.length, maxLines); i++) {
+        const dp = driftPeers[i];
+        const ly = bodyY + 2 * p + i * lineH;
+        const isCurrent = socialState.activeDriftFork === dp.driftFork;
+        const btnLbl = isCurrent ? "[ACTIVE]" : "[HOT-RELOAD]";
+        const btnW = measureBitmapText(btnLbl, fSmall, 1, 0) + 6 * p;
+        const btnX = W - btnW - 5 * p;
+        const infoStr = `${dp.handle} (${dp.online ? "ON" : dp.signedOffAgo}) ${dp.driftFork}`;
+        drawBitmapText(ctx, infoStr, rightX + 4 * p, ly, dp.accent || "#cde8e2", fSmall, 1, 0);
+
+        ctx.fillStyle = isCurrent ? "rgba(38, 92, 68, 0.82)" : "rgba(44, 72, 84, 0.82)";
+        ctx.fillRect(btnX, ly - p, btnW, fSmall.h + p);
+        ctx.strokeStyle = isCurrent ? "#69db7c" : "#ffd43b";
+        ctx.strokeRect(btnX + 0.5, ly - p + 0.5, btnW - 1, fSmall.h + p - 1);
+        drawBitmapText(ctx, btnLbl, btnX + 3 * p, ly, isCurrent ? "#69db7c" : "#ffd43b", fSmall, 1, 0);
+        socialState.hitBoxes.push({
+          id: "hot_reload_fork",
+          peer: dp,
+          x: btnX,
+          y: ly - p,
+          w: btnW,
+          h: fSmall.h + 2 * p,
+        });
+      }
+    } else {
+      const msgs =
+        socialState.activeTab === "dm"
+          ? socialState.dmThreads[socialState.selectedPeerId] || []
+          : socialState.groupMessages;
+      const slice = msgs.slice(-maxLines);
+      const maxChars = Math.max(18, Math.floor((rightW - 8 * p) / Math.max(6, fSmall.w)));
+      for (let i = 0; i < slice.length; i++) {
+        const m = slice[i];
+        const ly = bodyY + 2 * p + i * lineH;
+        const rawLine = `${m.from}: ${m.text}`;
+        const clipped = rawLine.length > maxChars ? rawLine.slice(0, maxChars - 1) + "…" : rawLine;
+        drawBitmapText(ctx, clipped, rightX + 4 * p, ly, m.color || "#cde8e2", fSmall, 1, 0);
+      }
+    }
+
+    // Bottom Input Bar (y = H - footerH .. H - p)
+    const footY = H - footerH;
+    ctx.fillStyle = socialState.chatInputFocused ? "rgba(14, 38, 48, 0.82)" : "rgba(8, 22, 28, 0.72)";
+    ctx.fillRect(p, footY, W - 2 * p, footerH - p);
+    ctx.fillStyle = "#28505c";
+    ctx.fillRect(p, footY, W - 2 * p, p);
+
+    const sendLbl = "[SEND]";
+    const sendW = measureBitmapText(sendLbl, fSmall, 1, 0) + 8 * p;
+    const sendX = W - sendW - 3 * p;
+    const promptPrefix =
+      socialState.activeTab === "dm" && selPeer
+        ? `DM @${selPeer.handle}> `
+        : `${socialState.username}@#GROUP> `;
+    const draftStr = socialState.chatDraft
+      ? `${promptPrefix}${socialState.chatDraft}${socialState.chatInputFocused ? "_" : ""}`
+      : `${promptPrefix}${socialState.chatInputFocused ? "_" : "(click to chat / DM .cc.<selfname> Claudes or peers)"}`;
+    const maxInputChars = Math.max(16, Math.floor((sendX - 8 * p) / Math.max(6, fSmall.w)));
+    const dispInput = draftStr.length > maxInputChars ? draftStr.slice(draftStr.length - maxInputChars) : draftStr;
+    const footTextY = footY + Math.max(1, Math.floor((footerH - fSmall.h) / 2));
+    drawBitmapText(
+      ctx,
+      dispInput,
+      6 * p,
+      footTextY,
+      socialState.chatDraft || socialState.chatInputFocused ? "#e8fffb" : "#6e9ea6",
+      fSmall,
+      1,
+      0
+    );
+
+    ctx.fillStyle = "rgba(26, 72, 82, 0.85)";
+    ctx.fillRect(sendX, footY + 2 * p, sendW, footerH - 4 * p);
+    ctx.strokeStyle = "#78ead4";
+    ctx.strokeRect(sendX + 0.5, footY + 2 * p + 0.5, sendW - 1, footerH - 4 * p - 1);
+    drawBitmapText(ctx, sendLbl, sendX + 4 * p, footTextY, "#78ead4", fSmall, 1, 0);
+
+    socialState.hitBoxes.push({ id: "focus_chat_input", x: 0, y: footY, w: sendX - 2 * p, h: footerH });
+    socialState.hitBoxes.push({ id: "send_chat", x: sendX, y: footY, w: sendW + 3 * p, h: footerH });
+  }
+
+  if (socialCanvas) {
+    socialCanvas.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.SlopesAudio) {
+        window.SlopesAudio.unlock();
+        window.SlopesAudio.playClick(true);
+      }
+      const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+      const r = socialCanvas.getBoundingClientRect();
+      const px = (e.clientX - r.left) * dpr;
+      const py = (e.clientY - r.top) * dpr;
+
+      for (let i = socialState.hitBoxes.length - 1; i >= 0; i--) {
+        const hb = socialState.hitBoxes[i];
+        if (px >= hb.x && px <= hb.x + hb.w && py >= hb.y && py <= hb.y + hb.h) {
+          if (hb.id === "edit_name") {
+            if (isTouchMode) {
+              const entered = window.prompt("Enter your handle (Claudes become <name>.cc.<selfname>):", socialState.username);
+              if (entered !== null) applyUsernameChange(entered);
+            } else {
+              socialState.editingName = !socialState.editingName;
+              socialState.chatInputFocused = false;
+              socialState.nameDraft = socialState.username;
+              renderSocialTuiCanvas();
+            }
+            return;
+          }
+          if (hb.id.startsWith("tab:")) {
+            socialState.activeTab = hb.id.slice(4);
+            socialState.editingName = false;
+            renderSocialTuiCanvas();
+            return;
+          }
+          if (hb.id.startsWith("peer:")) {
+            socialState.selectedPeerId = hb.peer.id;
+            socialState.activeTab = "dm";
+            socialState.editingName = false;
+            if (!socialState.dmThreads[hb.peer.id]) {
+              socialState.dmThreads[hb.peer.id] = [
+                {
+                  from: hb.peer.handle,
+                  text: hb.peer.isClaude
+                    ? `Direct channel open with ${hb.peer.handle}. Full chat & DM rights active.`
+                    : `DM thread with @${hb.peer.handle} (${hb.peer.statusText}, branch ${hb.peer.driftFork}).`,
+                  color: hb.peer.accent || "#78ead4",
+                },
+              ];
+            }
+            renderSocialTuiCanvas();
+            return;
+          }
+          if (hb.id === "hot_reload_fork" && hb.peer) {
+            hotReloadIntoDriftFork(hb.peer);
+            return;
+          }
+          if (hb.id === "focus_chat_input") {
+            socialState.editingName = false;
+            if (isTouchMode) {
+              const targetLbl = socialState.activeTab === "dm" ? socialState.selectedPeerId : "#GROUP";
+              const msg = window.prompt(`Send message to ${targetLbl}:`, socialState.chatDraft || "");
+              if (msg !== null && msg.trim()) {
+                submitSocialChatMessage(msg);
+              }
+            } else {
+              socialState.chatInputFocused = true;
+              renderSocialTuiCanvas();
+            }
+            return;
+          }
+          if (hb.id === "send_chat") {
+            if (socialState.chatDraft.trim()) {
+              submitSocialChatMessage(socialState.chatDraft);
+            } else if (isTouchMode) {
+              const msg = window.prompt("Send message:", "");
+              if (msg !== null && msg.trim()) submitSocialChatMessage(msg);
+            }
+            return;
+          }
+        }
+      }
+      socialState.editingName = false;
+      socialState.chatInputFocused = false;
+      renderSocialTuiCanvas();
+    });
+  }
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!socialState.editingName && !socialState.chatInputFocused) return;
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        socialState.editingName = false;
+        socialState.chatInputFocused = false;
+        renderSocialTuiCanvas();
+        return;
+      }
+      if (socialState.editingName) {
+        e.preventDefault();
+        if (e.key === "Enter") {
+          socialState.editingName = false;
+          applyUsernameChange(socialState.nameDraft);
+        } else if (e.key === "Backspace") {
+          socialState.nameDraft = socialState.nameDraft.slice(0, -1);
+          renderSocialTuiCanvas();
+        } else if (e.key && e.key.length === 1 && /[a-zA-Z0-9_-]/.test(e.key) && socialState.nameDraft.length < 16) {
+          socialState.nameDraft += e.key.toLowerCase();
+          renderSocialTuiCanvas();
+        }
+        return;
+      }
+      if (socialState.chatInputFocused) {
+        e.preventDefault();
+        if (e.key === "Enter") {
+          submitSocialChatMessage(socialState.chatDraft);
+        } else if (e.key === "Backspace") {
+          socialState.chatDraft = socialState.chatDraft.slice(0, -1);
+          renderSocialTuiCanvas();
+        } else if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && socialState.chatDraft.length < 140) {
+          socialState.chatDraft += e.key;
+          renderSocialTuiCanvas();
+        }
+      }
+    },
+    true
+  );
+
+  window.SlopesSocialTui = {
+    state: socialState,
+    render: renderSocialTuiCanvas,
+    setUsername: applyUsernameChange,
+    hotReloadIntoDriftFork,
+    receiveClaudeSocialPost(pkt) {
+      if (!pkt || !pkt.text) return;
+      const from = pkt.from || `${socialState.username}.cc.rover`;
+      const color = pkt.accent || "#78ead4";
+      if (pkt.channel === "dm") {
+        const peerKey = `claude:${pkt.tfId || "TAB-01"}`;
+        if (!socialState.dmThreads[peerKey]) socialState.dmThreads[peerKey] = [];
+        socialState.dmThreads[peerKey].push({ from, text: pkt.text, color });
+      } else {
+        socialState.groupMessages.push({
+          from,
+          text: pkt.text,
+          color,
+          ts: new Date().toTimeString().slice(0, 5),
+          isClaude: true,
+        });
+        if (socialState.groupMessages.length > 40) socialState.groupMessages.shift();
+      }
+      renderSocialTuiCanvas();
+    },
+  };
+
+  // Sync initial owner username into SlopesTabForms once loaded
+  setTimeout(() => {
+    if (window.SlopesTabForms && typeof window.SlopesTabForms.setOwnerUsername === "function") {
+      window.SlopesTabForms.setOwnerUsername(socialState.username);
+    }
+    renderSocialTuiCanvas();
+  }, 150);
 
   // --- Teenage Engineering Style Procedural Hardware Pause Deck (#dlg-canvas) ---
   const dlg = document.getElementById("dlg");
@@ -1238,9 +1931,11 @@ body.fullscreen-mode #minimap-canvas:hover{
     const port = W < 920 || H >= W * 0.82;
     const AR = 144 / 90;
     const pad = 6;
-    const topBarH = 34;
+    const topBarH = 32;
 
     let sx, sy, sw, sh, lCx, rCx, cy, span;
+    let socialTop = 0;
+    let socialH = 0;
 
     if (isFullscreenMode) {
       sx = 0;
@@ -1251,32 +1946,41 @@ body.fullscreen-mode #minimap-canvas:hover{
       cy = H - span * 0.72 - 12;
       lCx = span * 0.72 + 16;
       rCx = W - span * 0.72 - 16;
+      socialH = 74;
+      socialTop = H - socialH - 6;
     } else if (port) {
-      const usableH = Math.max(220, H - topBarH);
-      const topH = Math.round(usableH * 0.57);
-      sw = Math.min(W - pad * 2, (topH - pad * 2) * AR);
-      sh = sw / AR;
-      sx = (W - sw) / 2;
-      sy = topBarH + Math.max(4, (topH - sh) / 2);
+      // Single compact top row (`topBarH = 32px`), then #screen immediately below (`sy = topBarH + 2`),
+      // then #social-tui-canvas directly below #screen, and controller pads at bottom!
+      const usableH = Math.max(240, H - topBarH);
+      socialH = Math.max(68, Math.min(92, Math.round(usableH * 0.14)));
+      const maxScreenH = Math.round(usableH * 0.48);
+      sw = Math.min(W - pad * 2, maxScreenH * AR);
+      sh = Math.round(sw / AR);
+      sx = Math.round((W - sw) / 2);
+      sy = topBarH + 2;
 
-      const botTop = sy + sh + pad;
-      const botH = Math.max(120, H - botTop - pad);
-      span = Math.min(W * 0.46, botH * 0.90, 224);
-      cy = botTop + botH * 0.47;
+      socialTop = sy + sh + 4;
+      const botTop = socialTop + socialH + 4;
+      const botH = Math.max(112, H - botTop - pad);
+      span = Math.min(W * 0.46, botH * 0.88, 216);
+      cy = botTop + botH * 0.48;
       lCx = Math.max(span * 0.52 + pad, W * 0.25);
       rCx = Math.min(W - span * 0.52 - pad, W * 0.75);
     } else {
       const sideMin = Math.max(145, Math.min(228, W * 0.22));
       const availW = W - sideMin * 2 - pad * 4;
-      const availH = Math.max(180, H - topBarH - pad * 2);
-      sh = Math.min(availH, availW / AR);
-      sw = sh * AR;
-      sx = (W - sw) / 2;
-      sy = topBarH + (availH - sh) / 2;
+      socialH = Math.max(82, Math.min(112, Math.round(H * 0.17)));
+      const availH = Math.max(170, H - topBarH - socialH - pad * 3);
+      sh = Math.round(Math.min(availH, availW / AR));
+      sw = Math.round(sh * AR);
+      sx = Math.round((W - sw) / 2);
+      sy = topBarH + Math.max(2, Math.round((availH - sh) / 2));
+      socialTop = sy + sh + 4;
 
       const wing = sx - pad;
-      span = Math.min(wing * 0.92, availH * 0.68, 220);
-      cy = topBarH + availH * 0.52;
+      const totalCenterH = H - topBarH - pad * 2;
+      span = Math.min(wing * 0.92, totalCenterH * 0.68, 220);
+      cy = topBarH + totalCenterH * 0.52;
       lCx = wing / 2 + pad / 2;
       rCx = W - wing / 2 - pad / 2;
     }
@@ -1286,23 +1990,18 @@ body.fullscreen-mode #minimap-canvas:hover{
     scr.style.width = Math.round(sw) + "px";
     scr.style.height = Math.round(sh) + "px";
 
-    // Position the minimal Fullscreen button ABOVE the main display on top-right (never obscuring #screen in framed mode!)
-    if (fsBtn) {
-      const fsW = 104;
-      const fsH = 22;
-      if (isFullscreenMode) {
-        fsBtn.style.left = Math.max(8, W - fsW - 160) + "px";
-        fsBtn.style.top = "6px";
-      } else {
-        const fsLeft = Math.min(W - fsW - 158, Math.max(8, Math.round(sx + sw - fsW)));
-        const fsTop = Math.max(4, Math.round(sy - fsH - 4));
-        fsBtn.style.left = fsLeft + "px";
-        fsBtn.style.top = fsTop + "px";
-      }
-      renderFullscreenBtn();
+    // Position #social-tui-canvas directly below #screen!
+    if (socialCanvas) {
+      const socW = isFullscreenMode ? Math.min(520, W - 24) : Math.round(sw);
+      const socLeft = isFullscreenMode ? Math.round((W - socW) / 2) : Math.round(sx);
+      socialCanvas.style.left = socLeft + "px";
+      socialCanvas.style.top = Math.round(socialTop) + "px";
+      socialCanvas.style.width = socW + "px";
+      socialCanvas.style.height = Math.round(socialH) + "px";
+      renderSocialTuiCanvas();
     }
 
-    const btn = isFullscreenMode ? Math.max(32, Math.min(44, span * 0.29)) : Math.max(40, Math.min(66, span * 0.32));
+    const btn = isFullscreenMode ? Math.max(32, Math.min(44, span * 0.29)) : Math.max(38, Math.min(64, span * 0.32));
     const R = Math.max(btn * 0.90, span * 0.34);
 
     // D-pad
@@ -1318,72 +2017,104 @@ body.fullscreen-mode #minimap-canvas:hover{
     place(q('[data-k="sqr"]'), rCx - R, cy, btn, btn);
 
     // SELECT / START / ZOOM pills + Top Shoulder ROT L / TAB-FORM / ROT R / DAT-307 pills
-    const pw = Math.max(62, btn * 1.18);
-    const ph = Math.max(22, btn * 0.44);
-    const py = Math.min(H - ph / 2 - 6, cy + R + btn * 0.56 + ph * 0.58);
+    const pw = Math.max(60, btn * 1.18);
+    const ph = Math.max(20, btn * 0.44);
+    const py = Math.min(H - ph / 2 - 4, cy + R + btn * 0.56 + ph * 0.56);
     place(q('[data-k="sel"]'), lCx - pw * 0.52, py, pw, ph);
     place(q('[data-k="zoomOut"]'), lCx + pw * 0.52, py, pw, ph);
     place(q('[data-k="sta"]'), rCx - pw * 0.52, py, pw, ph);
     place(q('[data-k="zoomIn"]'), rCx + pw * 0.52, py, pw, ph);
 
     const topPy = Math.max(topBarH + ph / 2 + 4, cy - R - btn * 0.56 - ph * 0.56);
-    const shW = Math.max(58, btn * 1.12);
+    const shW = Math.max(56, btn * 1.12);
     place(q('[data-k="rotL"]'), lCx - shW * 0.52, topPy, shW, ph);
     place(q('[data-k="tabform"]'), lCx + shW * 0.52, topPy, shW, ph);
     place(q('[data-k="rotR"]'), rCx - shW * 0.52, topPy, shW, ph);
     place(q('[data-k="dat"]'), rCx + shW * 0.52, topPy, shW, ph);
 
-    // Position the separate small #minimap-canvas outside #screen so it never interferes with #screen
-    // and never alters or overlaps any controller buttons!
-    if (minimapCanvas) {
-      const leftBtnsTopY = Math.round(topPy - ph / 2);
-      if (isFullscreenMode) {
-        const mmW = 136;
-        const mmH = 72;
-        minimapCanvas.style.left = "8px";
-        minimapCanvas.style.top = "34px";
-        minimapCanvas.style.width = mmW + "px";
-        minimapCanvas.style.height = mmH + "px";
-      } else if (!port) {
-        // Landscape mode: place at the top-left of the main canvas (#screen) above the left controller buttons!
-        const wingW = Math.max(96, Math.round(sx - 12));
-        const mmW = Math.max(104, Math.min(176, wingW));
-        const availTopH = Math.max(42, leftBtnsTopY - 12);
-        const mmH = Math.max(44, Math.min(108, availTopH, Math.round(mmW * 0.62)));
-        const mmLeft = Math.max(6, Math.min(Math.round(sx - mmW - 6), Math.round(lCx - mmW / 2)));
-        const mmTop = Math.max(6, Math.min(Math.round(sy), Math.round(leftBtnsTopY - mmH - 6)));
+    // Top row layout:
+    // - On mobile / portrait (`port === true`): compact Volume (#osd on left), Fullscreen (#fullscreen-btn in center),
+    //   and Minimap (#minimap-canvas on right) onto ONE single shared 26px top row (`top = 4px`)!
+    // - On desktop / landscape (`!port`): Volume (#osd) and Fullscreen (#fullscreen-btn) on top row (`top = 4px`),
+    //   and Minimap (#minimap-canvas) at top-left outside #screen above the left controller buttons!
+    if (port && !isFullscreenMode) {
+      const rowTop = 4;
+      const rowH = 26;
+      const gap = 4;
+      const availRowW = Math.max(260, W - 12);
+      const osdW = Math.max(96, Math.min(132, Math.floor(availRowW * 0.35)));
+      const fsW = Math.max(72, Math.min(98, Math.floor(availRowW * 0.25)));
+      const mmW = Math.max(84, availRowW - osdW - fsW - gap * 2);
+
+      const osdLeft = 6;
+      const fsLeft = osdLeft + osdW + gap;
+      const mmLeft = fsLeft + fsW + gap;
+
+      if (osdCanvas) {
+        osdCanvas.style.left = osdLeft + "px";
+        osdCanvas.style.right = "auto";
+        osdCanvas.style.top = rowTop + "px";
+        osdCanvas.style.width = osdW + "px";
+        osdCanvas.style.height = rowH + "px";
+      }
+      if (fsBtn) {
+        fsBtn.style.left = fsLeft + "px";
+        fsBtn.style.top = rowTop + "px";
+        fsBtn.style.width = fsW + "px";
+        fsBtn.style.height = rowH + "px";
+      }
+      if (minimapCanvas) {
         minimapCanvas.style.left = mmLeft + "px";
-        minimapCanvas.style.top = mmTop + "px";
+        minimapCanvas.style.top = rowTop + "px";
         minimapCanvas.style.width = mmW + "px";
-        minimapCanvas.style.height = mmH + "px";
-      } else {
-        // Portrait mode: if there is a wide center gap between padL and padR below #screen, place it there;
-        // otherwise place a compact mini-map in the top-left header bar above #screen!
-        const padLRight = Math.max(lCx + R + btn * 0.55, lCx + pw * 1.05);
-        const padRLeft = Math.min(rCx - R - btn * 0.55, rCx - pw * 1.05);
-        const midGap = padRLeft - padLRight;
-        if (midGap >= 96) {
-          const mmW = Math.min(156, Math.floor(midGap - 8));
-          const mmH = Math.max(54, Math.min(96, Math.round(mmW * 0.62)));
-          const mmLeft = Math.round((padLRight + padRLeft - mmW) / 2);
-          const mmTop = Math.max(Math.round(sy + sh + 6), Math.round(cy - mmH / 2));
+        minimapCanvas.style.height = rowH + "px";
+      }
+    } else {
+      if (osdCanvas) {
+        osdCanvas.style.left = "auto";
+        osdCanvas.style.right = "8px";
+        osdCanvas.style.top = "4px";
+        osdCanvas.style.width = "144px";
+        osdCanvas.style.height = "26px";
+      }
+      if (fsBtn) {
+        const fsW = 104;
+        const fsH = 24;
+        fsBtn.style.width = fsW + "px";
+        fsBtn.style.height = fsH + "px";
+        if (isFullscreenMode) {
+          fsBtn.style.left = Math.max(8, W - fsW - 160) + "px";
+          fsBtn.style.top = "5px";
+        } else {
+          const fsLeft = Math.min(W - fsW - 158, Math.max(8, Math.round(sx + sw - fsW)));
+          fsBtn.style.left = fsLeft + "px";
+          fsBtn.style.top = "5px";
+        }
+      }
+      if (minimapCanvas) {
+        const leftBtnsTopY = Math.round(topPy - ph / 2);
+        if (isFullscreenMode) {
+          minimapCanvas.style.left = "8px";
+          minimapCanvas.style.top = "34px";
+          minimapCanvas.style.width = "136px";
+          minimapCanvas.style.height = "72px";
+        } else {
+          const wingW = Math.max(96, Math.round(sx - 12));
+          const mmW = Math.max(104, Math.min(176, wingW));
+          const availTopH = Math.max(42, leftBtnsTopY - 12);
+          const mmH = Math.max(44, Math.min(108, availTopH, Math.round(mmW * 0.62)));
+          const mmLeft = Math.max(6, Math.min(Math.round(sx - mmW - 6), Math.round(lCx - mmW / 2)));
+          const mmTop = Math.max(6, Math.min(Math.round(sy), Math.round(leftBtnsTopY - mmH - 6)));
           minimapCanvas.style.left = mmLeft + "px";
           minimapCanvas.style.top = mmTop + "px";
           minimapCanvas.style.width = mmW + "px";
           minimapCanvas.style.height = mmH + "px";
-        } else {
-          const fsLeft = fsBtn ? (parseInt(fsBtn.style.left, 10) || (W - 260)) : (W - 260);
-          const mmW = Math.max(88, Math.min(136, fsLeft - 14));
-          const mmH = Math.max(26, Math.min(48, Math.round(sy - 6)));
-          minimapCanvas.style.left = Math.max(6, Math.round(sx)) + "px";
-          minimapCanvas.style.top = Math.max(3, Math.round((sy - mmH) / 2)) + "px";
-          minimapCanvas.style.width = mmW + "px";
-          minimapCanvas.style.height = mmH + "px";
         }
       }
-      renderMinimapCanvas();
     }
 
+    renderFullscreenBtn();
+    renderMinimapCanvas();
     lastLayout = { W, H, port, lCx, rCx, cy, R, btn };
     drawBackdrop(W, H);
     if (!isFullscreenMode) drawShell(lastLayout);

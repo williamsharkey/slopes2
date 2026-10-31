@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convert Old Files</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Convert old files</h1>
+    <p class="sub">Publisher, WordPerfect, Works, Lotus 1-2-3, ClarisWorks and Access files become files that today's programs open.</p>
+    <p class="sub" id="private"><b>Your files stay on this computer.</b> The conversion runs in this browser tab. No file is uploaded.</p>
+  </header>
+
+  <section id="drop" tabindex="0" aria-label="Drop files or a folder here">
+    <p class="big">Drop files or a folder here</p>
+    <p class="types">.pub .wpd .wps .wks .wk1 .cwk .mdb</p>
+    <div class="row">
+      <label class="btn">Choose files<input id="pick" type="file" multiple hidden></label>
+      <label class="btn">Choose a folder<input id="pickdir" type="file" webkitdirectory hidden></label>
+      <label class="out">Convert to
+        <select id="to"><option value="html">HTML</option><option value="csv">CSV</option></select>
+      </label>
+    </div>
+  </section>
+
+  <section id="setup" hidden>
+    <h2>Getting the converters ready</h2>
+    <p id="setup-msg">The converter programs are being downloaded. This happens once.</p>
+    <p class="sub">The download brings programs to this computer. Your files are not sent anywhere.</p>
+    <progress id="setup-bar"></progress>
+    <details><summary>Details</summary><pre id="setup-log"></pre></details>
+  </section>
+
+  <section id="work" hidden>
+    <div class="bar">
+      <div id="summary" role="status" aria-live="polite"></div>
+      <div class="row">
+        <button id="zip" class="btn primary" disabled>Download all (.zip)</button>
+        <button id="reset" class="btn">Start over</button>
+      </div>
+    </div>
+    <p id="folder" class="sub"></p>
+    <ul id="list"></ul>
+    <div id="failed" hidden>
+      <h2>Could not be converted</h2>
+      <ul id="failed-list"></ul>
+    </div>
+  </section>
+</main>
+<div id="viewer" hidden>
+  <div class="vbar"><b id="viewer-title"></b><span class="row"><button id="viewer-save" class="btn">Save a copy</button><button id="viewer-close" class="btn">Close</button></span></div>
+  <div id="viewer-body"></div>
+</div>
+<script src="/__tabcomputer/tab.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

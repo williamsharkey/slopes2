@@ -43,10 +43,8 @@
       ? window.SlopesCosmic.createCosmicSystem()
       : null;
   // 5-Fold Non-Euclidean Scene Rotation Manifold (rotFacet 0..4: 3 rotations = mirror reverse, 5 rotations = identity)
-  const rotation =
-    window.SlopesRotation && window.SlopesRotation.createRotationSystem
-      ? window.SlopesRotation.createRotationSystem()
-      : null;
+  // Unify with the global singleton `window.SlopesRotation` so any external or internal rotation triggers animate on the main screen!
+  const rotation = window.SlopesRotation || null;
   // Embodied Tab-Form Lifeforms (Hardcore-Tab + TabComputer terminal organisms running Claude Code inside their bodies)
   const tabForms =
     window.SlopesTabForms && window.SlopesTabForms.createTabFormSystem
@@ -2544,7 +2542,16 @@
     clean(screen);
     clean(tC);
 
-    // If a 5-Fold Non-Euclidean Scene Rotation is animating, render the live 3D rotating perspective!
+    // 0. Multi-Layer Parallax Dither Gradients (Deep Zenith, Distant Mountain Ranges, Mid-ground Hills & Atmospheric Fog)
+    if (
+      primeRenderer &&
+      window.SlopesParallaxDitherArt &&
+      typeof window.SlopesParallaxDitherArt.renderBackgroundParallaxDither === "function"
+    ) {
+      window.SlopesParallaxDitherArt.renderBackgroundParallaxDither(primeRenderer, getWorldBundle(), frameCount);
+    }
+
+    // If a 5-Fold Non-Euclidean Scene Rotation is animating, render the live 3D rotating perspective + 3D Reynolds Boids flock!
     if (rotation && rotation.isAnimating && primeRenderer) {
       rotation.render(
         primeRenderer,
@@ -2555,15 +2562,6 @@
       );
       ctx.putImageData(screen, 0, 0);
       return;
-    }
-
-    // 0. Multi-Layer Parallax Dither Gradients (Deep Zenith, Distant Mountain Ranges, Mid-ground Hills & Atmospheric Fog)
-    if (
-      primeRenderer &&
-      window.SlopesParallaxDitherArt &&
-      typeof window.SlopesParallaxDitherArt.renderBackgroundParallaxDither === "function"
-    ) {
-      window.SlopesParallaxDitherArt.renderBackgroundParallaxDither(primeRenderer, getWorldBundle(), frameCount);
     }
 
     // 1. Twinkling sky stars / subterranean crystal motes
@@ -2594,22 +2592,15 @@
       }
     }
 
-    // 4. Poetic Sky Narrative in original fontArt (ahoy_art_deco.64c)
+    // 4. Poetic Sky Narrative in original fontArt (ahoy_art_deco.64c) — prepared in `tC` and rendered
+    //    as a sharp temporary overlay with a crisp 1px background outline shadow after sky objects!
     if (skyMessageAlpha > 0.02) {
-      const inkColor = bg(0.18);
+      const inkColor = bg(0.16);
       if (skyMessage[0]) {
         textCenter(tC, skyMessage[0], 1, inkColor);
       }
       if (skyMessage[1]) {
         textCenter(tC, skyMessage[1], 14, inkColor);
-      }
-      for (let x = 0; x < W; x++) {
-        for (let y = 0; y < TEXT_H; y++) {
-          const idx = (x + y * W) * 4;
-          if (tC.data[idx + 3]) {
-            pixc(screen, x, y + 3, inkColor, skyMessageAlpha);
-          }
-        }
       }
     }
 
@@ -3084,6 +3075,57 @@
       );
     }
 
+    // 23C. Poetic Sky Narrative Temporary Fading Overlay with Sharp Background Outline Shadow
+    //      Renders over sky objects (Airships, Castles, Birds, Tab-Forms, Labs) with a crisp, non-glowing
+    //      background outline shadow around the pixels and fades out temporarily so the text is always legible.
+    if (skyMessageAlpha > 0.02) {
+      const inkColor = bg(0.14);
+      const shadowBgColor = bg(1.02);
+      const sharpAlpha = Math.min(1.0, skyMessageAlpha);
+      // Pass 1: Sharp background outline shadow around active glyph pixels (solid sky-cutout silhouette, not a soft glow)
+      for (let y = 0; y < TEXT_H; y++) {
+        for (let x = 0; x < W; x++) {
+          const idx = (x + y * W) * 4;
+          if (tC.data[idx + 3]) continue;
+          let touchesGlyph = false;
+          for (let dy = -1; dy <= 1 && !touchesGlyph; dy++) {
+            const ny = y + dy;
+            if (ny < 0 || ny >= TEXT_H) continue;
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = x + dx;
+              if (nx < 0 || nx >= W) continue;
+              if (tC.data[(nx + ny * W) * 4 + 3]) {
+                touchesGlyph = true;
+                break;
+              }
+            }
+          }
+          if (touchesGlyph) {
+            pixc(screen, x, y + 3, shadowBgColor, sharpAlpha);
+          }
+        }
+      }
+      // Pass 2: Crisp foreground glyph pixels on top + 1-native-pixel sharp drop-offset shadow
+      const dropColor = bg(1.18);
+      for (let y = 0; y < TEXT_H; y++) {
+        for (let x = 0; x < W; x++) {
+          const idx = (x + y * W) * 4;
+          if (tC.data[idx + 3]) {
+            if (primeRenderer && typeof primeRenderer.fillNativeRect === "function") {
+              const nx = x * 7;
+              const ny = (y + 3) * 7;
+              primeRenderer.fillNativeRect(nx - 1, ny - 1, 9, 9, shadowBgColor[0], shadowBgColor[1], shadowBgColor[2], sharpAlpha);
+              primeRenderer.fillNativeRect(nx + 1, ny + 1, 7, 7, dropColor[0], dropColor[1], dropColor[2], sharpAlpha);
+              primeRenderer.fillNativeRect(nx, ny, 7, 7, inkColor[0], inkColor[1], inkColor[2], sharpAlpha);
+            } else {
+              pixc(screen, x, y + 3, inkColor, sharpAlpha);
+            }
+          }
+        }
+      }
+    }
+
     // 24. Subtle Pixel Health Bar + Attachment Indicator Diodes at top-left
     const barW = 12;
     const filled = Math.ceil((health / maxHealth) * barW);
@@ -3106,8 +3148,17 @@
     if (P.wings) pix(screen, 20, 1, 145, 255, 210, 0.95);
     if (P.raptorPet) pix(screen, 22, 1, 255, 235, 115, 0.95);
 
-    // 24B. 5-Fold Pentagonal Rotation Compass Overlay at top-center
+    // 24B. 5-Fold Pentagonal Rotation Compass Overlay at top-center + Post-Settle Flocking Swarm
     if (rotation && primeRenderer) {
+      if (!rotation.isAnimating && rotation.state && rotation.state.postSettleFlockFrames > 0) {
+        rotation.render(
+          primeRenderer,
+          getWorldBundle(),
+          ecology ? ecology.eco : null,
+          cosmic ? cosmic.cosmic : null,
+          tabForms ? tabForms.tabForms : null
+        );
+      }
       rotation.renderCompassOverlay(primeRenderer);
     }
 
@@ -3235,6 +3286,14 @@
         case "slice":
           if (cosmic) {
             cosmic.shiftTopologySlice(wb, arg1);
+            if (rotation) {
+              rotation.rotateRight(
+                wb,
+                ecoRef,
+                cosmic ? cosmic.cosmic : null,
+                tabForms ? tabForms.tabForms : null
+              );
+            }
             if (window.SlopesAudio && window.SlopesAudio.playAngelChord) {
               window.SlopesAudio.playAngelChord(Math.round(cosmic.cosmic.topologySlice * 4));
             }

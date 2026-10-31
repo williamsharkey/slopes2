@@ -1028,18 +1028,88 @@
     focusY: 315,        // Target native Y (0..630)
     lastHoverX: 504,
     lastHoverY: 315,
+    animTick: 0,
+    bgRgb: [42, 161, 152],
+    bgSampleTick: -9999,
     snapCanvas: null,
     snapCtx: null,
+    hiResImgData: null,
+    colWorldX: null,
+    colSurfNativeY: null,
+    colSurfZoomY: null,
+    colFarRidgeY: null,
+    colMistTopY: null,
+    colMistBotY: null,
+    colFoothillY: null,
+    colLightWarm: null,
+    colLightCyan: null,
   };
 
-  function ensureZoomScratchCanvas() {
-    if (zoomState.snapCanvas || typeof document === "undefined") return zoomState.snapCtx;
-    const c = document.createElement("canvas");
-    c.width = NATIVE_W;
-    c.height = NATIVE_H;
-    zoomState.snapCanvas = c;
-    zoomState.snapCtx = c.getContext("2d");
-    if (zoomState.snapCtx) zoomState.snapCtx.imageSmoothingEnabled = false;
+  // Ordered 8x8 Bayer threshold matrix (0..1) for 1:1 device-pixel multi-parallax moiré dither screens
+  const ZOOM_BAYER8 = (function buildZoomBayer8() {
+    let m = [0];
+    let n = 1;
+    while (n < 8) {
+      const nn = n * 2;
+      const next = new Array(nn * nn);
+      for (let y = 0; y < nn; y++) {
+        for (let x = 0; x < nn; x++) {
+          const v = m[(y % n) * n + (x % n)];
+          const q = x < n ? (y < n ? 0 : 3) : y < n ? 2 : 1;
+          next[y * nn + x] = 4 * v + q;
+        }
+      }
+      m = next;
+      n = nn;
+    }
+    const out = new Float32Array(64);
+    for (let i = 0; i < 64; i++) out[i] = (m[i] + 0.5) / 64;
+    return out;
+  })();
+
+  // Monolith circuit trace polylines in 11x42 local coords (plus sub-branches revealed at high zoom)
+  const MONO_GOLD_TRACES = [
+    [[2, 8], [2, 10], [5, 10], [5, 11]],
+    [[8, 26], [8, 29], [4, 29], [4, 33], [6, 33]],
+    [[2, 35], [2, 38], [7, 38]],
+  ];
+  const MONO_CYAN_TRACES = [
+    [[8, 7], [8, 9], [6, 9]],
+    [[2, 26], [2, 31], [3, 31]],
+    [[8, 31], [8, 36], [5, 36]],
+  ];
+
+  function zoomValNoise1D(u, seed) {
+    const i = Math.floor(u);
+    const f = u - i;
+    const s = f * f * (3 - 2 * f);
+    const k = Math.imul(seed | 0, 668265263);
+    const a = (hash32((Math.imul(i, 374761393) + k) | 0) >>> 0) / 4294967296;
+    const b = (hash32((Math.imul(i + 1, 374761393) + k) | 0) >>> 0) / 4294967296;
+    return a + (b - a) * s;
+  }
+
+  function ensureZoomScratchCanvas(mainCtx) {
+    if (!zoomState.snapCanvas && typeof document !== "undefined") {
+      const c = document.createElement("canvas");
+      c.width = NATIVE_W;
+      c.height = NATIVE_H;
+      zoomState.snapCanvas = c;
+      zoomState.snapCtx = c.getContext("2d");
+      if (zoomState.snapCtx) zoomState.snapCtx.imageSmoothingEnabled = false;
+    }
+    if (!zoomState.hiResImgData && mainCtx) {
+      zoomState.hiResImgData = mainCtx.createImageData(NATIVE_W, NATIVE_H);
+      zoomState.colWorldX = new Float32Array(NATIVE_W);
+      zoomState.colSurfNativeY = new Float32Array(NATIVE_W);
+      zoomState.colSurfZoomY = new Float32Array(NATIVE_W);
+      zoomState.colFarRidgeY = new Float32Array(NATIVE_W);
+      zoomState.colMistTopY = new Float32Array(NATIVE_W);
+      zoomState.colMistBotY = new Float32Array(NATIVE_W);
+      zoomState.colFoothillY = new Float32Array(NATIVE_W);
+      zoomState.colLightWarm = new Float32Array(NATIVE_W);
+      zoomState.colLightCyan = new Float32Array(NATIVE_W);
+    }
     return zoomState.snapCtx;
   }
 
@@ -1126,30 +1196,59 @@
       updateChronosDomUI();
     }
 
-    // Continuously track the Player Monolith's position so the Monolith never falls out of frame when zoomed in!
+    // Continuously track the exact 2x1 pixel Gear-Room Mechanism Slot inside the Player Monolith (`TACHIMA-307`)
+    // so the zoom locus is ALWAYS centered on that 2x1 pixel slot inside the Monolith's chest gear room!
     if (world && world.P) {
-      const pNativeX = Math.max(14, Math.min(NATIVE_W - 14, Math.round((world.P.x + 0.5) * SCALE)));
-      const pNativeY = Math.max(14, Math.min(NATIVE_H - 14, Math.round((COARSE_H - (world.P.y + 3)) * SCALE)));
-      if (zoomState.customFocusFrames && zoomState.customFocusFrames > 0) {
-        zoomState.customFocusFrames--;
-        zoomState.focusX = Math.round(zoomState.focusX * 0.9 + pNativeX * 0.1);
-        zoomState.focusY = Math.round(zoomState.focusY * 0.9 + pNativeY * 0.1);
-      } else {
-        zoomState.focusX = pNativeX;
-        zoomState.focusY = pNativeY;
-      }
+      const pcx = Math.round(world.P.x);
+      const pyTop = COARSE_H - Math.round(world.P.y) - 6;
+      const monoX0 = pcx * SCALE - 2;
+      const monoY0 = pyTop * SCALE;
+      // Exact center of the 2-pixel-wide by 1-pixel-high slot (`monoX0 + 4 .. monoX0 + 6`, `monoY0 + 18 .. monoY0 + 19`)
+      const slotCenterX = Math.max(14, Math.min(NATIVE_W - 14, monoX0 + 5.0));
+      const slotCenterY = Math.max(14, Math.min(NATIVE_H - 14, monoY0 + 18.5));
+      zoomState.focusX = slotCenterX;
+      zoomState.focusY = slotCenterY;
+      zoomState.monoX0 = monoX0;
+      zoomState.monoY0 = monoY0;
     }
 
     if (Math.abs(zoomState.continuousZoom) < 0.008) return; // At exact 1x macro origin (0/5), no zoom warp needed!
 
     const mainCanvas = typeof document !== "undefined" ? document.getElementById("pi-shift") : null;
     const mainCtx = mainCanvas ? mainCanvas.getContext("2d") : null;
-    const scratchCtx = ensureZoomScratchCanvas();
+    const scratchCtx = ensureZoomScratchCanvas(mainCtx);
     if (!mainCanvas || !mainCtx || !scratchCtx) return;
 
     const fx = zoomState.focusX;
     const fy = zoomState.focusY;
-    const tick = civState.totalSimulatedEpochs;
+    zoomState.animTick = ((zoomState.animTick || 0) + 1) & 0x7fffffff;
+    const tick = ((world && typeof world.frameCount === "number" ? world.frameCount : 0) + zoomState.animTick) | 0;
+
+    // Sample live CSS harmonic sky color every 30 ticks so zoomed palettes match the active Raga scale
+    if (tick - zoomState.bgSampleTick >= 30 || tick < zoomState.bgSampleTick) {
+      zoomState.bgSampleTick = tick;
+      if (typeof getComputedStyle === "function") {
+        const m = /(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/.exec(
+          getComputedStyle(mainCanvas).backgroundColor || ""
+        );
+        if (m) {
+          zoomState.bgRgb[0] = +m[1];
+          zoomState.bgRgb[1] = +m[2];
+          zoomState.bgRgb[2] = +m[3];
+        }
+      }
+    }
+    const bgR = zoomState.bgRgb[0];
+    const bgG = zoomState.bgRgb[1];
+    const bgB = zoomState.bgRgb[2];
+
+    // 5 Coprime Prime-Period Meshing Color Cycles (P1=211, P2=307, P3=499, P4=757, P5=1103 ticks; LCM > 26.9 trillion!)
+    const TAU = Math.PI * 2;
+    const p211 = Math.sin((tick * TAU) / 211);   // Aether-cyan shimmer cycle
+    const p307 = Math.sin((tick * TAU) / 307);   // Brass-gold specular glint cycle
+    const p499 = Math.sin((tick * TAU) / 499);   // Sage-emerald bioluminescence cycle
+    const p757 = Math.sin((tick * TAU) / 757);   // Warm terracotta-hearth ember cycle
+    const p1103 = Math.sin((tick * TAU) / 1103); // Deep violet-mauve harmonic cycle
 
     // Copy the unzoomed macro frame into scratchCanvas
     scratchCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
@@ -1165,12 +1264,20 @@
 
       mainCtx.save();
       mainCtx.imageSmoothingEnabled = false;
-      // Fill panoramic sky & sea horizon around the zoomed-out frame
-      mainCtx.fillStyle = "#164e56";
+      mainCtx.fillStyle = `rgb(${Math.round(bgR * 0.58)}, ${Math.round(bgG * 0.62)}, ${Math.round(bgB * 0.65)})`;
       mainCtx.fillRect(0, 0, NATIVE_W, NATIVE_H);
       const seaY = dstY + Math.round(dstH * 0.82);
-      mainCtx.fillStyle = "#0c2b33";
+      mainCtx.fillStyle = `rgb(${Math.round(bgR * 0.28)}, ${Math.round(bgG * 0.34)}, ${Math.round(bgB * 0.40)})`;
       mainCtx.fillRect(0, seaY, NATIVE_W, NATIVE_H - seaY);
+
+      // Multi-parallax 1px dither moiré horizon bands in wide mode
+      mainCtx.fillStyle = "rgba(168, 224, 218, 0.14)";
+      for (let py = 0; py < seaY; py += 2) {
+        const shiftA = (py + Math.floor(tick * 0.12)) & 7;
+        for (let px = shiftA; px < NATIVE_W; px += 8) {
+          if (((px * 3 + py * 5) & 7) < 2) mainCtx.fillRect(px, py, 1, 1);
+        }
+      }
 
       // Draw ghosted neighboring West & East sector silhouettes on the left and right!
       mainCtx.globalAlpha = 0.52;
@@ -1178,229 +1285,1443 @@
       mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX + dstW + 6, dstY, dstW, dstH);
       mainCtx.globalAlpha = 1.0;
 
-      // Draw current sector centered at wide scale with a crisp 1px brass-cyan frame
+      // Draw current sector centered at wide scale with NO hairline border around it
       mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX, dstY, dstW, dstH);
-      mainCtx.strokeStyle = "#78ead4";
-      mainCtx.lineWidth = 1;
-      mainCtx.strokeRect(dstX - 0.5, dstY - 0.5, dstW + 1, dstH + 1);
       mainCtx.restore();
       return;
     }
 
     const zMod = ((zoomState.continuousZoom % 5) + 5) % 5;
 
-    // Compute magnification factor:
-    // From zMod = 0 -> 4, magnification grows exponentially 2^(zMod * 0.85) (up to ~10.5x).
-    // From zMod = 4 -> 5, the nested self-similar world at the center of (fx, fy) expands
-    // from a miniature portal box to 100% full screen (840x525), completing the 5-zoom holonomic loop!
-    const mag = zMod <= 4.0 ? Math.pow(2.05, zMod) : Math.pow(2.05, 4.0 + (zMod - 4.0) * 0.8);
+    // Magnification factor across the 5 zoom steps (zMod = 0 -> 5):
+    // At zMod = 0: mag = 1.0x.
+    // At zMod = 5: the 2-pixel-wide Gear Room slot (width = 2 native pixels) magnifies by 504x (2 * 504 = 1008 = NATIVE_W)
+    // so the 2x1 slot inside the Monolith's gear room expands to fill the entire 1008x630 screen!
+    const FULL_SLOT_MAG = NATIVE_W / 2; // 504.0x
+    const mag = Math.pow(FULL_SLOT_MAG, zMod / 5.0);
     const srcW = NATIVE_W / mag;
     const srcH = NATIVE_H / mag;
-    // Center the zoom viewport directly on (fx, fy) so the Monolith stays centered in frame!
-    const sx = Math.max(0, Math.min(NATIVE_W - srcW, fx - srcW * 0.5));
-    const sy = Math.max(0, Math.min(NATIVE_H - srcH, fy - srcH * 0.5));
+    // Anchor the zoom camera so the 2x1 Gear-Room slot (fx, fy) remains at the exact fixed point!
+    const uAnchor = fx / NATIVE_W;
+    const vAnchor = fy / NATIVE_H;
+    const sx = fx - uAnchor * srcW;
+    const sy = fy - vAnchor * srcH;
 
     // Helper to project unzoomed native coordinates (nx, ny) into zoomed screen coordinates
-    const toZoomX = (nx) => Math.round((nx - sx) * mag);
-    const toZoomY = (ny) => Math.round((ny - sy) * mag);
+    const toZoomX = (nx) => (nx - sx) * mag;
+    const toZoomY = (ny) => (ny - sy) * mag;
+
+    const eco = (global.SlopesGame && global.SlopesGame.ecologySystem && global.SlopesGame.ecologySystem.eco) || null;
+    const cosmic = (global.SlopesGame && global.SlopesGame.cosmicSystem && global.SlopesGame.cosmicSystem.cosmic) || null;
+    const blocks = (world && world.Blocks) || null;
+    const snapRaw = (primeRenderer && primeRenderer.data) || null;
 
     mainCtx.save();
     mainCtx.imageSmoothingEnabled = false;
-    mainCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
-    mainCtx.drawImage(zoomState.snapCanvas, sx, sy, srcW, srcH, 0, 0, NATIVE_W, NATIVE_H);
+
+    // When zMod is very close to 0 (< 0.08) or very close to 5.0 (> 4.92), blend smoothly with the 1x frame
+    if (!blocks || !zoomState.hiResImgData || zMod < 0.05) {
+      mainCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
+      mainCtx.drawImage(zoomState.snapCanvas, sx, sy, srcW, srcH, 0, 0, NATIVE_W, NATIVE_H);
+      mainCtx.restore();
+      return;
+    }
 
     // =========================================================================
-    // WORLD-ANCHORED COHERENT SUB-PIXEL DETAIL IN ZOOMED MODES (Depth 1..4)
+    // 1. CONTINUOUS CATMULL-ROM TERRAIN SPLINE, PARALLAX HORIZON CURVES &
+    //    ADJACENT-OBJECT LIGHT FIELD PRECOMPUTATION (1008 DEVICE PIXEL COLUMNS)
     // =========================================================================
-    const dInt = Math.floor(zMod);
-    if (zMod >= 0.25 && zMod < 4.65 && world && world.Blocks) {
-      const colStart = Math.max(0, Math.floor(sx / SCALE) - 1);
-      const colEnd = Math.min(COARSE_W - 1, Math.ceil((sx + srcW) / SCALE) + 1);
-      const cellPx = Math.max(2, Math.round(SCALE * mag));
+    const colWorldX = zoomState.colWorldX;
+    const colSurfNativeY = zoomState.colSurfNativeY;
+    const colSurfZoomY = zoomState.colSurfZoomY;
+    const colFarRidgeY = zoomState.colFarRidgeY;
+    const colMistTopY = zoomState.colMistTopY;
+    const colMistBotY = zoomState.colMistBotY;
+    const colFoothillY = zoomState.colFoothillY;
+    const colLightWarm = zoomState.colLightWarm;
+    const colLightCyan = zoomState.colLightCyan;
 
-      // 1. Sub-pixel geological strata, surface grass/moss filaments, and mineral veins anchored to terrain
-      for (let col = colStart; col <= colEnd; col++) {
-        const h = world.Blocks[col] || 0;
-        if (h <= 0) continue;
-        const nextH = world.Blocks[Math.min(COARSE_W - 1, col + 1)] || h;
-        const prevH = world.Blocks[Math.max(0, col - 1)] || h;
-        const colLeft = toZoomX(col * SCALE);
-        const colRight = toZoomX((col + 1) * SCALE);
-        const colW = Math.max(1, colRight - colLeft);
-        const surfY = toZoomY((COARSE_H - h) * SCALE);
+    const seaLevel = (world && world.seaLevel) || 12;
+    const seaNativeY = (COARSE_H - seaLevel) * SCALE;
+    const seaZoomY = toZoomY(seaNativeY);
+    const worldScroll = ((world && world.worldX) || 0) * NATIVE_W;
 
-        // Smooth sub-pixel slope interpolation & grass/moss micro-blades along the ridge crest
-        const subSteps = Math.min(24, Math.max(4, Math.round(mag * 3)));
-        for (let s = 0; s < subSteps; s++) {
-          const frac = s / subSteps;
-          const interpH = h + (frac < 0.5 ? (prevH - h) * (0.5 - frac) * 0.45 : (nextH - h) * (frac - 0.5) * 0.45);
-          const gx = colLeft + Math.round(frac * colW);
-          const gy = toZoomY((COARSE_H - interpH) * SCALE);
-          if (gx < 0 || gx >= NATIVE_W || gy < -16 || gy >= NATIVE_H + 16) continue;
+    // Smooth Catmull-Rom spline evaluator across coarse terrain columns `blocks[c]`
+    const sampleSmoothElev = (coarseF) => {
+      const c1 = Math.floor(coarseF);
+      const t = coarseF - c1;
+      const idx0 = Math.max(0, Math.min(COARSE_W - 1, c1 - 1));
+      const idx1 = Math.max(0, Math.min(COARSE_W - 1, c1));
+      const idx2 = Math.max(0, Math.min(COARSE_W - 1, c1 + 1));
+      const idx3 = Math.max(0, Math.min(COARSE_W - 1, c1 + 2));
+      const h0 = blocks[idx0] || 0;
+      const h1 = blocks[idx1] || 0;
+      const h2 = blocks[idx2] || 0;
+      const h3 = blocks[idx3] || 0;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const catmull =
+        0.5 *
+        (2 * h1 +
+          (-h0 + h2) * t +
+          (2 * h0 - 5 * h1 + 4 * h2 - h3) * t2 +
+          (-h0 + 3 * h1 - 3 * h2 + h3) * t3);
+      // Add fine 1px micro-topographic rock relief so zoomed ridges have natural crags instead of flat lines
+      const micro = (zoomValNoise1D(coarseF * 6.5, 19) - 0.5) * 0.28 + (zoomValNoise1D(coarseF * 23.0, 73) - 0.5) * 0.09;
+      return Math.max(0, catmull + micro);
+    };
 
-          const bladeHash = hash32(col * 131 + s * 37);
-          const windSway = Math.round(Math.sin(tick * 0.06 + col * 0.4 + s * 0.3) * Math.min(3, mag * 0.4));
-          const bladeH = Math.max(2, Math.round(((bladeHash & 3) + 1) * Math.min(3.5, mag * 0.55)));
-          mainCtx.fillStyle = (bladeHash & 1) ? "rgba(120, 234, 198, 0.55)" : "rgba(76, 188, 164, 0.48)";
-          mainCtx.fillRect(gx + windSway, gy - bladeH, 1, bladeH + 1);
+    for (let px = 0; px < NATIVE_W; px++) {
+      const wx = sx + px / mag;
+      colWorldX[px] = wx;
+      const coarseF = wx / SCALE - 0.5;
+      const elev = sampleSmoothElev(coarseF);
+      const surfNY = (COARSE_H - elev) * SCALE;
+      colSurfNativeY[px] = surfNY;
+      colSurfZoomY[px] = toZoomY(surfNY);
+
+      // Multi-depth parallax horizon curves in zoomed device space:
+      // Depth 0.08x: Far mountain ridge
+      const uFar = (wx + worldScroll) * 0.08;
+      const farNY =
+        NATIVE_H * 0.26 +
+        zoomValNoise1D(uFar * 0.011, 11) * NATIVE_H * 0.19 +
+        zoomValNoise1D(uFar * 0.031, 29) * NATIVE_H * 0.07 +
+        Math.abs(zoomValNoise1D(uFar * 0.075, 53) - 0.5) * NATIVE_H * 0.05;
+      colFarRidgeY[px] = toZoomY(farNY);
+
+      // Depth 0.22x: Mid-distant cloud / mist veil
+      const uMist = (wx + worldScroll) * 0.22 + tick * 0.09;
+      const mistCenterNY = NATIVE_H * 0.34 + zoomValNoise1D(uMist * 0.014, 101) * NATIVE_H * 0.14;
+      const mistHalfNY = 22 + zoomValNoise1D(uMist * 0.029, 137) * 28;
+      colMistTopY[px] = toZoomY(mistCenterNY - mistHalfNY);
+      colMistBotY[px] = toZoomY(mistCenterNY + mistHalfNY);
+
+      // Depth 0.48x: Foothills & ancient ruin silhouettes
+      const uFoot = (wx + worldScroll) * 0.48;
+      const footNY =
+        NATIVE_H * 0.46 +
+        zoomValNoise1D(uFoot * 0.017, 173) * NATIVE_H * 0.16 +
+        zoomValNoise1D(uFoot * 0.051, 211) * NATIVE_H * 0.06;
+      colFoothillY[px] = toZoomY(footNY);
+
+      colLightWarm[px] = 0;
+      colLightCyan[px] = 0;
+    }
+
+    // Accumulate adjacent-object illumination (Town hearths/braziers, Dwarf forges, Crystals, TimeCrystals, Vats, Lava)
+    const addLightSource = (arr, nativeX, radiusNative, strength) => {
+      const zCx = toZoomX(nativeX);
+      const zRad = radiusNative * mag;
+      if (zCx + zRad < 0 || zCx - zRad >= NATIVE_W || zRad < 1) return;
+      const x0 = Math.max(0, Math.floor(zCx - zRad));
+      const x1 = Math.min(NATIVE_W - 1, Math.ceil(zCx + zRad));
+      const invR = 1 / zRad;
+      for (let x = x0; x <= x1; x++) {
+        const u = 1 - Math.abs(x - zCx) * invR;
+        if (u > 0) arr[x] = Math.min(1.5, arr[x] + u * u * strength);
+      }
+    };
+
+    const warmPulse = 0.82 + 0.12 * p307 + 0.06 * p757;
+    const cyanPulse = 0.82 + 0.12 * p211 + 0.06 * p499;
+    if (Array.isArray(world.Towns)) {
+      for (let i = 0; i < world.Towns.length; i++) {
+        addLightSource(colLightWarm, (world.Towns[i].x + 0.5) * SCALE, 26, 0.75 * warmPulse);
+      }
+    }
+    if (Array.isArray(world.Dwarves)) {
+      for (let i = 0; i < world.Dwarves.length; i++) {
+        if (world.Dwarves[i].hasForge) {
+          addLightSource(colLightWarm, (world.Dwarves[i].forgeX + 0.5) * SCALE, 28, 0.85 * warmPulse);
         }
+      }
+    }
+    if (Array.isArray(world.Crystals)) {
+      for (let i = 0; i < world.Crystals.length; i++) {
+        addLightSource(colLightCyan, (world.Crystals[i].x + 0.5) * SCALE, 22, 0.72 * cyanPulse);
+      }
+    }
+    if (cosmic && Array.isArray(cosmic.TimeCrystals)) {
+      for (let i = 0; i < cosmic.TimeCrystals.length; i++) {
+        addLightSource(colLightCyan, (cosmic.TimeCrystals[i].x + 0.5) * SCALE, 24, 0.80 * cyanPulse);
+      }
+    }
+    if (eco && Array.isArray(eco.ComputeVats)) {
+      for (let i = 0; i < eco.ComputeVats.length; i++) {
+        addLightSource(colLightCyan, (eco.ComputeVats[i].x + 0.5) * SCALE, 25, 0.65 * cyanPulse);
+      }
+    }
 
-        // Subterranean sedimentary strata hairlines & crystalline micro-geodes inside zoomed rock columns
-        const maxDepthRows = Math.min(28, h);
-        for (let dy = 1; dy < maxDepthRows; dy++) {
-          const rowY = toZoomY((COARSE_H - h + dy) * SCALE);
-          if (rowY < 0 || rowY >= NATIVE_H) continue;
-          const strataHash = hash32(col * 73 + dy * 19 + dInt * 41);
+    // =========================================================================
+    // 2. 1:1 DEVICE-PIXEL (`1008x630`) MULTI-PARALLAX MOIRÉ DITHER & SPLINE
+    //    STRATA FRAMEBUFFER SYNTHESIS (ZERO BLOCKY UPSCALED PIXELS!)
+    // =========================================================================
+    const hiData = zoomState.hiResImgData.data;
+    // Parallax shifts in device pixels for multi-screen moiré interference:
+    const parShift04X = Math.round((sx + worldScroll) * 0.18 + tick * 0.08);
+    const parShift04Y = Math.round(sy * 0.14);
+    const parShift11X = Math.round((sx + worldScroll) * 0.47 - tick * 0.05);
+    const parShift11Y = Math.round(sy * 0.39);
+    const parShift22X = Math.round((sx + worldScroll) * 0.95 + tick * 0.22);
+    const parShift48X = Math.round((sx + worldScroll) * 1.85);
+    const parShift100X = Math.round(sx * 3.1);
+    const parShift119X = Math.round(sx * 3.7 + sy * 1.3);
 
-          // 1px horizontal sedimentary bedding planes
-          if ((dy + (col & 1)) % 2 === 0) {
-            mainCtx.fillStyle = dy < 4 ? "rgba(110, 210, 195, 0.24)" : "rgba(18, 48, 56, 0.38)";
-            mainCtx.fillRect(colLeft, rowY, colW, 1);
+    // Prime-period harmonic tint offsets
+    const skyTintR = p307 * 7 + p757 * 5;
+    const skyTintG = p211 * 6 + p499 * 6;
+    const skyTintB = p211 * 9 + p1103 * 6;
+
+    for (let y = 0; y < NATIVE_H; y++) {
+      const wy = sy + y / mag;
+      const skyV = Math.max(0, Math.min(1, wy / NATIVE_H));
+      const rowOff = y * NATIVE_W * 4;
+      const bRowA = ((y + parShift04Y) & 7) << 3;
+      const bRowB = ((y + parShift11Y) & 7) << 3;
+
+      for (let x = 0; x < NATIVE_W; x++) {
+        const idx = rowOff + (x << 2);
+        const wx = colWorldX[x];
+        const surfZY = colSurfZoomY[x];
+        const warmL = colLightWarm[x];
+        const cyanL = colLightCyan[x];
+
+        // Two-layer 1:1 device-pixel Bayer & rotated halftone thresholds at mismatched parallax depths -> Moiré!
+        const bayerA = ZOOM_BAYER8[bRowA | ((x + parShift04X) & 7)];
+        const bayerB = ZOOM_BAYER8[bRowB | (((x + parShift11X) + ((y + parShift04Y) >> 1)) & 7)];
+        const moireBeat = 0.5 * (bayerA + bayerB);
+
+        if (y < surfZY) {
+          // -------------------------------------------------------------------
+          // A. ABOVE TERRAIN SPLINE: MULTI-PARALLAX SKY, RIDGES, MIST & SEA
+          // -------------------------------------------------------------------
+          // 1. Atmospheric sky gradient with multi-parallax moiré dither screen
+          const grad = 0.76 + 0.38 * (1 - skyV) + (moireBeat - 0.5) * 0.14;
+          let r = bgR * grad + skyTintR;
+          let g = bgG * grad + skyTintG;
+          let b = bgB * grad + skyTintB;
+
+          // High-altitude cirrus / astral moiré filaments in upper sky
+          if (wy < NATIVE_H * 0.42) {
+            const cirrusPhase = Math.sin((x + parShift04X) * 0.045 + (y - parShift04Y) * 0.09) *
+                                Math.cos((x - parShift11X) * 0.038 - y * 0.07);
+            if (cirrusPhase > bayerA * 0.85 + 0.1) {
+              r += (212 - r) * 0.24;
+              g += (234 - g) * 0.26;
+              b += (238 - b) * 0.28;
+            }
           }
 
-          // Depth >= 1: Root capillaries & mycelial threads in upper soil
-          if (dy <= 6 && (strataHash & 3) === 0) {
-            const rx = colLeft + (strataHash % Math.max(1, colW));
-            mainCtx.fillStyle = "rgba(155, 225, 175, 0.36)";
-            mainCtx.fillRect(rx, rowY, 1, Math.min(8, Math.round(mag * 1.8)));
+          // 2. Parallax 0.08x Far Horizon Mountains (1px stepped Bayer + diagonal hatch screen)
+          const farZY = colFarRidgeY[x];
+          if (y >= farZY) {
+            const dFar = (y - farZY) / Math.max(8, NATIVE_H * 0.25 * mag);
+            const farScreen = ZOOM_BAYER8[((y & 7) << 3) | ((x + parShift04X) & 7)];
+            const snowCap = dFar < 0.06 && farScreen < 0.62 - dFar * 6;
+            const mR = snowCap ? 210 : 42 + bgR * 0.32;
+            const mG = snowCap ? 222 : 56 + bgG * 0.34;
+            const mB = snowCap ? 226 : 68 + bgB * 0.38;
+            const blend = farScreen < 0.78 ? 0.68 : 0.38;
+            r += (mR - r) * blend;
+            g += (mG - g) * blend;
+            b += (mB - b) * blend;
           }
 
-          // Depth >= 2: Embedded quartz/aetherium micro-crystals & fossilized clockwork teeth in deep strata
-          if (zMod >= 1.4 && dy >= 4 && (strataHash & 15) === 0) {
-            const cx = colLeft + ((strataHash >> 4) % Math.max(1, colW - 3));
-            const cy = rowY + ((strataHash >> 8) % Math.max(1, Math.round(cellPx * 0.6)));
-            mainCtx.fillStyle = (strataHash & 16) ? "rgba(120, 242, 255, 0.68)" : "rgba(245, 210, 115, 0.62)";
-            mainCtx.fillRect(cx, cy, 2, 2);
-            mainCtx.fillRect(cx + 1, cy - 1, 1, 4);
+          // 3. Parallax 0.22x Drifting Cloud / Mist Veil (transparent dither screen bleeding over far mountains!)
+          const mTop = colMistTopY[x];
+          const mBot = colMistBotY[x];
+          if (y >= mTop && y <= mBot) {
+            const mMid = 0.5 * (mTop + mBot);
+            const mHalf = Math.max(2, 0.5 * (mBot - mTop));
+            const env = 1 - Math.abs(y - mMid) / mHalf;
+            const mistDither = ZOOM_BAYER8[(((y + (tick >> 2)) & 7) << 3) | ((x + parShift22X) & 7)];
+            if (env * 0.82 > mistDither) {
+              const aMist = env * 0.42;
+              r += (216 - r) * aMist;
+              g += (228 - g) * aMist;
+              b += (228 - b) * aMist;
+            }
+          }
+
+          // 4. Parallax 0.48x Foothills & Ancient Ruin Silhouettes (multi-fill moiré dither screen)
+          const footZY = colFoothillY[x];
+          if (y >= footZY) {
+            const footScreenA = ZOOM_BAYER8[((y & 7) << 3) | ((x + parShift48X) & 7)];
+            const footScreenB = ((x + parShift48X + y * 2) & 3) * 0.25;
+            if (0.5 * (footScreenA + footScreenB) < 0.66) {
+              const fR = 28 + bgR * 0.22;
+              const fG = 40 + bgG * 0.25;
+              const fB = 48 + bgB * 0.28;
+              r += (fR - r) * 0.58;
+              g += (fG - g) * 0.58;
+              b += (fB - b) * 0.58;
+            }
+          }
+
+          // 5. Coastal Sea / Basin Water with 3-Layer Parallax Moiré Caustics & Prime-Cycled Glints
+          if (y >= seaZoomY && colSurfNativeY[x] > seaNativeY - 1.5) {
+            const waterDepthPx = y - seaZoomY;
+            const waterDepthN = waterDepthPx / mag;
+            const waveFoam = waterDepthPx < Math.max(2, mag * 0.28);
+            const wScreen1 = ZOOM_BAYER8[(((y + (tick >> 1)) & 7) << 3) | ((x + parShift22X) & 7)];
+            const wScreen2 = ZOOM_BAYER8[(((y - (tick >> 2)) & 7) << 3) | ((x - parShift48X + (y >> 1)) & 7)];
+            const causticMoire = Math.abs(wScreen1 - wScreen2) < 0.16;
+            if (waveFoam && ((x + y + (tick >> 1)) & 1) === 0) {
+              r = 218;
+              g = 244;
+              b = 246;
+            } else {
+              const deepT = Math.min(1, waterDepthN / 28);
+              const wR = 16 + (1 - deepT) * 28;
+              const wG = 62 + (1 - deepT) * 76;
+              const wB = 78 + (1 - deepT) * 84;
+              r = r * 0.22 + wR * 0.78;
+              g = g * 0.22 + wG * 0.78;
+              b = b * 0.22 + wB * 0.78;
+              if (causticMoire) {
+                const cBoost = (1 - deepT * 0.6) * (0.35 + 0.15 * p211);
+                r += (156 - r) * cBoost;
+                g += (238 - g) * cBoost;
+                b += (245 - b) * cBoost;
+              }
+              // Specular prime-cycle water glints when P1=211 and P2=307 constructively interfere
+              if (waterDepthPx < mag * 2.2 && p211 + p307 > 0.45 && ((x * 5 + y * 3 + tick) & 31) === 0) {
+                r = 248;
+                g = 236;
+                b = 188;
+              }
+            }
+          }
+
+          // 6. Preserve non-sky foreground objects from `snapRaw` (e.g., flying Tab-Forms, Airships, HUD text)
+          //    filtered through a 1px device-pixel anti-block dither screen so they never look like flat giant squares!
+          if (snapRaw) {
+            const sxi = Math.max(0, Math.min(NATIVE_W - 1, wx | 0));
+            const syi = Math.max(0, Math.min(NATIVE_H - 1, wy | 0));
+            // Skip the Monolith bounding box (`X0-3..X0+14, Y0-2..Y0+45`) because Section 4 redraws the Monolith in full 1px zoom!
+            const inMonoBox =
+              world.P &&
+              wx >= zoomState.monoX0 - 3 &&
+              wx <= zoomState.monoX0 + 14 &&
+              wy >= zoomState.monoY0 - 2 &&
+              wy <= zoomState.monoY0 + 45;
+            if (!inMonoBox) {
+              const sIdx = (syi * NATIVE_W + sxi) << 2;
+              const sr = snapRaw[sIdx];
+              const sg = snapRaw[sIdx + 1];
+              const sb = snapRaw[sIdx + 2];
+              const sa = snapRaw[sIdx + 3];
+              const diffSky = Math.abs(sr - bgR) + Math.abs(sg - bgG) + Math.abs(sb - bgB);
+              if (sa > 120 && diffSky > 68 && wy < colSurfNativeY[x] - 4) {
+                // Blend via 1px device-pixel dither screen so zoomed sprites gain crisp woven dither texture
+                const fgBlend = moireBeat < 0.72 ? 0.76 : 0.42;
+                r += (sr - r) * fgBlend;
+                g += (sg - g) * fgBlend;
+                b += (sb - b) * fgBlend;
+              }
+            }
+          }
+
+          // Apply subtle warm/cyan ambient light scatter in lower atmosphere
+          if (warmL > 0 || cyanL > 0) {
+            const nearGround = Math.max(0, 1 - (surfZY - y) / Math.max(12, 24 * mag));
+            if (nearGround > 0) {
+              r += warmL * nearGround * 38;
+              g += warmL * nearGround * 22 + cyanL * nearGround * 32;
+              b += cyanL * nearGround * 42;
+            }
+          }
+
+          hiData[idx] = r < 0 ? 0 : r > 255 ? 255 : r | 0;
+          hiData[idx + 1] = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+          hiData[idx + 2] = b < 0 ? 0 : b > 255 ? 255 : b | 0;
+          hiData[idx + 3] = 255;
+        } else {
+          // -------------------------------------------------------------------
+          // B. BELOW CONTINUOUS TERRAIN SPLINE: 1PX TOPSOIL, INTERLOCKING COBBLES,
+          //    MULTI-PARALLAX GEOLOGICAL MOIRÉ STRATA & PRIME-CYCLED VEINS
+          // -------------------------------------------------------------------
+          const depthPx = y - surfZY;
+          const depthN = depthPx / mag;
+
+          // Multi-layer subterranean parallax dither screens (1.0x bedding vs 1.19x cleavage)
+          const rockBayerA = ZOOM_BAYER8[(((y + parShift04Y) & 7) << 3) | ((x + parShift100X) & 7)];
+          const rockHatchB = (((x + parShift119X) + ((y - parShift04Y) << 1)) & 7) * 0.125;
+          const rockMoire = 0.5 * (rockBayerA + rockHatchB);
+
+          let r, g, b;
+          const crestPx = Math.max(2.5, Math.min(10, mag * 0.55));
+          if (depthPx < crestPx) {
+            // 1. Crisp 1px topsoil & moss ridge crest following the smooth spline
+            const mossMix = rockMoire < 0.52 ? 1 : 0;
+            r = mossMix ? 88 : 64;
+            g = mossMix ? 148 + p499 * 12 : 124;
+            b = mossMix ? 112 + p211 * 10 : 108;
+            // Morning dew / mineral glint on the very top 1px edge when prime cycles align
+            if (depthPx < 1.5 && ((x + tick) & 7) === 0 && p211 + p307 > 0.2) {
+              r = 186;
+              g = 242;
+              b = 228;
+            }
+          } else {
+            // 2. Staggered interlocking stone cobbles & sedimentary bedding courses
+            const courseH = Math.max(3, Math.min(18, Math.round(mag * 1.35)));
+            const courseIdx = Math.floor(depthPx / courseH);
+            const inCourseY = Math.floor(depthPx) % courseH;
+            const brickW = Math.max(5, Math.min(28, Math.round(mag * 2.2)));
+            const brickStagger = (courseIdx & 1) ? (brickW >> 1) : 0;
+            const brickIdx = Math.floor((x + parShift100X + brickStagger) / brickW);
+            const inBrickX = Math.floor(x + parShift100X + brickStagger) % brickW;
+
+            const isMortar = inCourseY === 0 || inBrickX === 0;
+            const stoneHash = ((hash32(brickIdx * 193 + courseIdx * 37) >>> 0) & 255) / 255;
+            const deepFade = Math.max(0.32, 1 - depthN / 62);
+
+            if (isMortar && depthN < 24) {
+              r = 22 * deepFade;
+              g = 36 * deepFade;
+              b = 44 * deepFade;
+            } else {
+              // Base slate/basalt/ochre stone tone modulated by 2-layer geological moiré dither
+              const moireShift = (rockMoire - 0.5) * 26 + (stoneHash - 0.5) * 18;
+              r = (44 + stoneHash * 22 + moireShift) * deepFade;
+              g = (66 + stoneHash * 24 + moireShift) * deepFade;
+              b = (74 + stoneHash * 20 + moireShift) * deepFade;
+            }
+
+            // 3. Continuous Neighbor-Connected Glowing Aetherium & Gold-Quartz Veins (Prime-Cycled!)
+            if (depthN > 2.2) {
+              const veinWave =
+                Math.sin(wx * 0.21 + depthN * 0.34 + Math.sin(depthN * 0.15) * 1.4) +
+                Math.cos(wx * 0.09 - depthN * 0.42);
+              if (veinWave > 1.66) {
+                const isGoldVein = ((Math.floor(wx * 0.1 + depthN * 0.1) & 1) === 0);
+                const pulse = isGoldVein
+                  ? 0.72 + 0.28 * (0.5 * p307 + 0.5 * p757)
+                  : 0.72 + 0.28 * (0.5 * p211 + 0.5 * p499);
+                if (isGoldVein) {
+                  r = 228 * pulse;
+                  g = 186 * pulse;
+                  b = 96 * pulse;
+                } else {
+                  r = 98 * pulse;
+                  g = 228 * pulse;
+                  b = 238 * pulse;
+                }
+              }
+            }
+          }
+
+          // Adjacent-artwork warm hearth/fire & cyan crystal illumination on the rock/soil
+          if (warmL > 0 || cyanL > 0) {
+            const surfProx = Math.max(0, 1 - depthN / 16);
+            r += warmL * surfProx * 54;
+            g += warmL * surfProx * 32 + cyanL * surfProx * 44;
+            b += cyanL * surfProx * 56;
+          }
+
+          hiData[idx] = r < 0 ? 0 : r > 255 ? 255 : r | 0;
+          hiData[idx + 1] = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+          hiData[idx + 2] = b < 0 ? 0 : b > 255 ? 255 : b | 0;
+          hiData[idx + 3] = 255;
+        }
+      }
+    }
+
+    mainCtx.putImageData(zoomState.hiResImgData, 0, 0);
+
+    // Helper to draw a 2-layer parallax moiré dither-screened translucent rectangle on `mainCtx`
+    const fillMoireScreenRect = (rx, ry, rw, rh, colA, colB, density, depthShift) => {
+      const x0 = Math.max(0, Math.round(rx));
+      const y0 = Math.max(0, Math.round(ry));
+      const x1 = Math.min(NATIVE_W, Math.round(rx + rw));
+      const y1 = Math.min(NATIVE_H, Math.round(ry + rh));
+      if (x1 <= x0 || y1 <= y0) return;
+      const shA = Math.round(sx * depthShift + tick * 0.15);
+      const shB = Math.round(sy * depthShift * 1.3 - tick * 0.11);
+      for (let py = y0; py < y1; py++) {
+        const bRow = ((py + shB) & 7) << 3;
+        for (let px = x0; px < x1; px++) {
+          const tA = ZOOM_BAYER8[bRow | ((px + shA) & 7)];
+          const tB = (((px - shA) * 3 + (py + shB) * 5) & 7) * 0.125;
+          if (tA < density) {
+            mainCtx.fillStyle = (tB < 0.5 && colB) ? colB : colA;
+            mainCtx.fillRect(px, py, 1, 1);
           }
         }
       }
+    };
 
-      // 2. Coherent Sub-Pixel Detail on Nearby World Structures (Towns, Caves, Crystals)
-      if (Array.isArray(world.Towns)) {
-        for (let i = 0; i < world.Towns.length; i++) {
-          const t = world.Towns[i];
-          const th = world.Blocks[t.x] || 15;
-          const tx = toZoomX((t.x + 0.5) * SCALE);
-          const ty = toZoomY((COARSE_H - th) * SCALE);
-          if (tx < -60 || tx > NATIVE_W + 60 || ty < -60 || ty > NATIVE_H + 60) continue;
-          const w = Math.max(6, Math.round(3 * SCALE * mag));
-          const h = Math.max(6, Math.round(3 * SCALE * mag));
-          // Crisp 1px timber-and-stone courses & mullioned lantern window panes
-          mainCtx.strokeStyle = "rgba(120, 234, 212, 0.55)";
-          mainCtx.lineWidth = 1;
-          mainCtx.strokeRect(tx - Math.floor(w * 0.5) + 0.5, ty - h + 0.5, w, h);
-          const winW = Math.max(3, Math.round(w * 0.28));
-          const winH = Math.max(3, Math.round(h * 0.32));
-          const winX = tx - Math.floor(winW * 0.5);
-          const winY = ty - Math.floor(h * 0.65);
-          mainCtx.fillStyle = "rgba(255, 215, 110, 0.85)";
-          mainCtx.fillRect(winX, winY, winW, winH);
-          // Window mullions (crossbars)
-          mainCtx.fillStyle = "rgba(22, 54, 62, 0.9)";
-          mainCtx.fillRect(winX + Math.floor(winW * 0.5), winY, 1, winH);
-          mainCtx.fillRect(winX, winY + Math.floor(winH * 0.5), winW, 1);
+    // =========================================================================
+    // 3. KINETIC WIND-BLOWING STRANDS, NEIGHBOR-INTERACTIVE GRASS/KELP, ROOT
+    //    CAPILLARIES & SWINGING CATENARY ROPES ALONG THE CONTINUOUS SPLINE
+    // =========================================================================
+    const monoFootLeftN = world.P ? zoomState.monoX0 - 1 : -999;
+    const monoFootRightN = world.P ? zoomState.monoX0 + 12 : -999;
+
+    const grassStepPx = mag > 18 ? 3 : 2;
+    for (let px = 0; px < NATIVE_W; px += grassStepPx) {
+      const gy = Math.round(colSurfZoomY[px]);
+      if (gy < -20 || gy >= NATIVE_H + 20) continue;
+      const wx = colWorldX[px];
+      const seed = hash32(Math.round(wx * 13.7) * 131 + 71);
+
+      // Underwater basin columns: swaying bioluminescent kelp strands
+      if (colSurfNativeY[px] > seaNativeY + 3 && gy > seaZoomY + 4) {
+        if ((seed & 7) === 0) {
+          const kelpSegs = Math.min(12, Math.max(4, Math.round(mag * 1.6)));
+          let kx = px;
+          let ky = gy;
+          mainCtx.fillStyle = (seed & 8) ? "rgba(82, 229, 168, 0.72)" : "rgba(70, 178, 164, 0.68)";
+          for (let s = 0; s < kelpSegs; s++) {
+            const sway = Math.sin(tick / 37 + wx * 0.18 + s * 0.45) * 1.4;
+            kx += sway * 0.45;
+            ky -= Math.max(1, Math.round(mag * 0.28));
+            if (ky <= seaZoomY) break;
+            mainCtx.fillRect(Math.round(kx), Math.round(ky), 1, Math.max(1, Math.round(mag * 0.3)));
+          }
+        }
+        continue;
+      }
+
+      // Surface grass blades, fern fronds & wildflowers along the spline crest:
+      // Calculate neighbor-interactive parting push away from the Monolith's feet & Villagers!
+      let partPush = 0;
+      if (wx >= monoFootLeftN - 4 && wx <= monoFootRightN + 4) {
+        const monoCenter = 0.5 * (monoFootLeftN + monoFootRightN);
+        const dist = wx - monoCenter;
+        if (Math.abs(dist) < 8.5) {
+          partPush = (dist >= 0 ? 1 : -1) * (1 - Math.abs(dist) / 8.5) * 3.2;
         }
       }
 
-      if (Array.isArray(world.Crystals)) {
-        for (let i = 0; i < world.Crystals.length; i++) {
-          const cr = world.Crystals[i];
-          const ch = world.Blocks[cr.x] || 15;
-          const cx = toZoomX((cr.x + 0.5) * SCALE);
-          const cy = toZoomY((COARSE_H - ch - 2) * SCALE);
-          if (cx < -40 || cx > NATIVE_W + 40 || cy < -40 || cy > NATIVE_H + 40) continue;
-          const rad = Math.max(4, Math.round(SCALE * mag * 0.9));
-          mainCtx.strokeStyle = "rgba(135, 248, 255, 0.78)";
-          mainCtx.lineWidth = 1;
-          mainCtx.beginPath();
-          mainCtx.moveTo(cx, cy - rad);
-          mainCtx.lineTo(cx + Math.round(rad * 0.65), cy);
-          mainCtx.lineTo(cx, cy + Math.round(rad * 0.75));
-          mainCtx.lineTo(cx - Math.round(rad * 0.65), cy);
-          mainCtx.closePath();
-          mainCtx.stroke();
-        }
+      // Travelling prime-harmonic wind wave across the slope
+      const windWave =
+        Math.sin(tick / 43 + wx * 0.14) * 1.2 +
+        Math.sin(tick / 89 - wx * 0.07) * 0.7 +
+        p211 * 0.4 +
+        partPush;
+
+      const bladeLen = Math.min(16, Math.max(3, Math.round(((seed & 3) + 2) * Math.min(3.8, 0.7 + mag * 0.32))));
+      const warm = colLightWarm[px];
+      const cyan = colLightCyan[px];
+      if (warm > 0.25) {
+        mainCtx.fillStyle = (seed & 1) ? "rgba(232, 198, 118, 0.82)" : "rgba(168, 194, 124, 0.78)";
+      } else if (cyan > 0.25) {
+        mainCtx.fillStyle = (seed & 1) ? "rgba(126, 236, 224, 0.84)" : "rgba(96, 204, 188, 0.78)";
+      } else {
+        mainCtx.fillStyle = (seed & 1) ? "rgba(134, 188, 152, 0.78)" : "rgba(94, 146, 112, 0.74)";
       }
 
-      // 3. Coherent Sub-Pixel Monolith Anatomy (`TACHIMA-307`) Centered at `(pZx, pZy)`!
-      if (world.P) {
-        const pLeft = toZoomX(world.P.x * SCALE);
-        const pTop = toZoomY((COARSE_H - Math.round(world.P.y) - 6) * SCALE);
-        const pW = Math.max(7, Math.round(SCALE * mag));
-        const pH = Math.max(42, Math.round(6 * SCALE * mag));
-        const pCx = pLeft + Math.floor(pW * 0.5);
+      // Draw articulated multi-segment 1px grass blade bending in the wind
+      for (let b = 0; b < bladeLen; b++) {
+        const u = b / bladeLen;
+        const bx = Math.round(px + windWave * u * u * 1.8);
+        const by = gy - b;
+        mainCtx.fillRect(bx, by, 1, 1);
+      }
+      // Wildflower / glowing spore tip on every 11th stalk, prime-cycled!
+      if ((seed % 11) === 0 && bladeLen >= 5) {
+        const tipX = Math.round(px + windWave * 1.8);
+        const tipY = gy - bladeLen;
+        mainCtx.fillStyle = (p307 + p499 > 0) ? "#f8c67a" : "#7eced4";
+        mainCtx.fillRect(tipX, tipY - 1, 2, 2);
+      }
 
-        // Crisp 1px beveled obsidian-basalt exo-chassis border & internal harmonic circuitry
-        mainCtx.strokeStyle = "rgba(165, 248, 235, 0.88)";
+      // Subterranean root capillaries & mycelial filaments extending down from the spline
+      if ((seed & 7) === 0) {
+        const rootLen = Math.min(18, Math.max(4, Math.round(mag * 1.8)));
+        mainCtx.fillStyle = "rgba(148, 212, 172, 0.38)";
+        let rx = px;
+        for (let r = 1; r <= rootLen; r++) {
+          rx += Math.sin(r * 0.7 + seed) * 0.35;
+          mainCtx.fillRect(Math.round(rx), gy + r, 1, 1);
+        }
+      }
+    }
+
+    // Swinging Catenary Ropes & Lantern Lines strung between Towns, Caves, and the Monolith!
+    const drawSwingingCatenaryRope = (x0N, y0N, x1N, y1N, seed, hasLanterns) => {
+      const zx0 = toZoomX(x0N);
+      const zy0 = toZoomY(y0N);
+      const zx1 = toZoomX(x1N);
+      const zy1 = toZoomY(y1N);
+      if ((zx0 < -80 && zx1 < -80) || (zx0 > NATIVE_W + 80 && zx1 > NATIVE_W + 80)) return;
+      const spanPx = Math.hypot(zx1 - zx0, zy1 - zy0);
+      const steps = Math.min(160, Math.max(16, Math.round(spanPx * 0.5)));
+      const swing = Math.sin(tick / 53 + seed * 1.7) * Math.min(8, 2.2 * mag * 0.25);
+      const sag = Math.min(48, Math.max(4, spanPx * 0.14)) + swing;
+
+      for (let s = 0; s <= steps; s++) {
+        const u = s / steps;
+        const uSag = 4 * u * (1 - u);
+        const rx = Math.round(zx0 + (zx1 - zx0) * u + swing * uSag * 0.35);
+        const ry = Math.round(zy0 + (zy1 - zy0) * u + sag * uSag);
+        if (rx < 0 || rx >= NATIVE_W || ry < 0 || ry >= NATIVE_H) continue;
+        mainCtx.fillStyle = (s & 1) ? "#b69058" : "#86683c";
+        mainCtx.fillRect(rx, ry, 1, 1);
+
+        // Hanging swaying micro-lanterns along the catenary rope
+        if (hasLanterns && s > 2 && s < steps - 2 && s % Math.max(4, Math.floor(steps / 4)) === 0) {
+          const pendAng = Math.sin(tick / 29 + s + seed) * 0.35;
+          const pendLen = Math.min(9, Math.max(3, Math.round(mag * 0.6)));
+          const lx = Math.round(rx + Math.sin(pendAng) * pendLen);
+          const ly = Math.round(ry + Math.cos(pendAng) * pendLen);
+          mainCtx.fillStyle = "#b69058";
+          mainCtx.fillRect(rx, ry + 1, 1, Math.max(1, ly - ry - 1));
+          mainCtx.fillStyle = (p307 + p757 > -0.4) ? "#f8c67a" : "#e89456";
+          mainCtx.fillRect(lx - 1, ly, 3, 3);
+          mainCtx.fillStyle = "#fff3d6";
+          mainCtx.fillRect(lx, ly + 1, 1, 1);
+        }
+      }
+    };
+
+    // Connect adjacent Towns/Caves with catenary lantern lines, and tether the Monolith when near a Town!
+    if (Array.isArray(world.Towns)) {
+      for (let i = 0; i < world.Towns.length; i++) {
+        const t = world.Towns[i];
+        const txN = t.x * SCALE + 3;
+        const tyN = (COARSE_H - (blocks[t.x] || 16)) * SCALE - 12;
+        if (i + 1 < world.Towns.length && Math.abs(world.Towns[i + 1].x - t.x) < 28) {
+          const t2 = world.Towns[i + 1];
+          const tx2N = t2.x * SCALE + 3;
+          const ty2N = (COARSE_H - (blocks[t2.x] || 16)) * SCALE - 12;
+          drawSwingingCatenaryRope(txN, tyN, tx2N, ty2N, i + 1, true);
+        }
+        if (world.P && Math.abs(t.x - world.P.x) < 16) {
+          drawSwingingCatenaryRope(txN, tyN, zoomState.monoX0 + 1, zoomState.monoY0 + 14, i + 9, true);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 4. WHOLE-OBJECT & NEIGHBOR-INTERACTIVE 1:1 ZOOMED WORLD STRUCTURES
+    //    (WITH TRANSPARENT MULTI-PARALLAX MOIRÉ SCREENS, LITTLE FIRES & ENGINES)
+    // =========================================================================
+    // 4A. Grand Glass Biodomes & Megastructures (`civState.megastructures`)
+    if (Array.isArray(civState.megastructures)) {
+      for (let i = 0; i < civState.megastructures.length; i++) {
+        const m = civState.megastructures[i];
+        const halfSpanN = (m.span * SCALE) * 0.5;
+        const centerN = m.x * SCALE;
+        const leftZ = toZoomX(centerN - halfSpanN);
+        const rightZ = toZoomX(centerN + halfSpanN);
+        if (rightZ < 0 || leftZ >= NATIVE_W) continue;
+        const centerCol = Math.max(0, Math.min(COARSE_W - 1, Math.round(m.x)));
+        const baseNY = (COARSE_H - (blocks[centerCol] || 18)) * SCALE;
+        const heightN = m.height * SCALE * Math.min(1.25, 0.45 + (m.buildProgress || 0.7) * 0.55);
+        const x0 = Math.max(0, Math.floor(leftZ));
+        const x1 = Math.min(NATIVE_W - 1, Math.ceil(rightZ));
+        const spanZ = Math.max(1, rightZ - leftZ);
+        const ribStepZ = Math.max(6, Math.round(SCALE * mag * 0.8));
+
+        for (let px = x0; px <= x1; px++) {
+          const u = ((px - leftZ) / spanZ) * 2 - 1;
+          const archN = heightN * Math.pow(Math.max(0, 1 - u * u), m.domeProfile || 0.65);
+          if (archN <= 2) continue;
+          const groundZY = Math.round(colSurfZoomY[px]);
+          const topZY = Math.round(toZoomY(baseNY - archN));
+          // 1px Geodesic Arch Crown & Glint
+          mainCtx.fillStyle = ((px + tick) % 23 === 0 && p211 + p307 > 0) ? "#ffffff" : "#78ead4";
+          mainCtx.fillRect(px, topZY, 1, 2);
+
+          // Multi-Layer Transparent Parallax Moiré Glass Screen inside the Biodome!
+          for (let py = Math.max(0, topZY + 2); py < Math.min(NATIVE_H, groundZY); py += 2) {
+            const gScreenA = ZOOM_BAYER8[(((py + parShift04Y) & 7) << 3) | ((px + parShift22X) & 7)];
+            const gScreenB = (((px - parShift11X) + (py * 3)) & 7) * 0.125;
+            if (Math.abs(gScreenA - gScreenB) < 0.22) {
+              mainCtx.fillStyle = "rgba(168, 228, 234, 0.22)";
+              mainCtx.fillRect(px, py, 1, 1);
+            }
+          }
+          // Vertical geodesic ribs
+          if ((px - Math.floor(leftZ)) % ribStepZ === 0) {
+            mainCtx.fillStyle = "rgba(126, 206, 212, 0.52)";
+            mainCtx.fillRect(px, Math.max(0, topZY), 1, Math.max(1, groundZY - topZY));
+          }
+        }
+      }
+    }
+
+    // 4B. Zoomed Towns: Cottages, Lighthouses, Wind Harps, Sky Beacons + Little Fires + Pumping Engines!
+    if (Array.isArray(world.Towns)) {
+      for (let i = 0; i < world.Towns.length; i++) {
+        const t = world.Towns[i];
+        const cxN = t.x * SCALE + 3;
+        const gyN = (COARSE_H - (blocks[t.x] || 16)) * SCALE;
+        const cxZ = Math.round(toZoomX(cxN));
+        const gyZ = Math.round(toZoomY(gyN));
+        if (cxZ < -180 || cxZ > NATIVE_W + 180 || gyZ < -180 || gyZ > NATIVE_H + 180) continue;
+
+        const wZ = Math.max(14, Math.round(20 * mag));
+        const hZ = Math.max(10, Math.round(13 * mag));
+        const leftZ = cxZ - (wZ >> 1);
+        const topZ = gyZ - hZ;
+
+        // 1. Dressed stone masonry wall with 1px mortar courses & weathered moss
+        mainCtx.fillStyle = "#7a746c";
+        mainCtx.fillRect(leftZ, topZ, wZ, hZ);
+        const courseStep = Math.max(2, Math.round(3 * mag));
+        const brickStep = Math.max(4, Math.round(5 * mag));
+        mainCtx.fillStyle = "#323a44";
+        for (let y = topZ; y < gyZ; y += courseStep) {
+          mainCtx.fillRect(leftZ, y, wZ, 1);
+          const stagger = (Math.floor((y - topZ) / courseStep) & 1) ? (brickStep >> 1) : 0;
+          for (let x = leftZ + stagger; x < leftZ + wZ; x += brickStep) {
+            mainCtx.fillRect(x, y, 1, Math.min(courseStep, gyZ - y));
+          }
+        }
+
+        // 2. Gable roof with individual overlapping slate shingles & brick chimney with curling smoke
+        const roofH = Math.max(8, Math.round(12 * mag));
+        for (let r = 0; r < roofH; r++) {
+          const u = r / roofH;
+          const span = Math.round((wZ + 4 * mag) * (1 - u * 0.88));
+          const rx = cxZ - (span >> 1);
+          const ry = topZ - r - 1;
+          mainCtx.fillStyle = (r % Math.max(2, Math.round(2 * mag)) === 0) ? "#242c34" : "#485460";
+          mainCtx.fillRect(rx, ry, span, 1);
+        }
+        // Chimney & drifting 1px smoke particles
+        const chimX = cxZ + Math.round(4 * mag);
+        const chimW = Math.max(2, Math.round(2.5 * mag));
+        const chimTop = topZ - roofH;
+        mainCtx.fillStyle = "#9e604c";
+        mainCtx.fillRect(chimX, chimTop, chimW, Math.round(roofH * 0.65));
+        for (let sm = 0; sm < 8; sm++) {
+          const age = (tick * 0.45 + sm * 8 + t.x * 5) % 48;
+          const sxZ = Math.round(chimX + chimW * 0.5 + (Math.sin(age * 0.15 + sm) * 2.5 + age * 0.14) * Math.min(3, mag * 0.5));
+          const syZ = Math.round(chimTop - age * Math.min(2.5, 0.55 * mag));
+          mainCtx.fillStyle = `rgba(210, 218, 218, ${(0.45 * (1 - age / 48)).toFixed(2)})`;
+          mainCtx.fillRect(sxZ, syZ, 2, 2);
+        }
+
+        // 3. Mullioned windows with transparent moiré lace curtains & warm interior room (table, bookshelf, lantern!)
+        const winW = Math.max(4, Math.round(5 * mag));
+        const winH = Math.max(4, Math.round(5 * mag));
+        const winPositions = [leftZ + Math.round(2.5 * mag), cxZ + Math.round(1.5 * mag)];
+        for (let wIdx = 0; wIdx < winPositions.length; wIdx++) {
+          const wx = winPositions[wIdx];
+          const wy = gyZ - Math.round(10.5 * mag);
+          // Warm hearth interior glow modulated by prime cycles 307 & 757
+          mainCtx.fillStyle = (p307 + p757 > -0.2) ? "#f8c67a" : "#e89456";
+          mainCtx.fillRect(wx, wy, winW, winH);
+          // Interior room micro-furniture when zoomed in (tiny table, bookshelf, hanging lantern)
+          if (winW >= 8) {
+            mainCtx.fillStyle = "#6e422e";
+            mainCtx.fillRect(wx + 1, wy + winH - 3, Math.max(2, winW - 2), 2); // table
+            mainCtx.fillStyle = "#fff4d2";
+            mainCtx.fillRect(wx + (winW >> 1), wy + 2, 2, 2); // hanging lantern
+          }
+          // Semi-transparent 1px dither curtain screen over upper window
+          fillMoireScreenRect(wx, wy, winW, winH >> 1, "rgba(255, 245, 220, 0.35)", "rgba(182, 144, 88, 0.25)", 0.42, 0.8);
+          // 1px window frame & cross mullions
+          mainCtx.fillStyle = "#171c22";
+          mainCtx.fillRect(wx + (winW >> 1), wy, 1, winH);
+          mainCtx.fillRect(wx, wy + (winH >> 1), winW, 1);
+        }
+
+        // 4. LITTLE FIRE / STONE BRAZIER beside each Town with flickering 1px flames & rising embers!
+        const fireX = leftZ - Math.round(6 * mag);
+        const fireY = Math.round(colSurfZoomY[Math.max(0, Math.min(NATIVE_W - 1, fireX))]);
+        const pitW = Math.max(4, Math.round(4 * mag));
+        mainCtx.fillStyle = "#505864";
+        mainCtx.fillRect(fireX - (pitW >> 1), fireY - 2, pitW, 2); // stone ring
+        const flameCount = Math.max(3, Math.min(12, Math.round(3 * mag)));
+        for (let fl = 0; fl < flameCount; fl++) {
+          const flFrac = (fl / Math.max(1, flameCount - 1)) - 0.5;
+          const flickerH = Math.max(3, Math.round((3.5 + 2.2 * Math.sin(tick * 0.31 + fl * 1.9 + t.x)) * Math.min(3.5, mag * 0.65)));
+          const fxFl = Math.round(fireX + flFrac * pitW * 0.8 + Math.sin(tick * 0.23 + fl) * 1.2);
+          mainCtx.fillStyle = "#e87846";
+          mainCtx.fillRect(fxFl, fireY - 2 - flickerH, 1, flickerH);
+          mainCtx.fillStyle = "#f8c67a";
+          mainCtx.fillRect(fxFl, fireY - 2 - (flickerH >> 1), 1, Math.max(1, flickerH >> 1));
+          mainCtx.fillStyle = "#fff4d8";
+          mainCtx.fillRect(fxFl, fireY - 3, 1, 1);
+        }
+        // Rising 1px glowing ember sparks
+        for (let em = 0; em < 4; em++) {
+          const eAge = (tick * 0.65 + em * 13 + t.x * 7) % 28;
+          const ex = Math.round(fireX + Math.sin(eAge * 0.25 + em) * 3);
+          const ey = Math.round(fireY - 4 - eAge * Math.min(2, mag * 0.4));
+          mainCtx.fillStyle = (em & 1) ? "#ffd43b" : "#ff922b";
+          mainCtx.fillRect(ex, ey, 1, 1);
+        }
+
+        // 5. PUMPING WORKSHOP ENGINE beside the right wall (spinning flywheel + reciprocating piston + steam puffs!)
+        const engX = leftZ + wZ + Math.round(4 * mag);
+        const engY = Math.round(colSurfZoomY[Math.max(0, Math.min(NATIVE_W - 1, engX))]);
+        const cylW = Math.max(3, Math.round(3 * mag));
+        const cylH = Math.max(5, Math.round(6 * mag));
+        mainCtx.fillStyle = "#8a683a";
+        mainCtx.fillRect(engX - (cylW >> 1), engY - cylH, cylW, cylH);
+        const pumpPhase = tick * 0.21 + t.x;
+        const pistonLift = Math.round((0.5 + 0.5 * Math.sin(pumpPhase)) * Math.max(2, Math.round(3.5 * mag)));
+        mainCtx.fillStyle = "#e0bc70";
+        mainCtx.fillRect(engX, engY - cylH - pistonLift - 2, Math.max(1, Math.round(0.8 * mag)), pistonLift + 2);
+        mainCtx.fillStyle = "#c49852";
+        mainCtx.fillRect(engX - Math.round(1.5 * mag), engY - cylH - pistonLift - 3, Math.max(3, Math.round(3 * mag)), 2);
+        // Periodic 1px white steam puff at top-dead-center of piston stroke
+        if (Math.sin(pumpPhase) > 0.75) {
+          mainCtx.fillStyle = "rgba(229, 236, 236, 0.75)";
+          mainCtx.fillRect(engX + (tick & 1), engY - cylH - pistonLift - 6, 2, 2);
+        }
+      }
+    }
+
+    // 4C. Spooky Caves & Ancient Ruins (`world.Caves`) with Multi-Parallax Subterranean Moiré Void & Dripping Stalactites
+    if (Array.isArray(world.Caves)) {
+      for (let i = 0; i < world.Caves.length; i++) {
+        const c = world.Caves[i];
+        const elev = Math.max(2, (blocks[c.x] || 16) - (c.depth || 0));
+        const cxN = c.x * SCALE + 3;
+        const ybN = (COARSE_H - elev + 1) * SCALE - 1;
+        const cxZ = Math.round(toZoomX(cxN));
+        const ybZ = Math.round(toZoomY(ybN));
+        if (cxZ < -120 || cxZ > NATIVE_W + 120 || ybZ < -120 || ybZ > NATIVE_H + 120) continue;
+
+        const rxZ = Math.max(6, Math.round(7 * mag));
+        const ryZ = Math.max(10, Math.round(18 * mag));
+        mainCtx.fillStyle = "#12161c";
+        mainCtx.fillRect(cxZ - rxZ, ybZ - ryZ, rxZ * 2, ryZ);
+        // Multi-parallax dithered subterranean depth screen inside cave mouth
+        fillMoireScreenRect(
+          cxZ - rxZ + 2,
+          ybZ - ryZ + 2,
+          rxZ * 2 - 4,
+          ryZ - 2,
+          "rgba(70, 138, 144, 0.24)",
+          "rgba(148, 120, 150, 0.20)",
+          0.36,
+          1.45
+        );
+        // Dressed arch voussoir stones & dripping stalactites
+        mainCtx.strokeStyle = "#847e74";
+        mainCtx.lineWidth = Math.max(1, Math.round(1.8 * mag));
+        mainCtx.strokeRect(cxZ - rxZ + 0.5, ybZ - ryZ + 0.5, rxZ * 2, ryZ);
+        for (let st = -2; st <= 2; st++) {
+          const sxSt = cxZ + Math.round(st * rxZ * 0.36);
+          const stLen = Math.max(3, Math.round((3 + ((st + 3) & 1) * 2) * mag));
+          mainCtx.fillStyle = "#687480";
+          mainCtx.fillRect(sxSt, ybZ - ryZ + 1, Math.max(1, Math.round(0.8 * mag)), stLen);
+          const dropAge = (tick * 0.55 + st * 19 + c.x * 11) % 40;
+          if (dropAge < 22) {
+            mainCtx.fillStyle = "#a8d6da";
+            mainCtx.fillRect(sxSt, ybZ - ryZ + stLen + Math.round(dropAge * mag * 0.35), 1, 2);
+          }
+        }
+      }
+    }
+
+    // 4D. Aetherium & Time Crystals (`world.Crystals`, `cosmic.TimeCrystals`) with Internal Moiré Refraction & Energy Arcs to Monolith
+    if (Array.isArray(world.Crystals)) {
+      for (let i = 0; i < world.Crystals.length; i++) {
+        const cr = world.Crystals[i];
+        const ch = blocks[cr.x] || 15;
+        const cxN = (cr.x + 0.5) * SCALE;
+        const cyN = (COARSE_H - ch - 2) * SCALE;
+        const cxZ = Math.round(toZoomX(cxN));
+        const cyZ = Math.round(toZoomY(cyN));
+        if (cxZ < -90 || cxZ > NATIVE_W + 90 || cyZ < -90 || cyZ > NATIVE_H + 90) continue;
+
+        const radX = Math.max(4, Math.round(4.5 * mag));
+        const radY = Math.max(7, Math.round(9.5 * mag));
+        // Multi-layer transparent parallax moiré refraction inside crystal facets!
+        fillMoireScreenRect(
+          cxZ - radX,
+          cyZ - radY,
+          radX * 2,
+          radY * 2,
+          "rgba(126, 206, 212, 0.58)",
+          "rgba(229, 222, 205, 0.48)",
+          0.62,
+          1.75
+        );
+        // Crisp 1px prism facet edges + prime-cycled specular glint
+        mainCtx.strokeStyle = (p211 + p307 > 0.35) ? "#ffffff" : "#7eced4";
         mainCtx.lineWidth = 1;
-        mainCtx.strokeRect(pLeft + 0.5, pTop + 0.5, pW - 1, pH - 1);
-
-        // Internal segmentation plates (head, torso core, drive legs)
-        const headH = Math.floor(pH * 0.18);
-        const chestY = pTop + Math.floor(pH * 0.36);
-        const hipY = pTop + Math.floor(pH * 0.68);
-        mainCtx.fillStyle = "rgba(120, 234, 212, 0.45)";
-        mainCtx.fillRect(pLeft + 1, pTop + headH, pW - 2, 1);
-        mainCtx.fillRect(pLeft + 1, hipY, pW - 2, 1);
-
-        // Scanning optical visor slit in head segment
-        const scanOff = Math.round(Math.sin(tick * 0.15) * Math.max(1, (pW - 6) * 0.35));
-        mainCtx.fillStyle = "rgba(230, 255, 248, 0.95)";
-        mainCtx.fillRect(pLeft + 2, pTop + Math.floor(headH * 0.45), Math.max(2, pW - 4), 2);
-        mainCtx.fillStyle = "#5ef2ff";
-        mainCtx.fillRect(pCx + scanOff - 1, pTop + Math.floor(headH * 0.45), 3, 2);
-
-        // Rotating Antikythera clockwork balance wheel & Aetherium levitation core in chest
-        const gearR = Math.max(3, Math.min(22, Math.floor(pW * 0.36)));
-        mainCtx.strokeStyle = world.P.aether > 0 ? "rgba(95, 245, 255, 0.92)" : "rgba(245, 208, 105, 0.82)";
         mainCtx.beginPath();
-        mainCtx.arc(pCx, chestY, gearR, 0, Math.PI * 2);
+        mainCtx.moveTo(cxZ, cyZ - radY);
+        mainCtx.lineTo(cxZ + radX, cyZ);
+        mainCtx.lineTo(cxZ, cyZ + radY);
+        mainCtx.lineTo(cxZ - radX, cyZ);
+        mainCtx.closePath();
         mainCtx.stroke();
-        for (let spoke = 0; spoke < 6; spoke++) {
-          const ang = (spoke / 6) * Math.PI * 2 + tick * 0.08;
+        mainCtx.beginPath();
+        mainCtx.moveTo(cxZ, cyZ - radY);
+        mainCtx.lineTo(cxZ, cyZ + radY);
+        mainCtx.stroke();
+
+        // Neighbor-interactive 1px energy filament arcing directly to the Monolith when nearby!
+        if (world.P && Math.abs(cr.x - world.P.x) <= 18) {
+          const targetX = toZoomX(zoomState.monoX0 + 5.5);
+          const targetY = toZoomY(zoomState.monoY0 + 18.5);
+          const arcSteps = 28;
+          mainCtx.fillStyle = (p211 > 0) ? "#a8f4ff" : "#78ead4";
+          for (let a = 0; a <= arcSteps; a++) {
+            const u = a / arcSteps;
+            const ax = Math.round(cxZ + (targetX - cxZ) * u + Math.sin(u * Math.PI * 3 + tick * 0.25) * 4 * (1 - Math.abs(2 * u - 1)));
+            const ay = Math.round(cyZ + (targetY - cyZ) * u - Math.sin(u * Math.PI) * 12);
+            mainCtx.fillRect(ax, ay, 1, 1);
+          }
+        }
+      }
+    }
+
+    // 4E. Zoomed Villagers, Dwarf Forges & Seer Crows (`eco.OrangePeople`, `world.Dwarves`, `eco.SeerCrows`)
+    if (eco && Array.isArray(eco.OrangePeople)) {
+      for (let i = 0; i < eco.OrangePeople.length; i++) {
+        const op = eco.OrangePeople[i];
+        const col = Math.max(0, Math.min(COARSE_W - 1, Math.round(op.x)));
+        const h = blocks[col] || 16;
+        const vxZ = Math.round(toZoomX(op.x * SCALE + 3));
+        const vyZ = Math.round(colSurfZoomY[Math.max(0, Math.min(NATIVE_W - 1, vxZ))]);
+        if (vxZ < -40 || vxZ > NATIVE_W + 40 || vyZ < -40 || vyZ > NATIVE_H + 40) continue;
+        const uS = Math.max(1, Math.round(mag * 0.85));
+        const stride = Math.round(Math.sin((op.stride || 0) * Math.PI + tick * 0.18) * uS);
+        // Boots & articulated legs
+        mainCtx.fillStyle = "#9e604c";
+        mainCtx.fillRect(vxZ - uS + stride, vyZ - 3 * uS, uS, 3 * uS);
+        mainCtx.fillRect(vxZ + uS - stride, vyZ - 3 * uS, uS, 3 * uS);
+        // Woven dithered tangerine coat & brass belt
+        fillMoireScreenRect(vxZ - 2 * uS, vyZ - 9 * uS, 5 * uS, 6 * uS, "#ce743c", "#9e522c", 0.85, 1.1);
+        mainCtx.fillStyle = "#e0bc70";
+        mainCtx.fillRect(vxZ - 2 * uS, vyZ - 6 * uS, 5 * uS, uS);
+        // Hooded head & blinking 1px eye
+        mainCtx.fillStyle = "#d6ac86";
+        mainCtx.fillRect(vxZ - uS, vyZ - 12 * uS, 3 * uS, 3 * uS);
+        mainCtx.fillStyle = "#c4a068";
+        mainCtx.fillRect(vxZ - uS, vyZ - 12 * uS, 3 * uS, uS);
+        if ((tick + i * 19) % 97 > 4) {
+          mainCtx.fillStyle = "#11141a";
+          mainCtx.fillRect(vxZ + (op.facing < 0 ? -uS : uS), vyZ - 11 * uS, Math.max(1, uS >> 1), Math.max(1, uS >> 1));
+        }
+      }
+    }
+
+    if (eco && Array.isArray(eco.SeerCrows)) {
+      for (let i = 0; i < eco.SeerCrows.length; i++) {
+        const crw = eco.SeerCrows[i];
+        const cxZ = Math.round(toZoomX(crw.x * SCALE));
+        const cyZ = Math.round(toZoomY((COARSE_H - crw.y) * SCALE));
+        if (cxZ < -40 || cxZ > NATIVE_W + 40 || cyZ < -40 || cyZ > NATIVE_H + 40) continue;
+        const uS = Math.max(1, Math.round(mag * 0.75));
+        const flap = Math.sin(tick * 0.35 + i * 1.7) * 3 * uS;
+        mainCtx.fillStyle = "#1b1e25";
+        mainCtx.fillRect(cxZ - 2 * uS, cyZ - uS, 4 * uS, 2 * uS);
+        // Individual primary wing feathers
+        for (let f = 0; f < 4; f++) {
+          mainCtx.fillStyle = (f === 0 && p307 > 0.2) ? "#e0bc70" : "#2c323d";
+          mainCtx.fillRect(cxZ - (3 + f) * uS, Math.round(cyZ - flap * (0.4 + f * 0.2)), uS, uS);
+          mainCtx.fillRect(cxZ + (2 + f) * uS, Math.round(cyZ - flap * (0.4 + f * 0.2)), uS, uS);
+        }
+        mainCtx.fillStyle = "#e0bc70";
+        mainCtx.fillRect(cxZ + 2 * uS, cyZ, Math.max(1, uS), Math.max(1, uS));
+      }
+    }
+
+    // =========================================================================
+    // 5. WHOLE-OBJECT, ENVIRONMENT-INTERACTIVE MULTI-SCALE MONOLITH (`TACHIMA-307`)
+    //    & ITS EXACT 2x1 GEAR-ROOM MECHANISM WORLD-SLOT (`dx=4..6, dy=18..19`)
+    // =========================================================================
+    if (world && world.P) {
+      const P = world.P;
+      const pcx = Math.round(P.x);
+      const pyTop = COARSE_H - Math.round(P.y) - 6;
+      const X0 = pcx * SCALE - 2; // 11 native px wide
+      const Y0 = pyTop * SCALE;   // 42 native px tall
+      const pxSize = Math.max(1, mag);
+      const flip = (P.facing || 1) < 0;
+
+      // Helper to project a 1x native rectangle (X0 + dx, Y0 + dy, w, h) into integer zoomed device pixels
+      const rectZ = (dx, dy, w, h) => {
+        const x0 = Math.round(toZoomX(X0 + dx));
+        const y0 = Math.round(toZoomY(Y0 + dy));
+        const x1 = Math.round(toZoomX(X0 + dx + w));
+        const y1 = Math.round(toZoomY(Y0 + dy + h));
+        return {
+          x: x0,
+          y: y0,
+          w: Math.max(1, x1 - x0),
+          h: Math.max(1, y1 - y0),
+          cx: (x0 + x1) * 0.5,
+          cy: (y0 + y1) * 0.5,
+        };
+      };
+
+      const monoBox = rectZ(0, 0, 11, 42);
+      const monoScreenX = Math.max(0, Math.min(NATIVE_W - 1, Math.round(monoBox.cx)));
+      const nearWarm = colLightWarm[monoScreenX] || 0;
+      const nearCyan = colLightCyan[monoScreenX] || 0;
+
+      // -----------------------------------------------------------------------
+      // A. CHAMFERED OBSIDIAN-SLATE EXO-CHASSIS WITH 2-LAYER PARALLAX MOIRÉ
+      //    ARMOR PLATES, MICRO-RIVETS & ENVIRONMENT-INTERACTIVE BEVEL DRIPS
+      // -----------------------------------------------------------------------
+      if (monoBox.x + monoBox.w > -20 && monoBox.x < NATIVE_W + 20 && monoBox.y + monoBox.h > -20 && monoBox.y < NATIVE_H + 20) {
+        // Draw each of the 42 vertical native rows with smooth chamfered corners (zero giant 11x42 blocks!)
+        for (let yy = 0; yy < 42; yy++) {
+          const ch = yy === 0 ? 2 : yy === 1 || yy === 41 ? 1 : 0;
+          const rowR = rectZ(ch, yy, 11 - ch * 2, 1);
+          if (rowR.y + rowR.h < 0 || rowR.y >= NATIVE_H) continue;
+
+          // Base dark obsidian-slate chassis plate
+          const v = yy / 42;
+          const baseR = Math.round(24 + (1 - v) * 14 + nearWarm * 26);
+          const baseG = Math.round(29 + (1 - v) * 16 + nearWarm * 14 + nearCyan * 18);
+          const baseB = Math.round(36 + (1 - v) * 18 + nearCyan * 24);
+          mainCtx.fillStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+          mainCtx.fillRect(rowR.x, rowR.y, rowR.w, rowR.h);
+
+          // Left & right chamfered bevels with prime-cycled bioluminescent drip & neighbor light reflection!
+          const bevW = Math.max(1, Math.round(0.85 * pxSize));
+          const dripPhaseL = yy * 0.14 - tick * 0.035 + p211 * 1.5;
+          const dripPhaseR = yy * 0.14 - tick * 0.035 + 2.4 + p499 * 1.5;
+          const bL_R = Math.round(62 + 38 * Math.sin(dripPhaseL) + nearWarm * 65);
+          const bL_G = Math.round(146 + 48 * Math.cos(dripPhaseL * 0.8) + nearCyan * 45);
+          const bL_B = Math.round(158 + 46 * Math.sin(dripPhaseL + 1.2) + nearCyan * 55);
+          mainCtx.fillStyle = `rgb(${Math.min(255, bL_R)}, ${Math.min(255, bL_G)}, ${Math.min(255, bL_B)})`;
+          mainCtx.fillRect(rowR.x, rowR.y, bevW, rowR.h);
+
+          const bR_R = Math.round(58 + 42 * Math.sin(dripPhaseR) + nearWarm * 65);
+          const bR_G = Math.round(138 + 46 * Math.cos(dripPhaseR * 0.8) + nearCyan * 45);
+          const bR_B = Math.round(152 + 48 * Math.sin(dripPhaseR + 1.2) + nearCyan * 55);
+          mainCtx.fillStyle = `rgb(${Math.min(255, bR_R)}, ${Math.min(255, bR_G)}, ${Math.min(255, bR_B)})`;
+          mainCtx.fillRect(rowR.x + rowR.w - bevW, rowR.y, bevW, rowR.h);
+        }
+
+        // 2-Layer Parallax Carbon-Weave Moiré Dither Screen across the Monolith's armor plates
+        fillMoireScreenRect(
+          monoBox.x + Math.round(pxSize),
+          monoBox.y + Math.round(pxSize),
+          monoBox.w - Math.round(2 * pxSize),
+          monoBox.h - Math.round(2 * pxSize),
+          "rgba(86, 106, 118, 0.24)",
+          "rgba(17, 20, 26, 0.28)",
+          0.46,
+          1.28
+        );
+
+        // Sliding bioluminescent prime-cycled droplets down left & right bevels
+        for (let side = 0; side < 2; side++) {
+          const yd = (tick * 0.32 + side * 23 + pcx * 7) % 52;
+          if (yd >= 2 && yd <= 40) {
+            const dropRect = rectZ(side === 0 ? 0.1 : 10.1, yd, 0.8, 1.8);
+            mainCtx.fillStyle = (p211 + p307 > 0) ? "#e5decd" : "#7eced4";
+            mainCtx.fillRect(dropRect.x, dropRect.y, dropRect.w, dropRect.h);
+          }
+        }
+
+        // Reciprocating Hydraulic Spine Pistons & Ankle Struts pumping on the Monolith's flanks
+        const pistonStroke = Math.sin(tick * 0.19) * 0.45;
+        for (let side = 0; side < 2; side++) {
+          const pxOff = side === 0 ? 1.15 : 9.15;
+          const cylRect = rectZ(pxOff, 14, 0.7, 9);
+          const rodRect = rectZ(pxOff + 0.15, 11.5 + pistonStroke, 0.4, 3.5);
+          mainCtx.fillStyle = "#505864";
+          mainCtx.fillRect(cylRect.x, cylRect.y, cylRect.w, cylRect.h);
+          mainCtx.fillStyle = "#e0bc70";
+          mainCtx.fillRect(rodRect.x, rodRect.y, rodRect.w, rodRect.h);
+        }
+
+        // Superconducting Gold & Cyan Circuit Bus Traces with Prime-Cycled Travelling Light Pulses
+        const drawZoomedTraces = (traceList, baseHex, pulseHex, seedOff) => {
+          for (let tIdx = 0; tIdx < traceList.length; tIdx++) {
+            const poly = traceList[tIdx];
+            for (let s = 0; s < poly.length - 1; s++) {
+              const xA = flip ? 10 - poly[s][0] : poly[s][0];
+              const yA = poly[s][1];
+              const xB = flip ? 10 - poly[s + 1][0] : poly[s + 1][0];
+              const yB = poly[s + 1][1];
+              const minX = Math.min(xA, xB);
+              const minY = Math.min(yA, yB);
+              const segW = Math.max(0.28, Math.abs(xB - xA) + 0.28);
+              const segH = Math.max(0.28, Math.abs(yB - yA) + 0.28);
+              const tr = rectZ(minX + 0.35, minY + 0.35, segW, segH);
+              const isPulsing = ((Math.floor(tick * 0.18 + tIdx * 3 + s + seedOff) % 5) === 0);
+              mainCtx.fillStyle = isPulsing ? pulseHex : baseHex;
+              mainCtx.fillRect(tr.x, tr.y, tr.w, tr.h);
+            }
+          }
+        };
+        drawZoomedTraces(MONO_GOLD_TRACES, "#b69058", "#fff0b8", 0);
+        drawZoomedTraces(MONO_CYAN_TRACES, "#468a90", "#a8f8ff", 3);
+
+        // Articulated Shoulder Feather-Vanes when `P.wings` is active
+        if (P.wings) {
+          const flap = Math.sin(tick * 0.25) * 0.35;
+          for (let side = -1; side <= 1; side += 2) {
+            const sxW = toZoomX(X0 + (side < 0 ? 0 : 11));
+            const syW = toZoomY(Y0 + 9);
+            for (let v = 0; v < 4; v++) {
+              const ang = -0.85 + v * 0.36 - flap * 0.45;
+              const lenZ = (9 - v) * pxSize;
+              const exW = sxW + side * Math.cos(ang) * lenZ;
+              const eyW = syW + v * pxSize + Math.sin(ang) * lenZ;
+              mainCtx.strokeStyle = (v & 1) ? "#869e8c" : "#e5decd";
+              mainCtx.lineWidth = Math.max(1, Math.round(0.32 * pxSize));
+              mainCtx.beginPath();
+              mainCtx.moveTo(sxW, syW + v * pxSize);
+              mainCtx.lineTo(exW, eyW);
+              mainCtx.stroke();
+            }
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // B. FULL-DETAIL ANTIKYTHERA GEAR ROOM (`rectZ(1, 12, 9, 13)`) WITH
+      //    INVOLUTE GEARS, ESCAPEMENT PENDULUM, HAIRSPRING & DOVETAIL RAILS
+      // -----------------------------------------------------------------------
+      const drawDetailedGear = (gx, gy, rPx, teeth, angle, rimCol, spokeCol, hubCol) => {
+        if (rPx < 2 || gx + rPx < -60 || gx - rPx > NATIVE_W + 60 || gy + rPx < -60 || gy - rPx > NATIVE_H + 60) return;
+        mainCtx.save();
+        mainCtx.translate(gx, gy);
+        mainCtx.rotate(angle);
+        // Outer involute gear teeth
+        mainCtx.fillStyle = rimCol;
+        const toothW = Math.max(1.2, Math.min(12, (Math.PI * rPx) / Math.max(6, teeth * 1.32)));
+        const toothLen = Math.max(1.5, Math.min(14, rPx * 0.18));
+        for (let t = 0; t < teeth; t++) {
+          const a = (t / teeth) * TAU;
+          mainCtx.save();
+          mainCtx.rotate(a);
+          mainCtx.fillRect(rPx - toothLen * 0.4, -toothW * 0.5, toothLen, toothW);
+          // Specular prime-cycled tooth tip glint when P2=307 aligns
+          if (rPx >= 12 && ((t + Math.floor(tick * 0.2)) % teeth) === 0 && p307 > -0.2) {
+            mainCtx.fillStyle = "#fff6d6";
+            mainCtx.fillRect(rPx + toothLen * 0.3, -toothW * 0.3, Math.max(1, toothLen * 0.25), Math.max(1, toothW * 0.6));
+            mainCtx.fillStyle = rimCol;
+          }
+          mainCtx.restore();
+        }
+        // Outer & inner gear rings
+        mainCtx.strokeStyle = rimCol;
+        mainCtx.lineWidth = Math.max(1, Math.min(7, rPx * 0.14));
+        mainCtx.beginPath();
+        mainCtx.arc(0, 0, rPx - toothLen * 0.4, 0, TAU);
+        mainCtx.stroke();
+        if (rPx > 18) {
+          mainCtx.lineWidth = 1;
+          mainCtx.strokeStyle = spokeCol;
           mainCtx.beginPath();
-          mainCtx.moveTo(pCx, chestY);
-          mainCtx.lineTo(pCx + Math.cos(ang) * gearR, chestY + Math.sin(ang) * gearR);
+          mainCtx.arc(0, 0, (rPx - toothLen * 0.4) * 0.62, 0, TAU);
           mainCtx.stroke();
         }
-        // Fine 1px energy bus traces connecting head visor -> chest core -> drive feet
-        mainCtx.fillStyle = "rgba(110, 245, 235, 0.65)";
-        mainCtx.fillRect(pCx, pTop + headH, 1, chestY - gearR - (pTop + headH));
-        mainCtx.fillRect(pCx, chestY + gearR, 1, pTop + pH - 2 - (chestY + gearR));
-      }
-    }
+        // Spokes
+        mainCtx.strokeStyle = spokeCol;
+        mainCtx.lineWidth = Math.max(1, Math.min(5, rPx * 0.08));
+        const numSpokes = rPx > 28 ? 8 : 6;
+        for (let s = 0; s < numSpokes; s++) {
+          const sa = (s / numSpokes) * TAU;
+          mainCtx.beginPath();
+          mainCtx.moveTo(0, 0);
+          mainCtx.lineTo(Math.cos(sa) * (rPx - toothLen * 0.5), Math.sin(sa) * (rPx - toothLen * 0.5));
+          mainCtx.stroke();
+        }
+        // Ruby jewel bearing / brass hub with 1px specular pinpoint
+        const hubR = Math.max(1.5, Math.min(11, rPx * 0.22));
+        mainCtx.fillStyle = hubCol;
+        mainCtx.beginPath();
+        mainCtx.arc(0, 0, hubR, 0, TAU);
+        mainCtx.fill();
+        if (hubR >= 3) {
+          mainCtx.fillStyle = "#ffffff";
+          mainCtx.fillRect(-Math.ceil(hubR * 0.35), -Math.ceil(hubR * 0.35), Math.max(1, Math.round(hubR * 0.3)), Math.max(1, Math.round(hubR * 0.3)));
+        }
+        mainCtx.restore();
+      };
 
-    // Depth 3.2 -> 5.0: The Holonomic Self-Similar World Seed inside the locus!
-    // At Depth 4, you see the entire coastal world nested inside the quantum core at the Monolith's chest;
-    // on the 5th zoom (4 -> 5), this nested world expands to 840x525, returning you to Depth 0/5!
-    if (zMod >= 3.15) {
-      const seedT = Math.max(0, Math.min(1, (zMod - 3.15) / 1.85));
-      // Ease from a 18% inset portal window at zMod=3.5 up to 100% full screen at zMod=5.0!
-      const ease = seedT < 0.45 ? seedT * 0.55 : 0.2475 + ((seedT - 0.45) / 0.55) * 0.7525;
-      const boxW = Math.round(NATIVE_W * ease);
-      const boxH = Math.round(NATIVE_H * ease);
-      const centerZoomX = toZoomX(fx);
-      const centerZoomY = toZoomY(fy);
-      const boxX = Math.round(centerZoomX * (1 - ease));
-      const boxY = Math.round(centerZoomY * (1 - ease));
+      const gearRoom = rectZ(1, 12, 9, 13);
+      if (gearRoom.w >= 10) {
+        // 1. Deep recessed dark-obsidian & brushed-brass clockwork chamber with multi-parallax moiré backing screen
+        mainCtx.fillStyle = "rgb(11, 16, 22)";
+        mainCtx.fillRect(gearRoom.x, gearRoom.y, gearRoom.w, gearRoom.h);
+        fillMoireScreenRect(
+          gearRoom.x + 2,
+          gearRoom.y + 2,
+          gearRoom.w - 4,
+          gearRoom.h - 4,
+          "rgba(70, 138, 144, 0.18)",
+          "rgba(182, 144, 88, 0.16)",
+          0.38,
+          1.92
+        );
 
-      if (boxW > 8 && boxH > 8) {
-        // Draw the unzoomed macro world nested inside the quantum core!
-        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, boxX, boxY, boxW, boxH);
-        if (ease < 0.98) {
-          mainCtx.strokeStyle = "#78ead4";
-          mainCtx.lineWidth = 1;
-          mainCtx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+        // 2. Micro-machined horizontal & vertical escapement bridge plates with 1px brass rivets
+        const bridge1 = rectZ(1.2, 16.0, 8.6, 0.34);
+        const bridge2 = rectZ(1.2, 20.6, 8.6, 0.34);
+        const pillarL = rectZ(3.6, 12.4, 0.30, 12.2);
+        const pillarR = rectZ(6.1, 12.4, 0.30, 12.2);
+        mainCtx.fillStyle = "rgba(50, 78, 88, 0.90)";
+        mainCtx.fillRect(bridge1.x, bridge1.y, bridge1.w, bridge1.h);
+        mainCtx.fillRect(bridge2.x, bridge2.y, bridge2.w, bridge2.h);
+        mainCtx.fillRect(pillarL.x, pillarL.y, pillarL.w, pillarL.h);
+        mainCtx.fillRect(pillarR.x, pillarR.y, pillarR.w, pillarR.h);
+
+        // 1px brass rivets along the bridge plates
+        if (pxSize >= 3) {
+          mainCtx.fillStyle = "#e0bc70";
+          for (let rx = 1.6; rx <= 9.4; rx += 1.3) {
+            const rv1 = rectZ(rx, 16.1, 0.14, 0.14);
+            const rv2 = rectZ(rx, 20.7, 0.14, 0.14);
+            mainCtx.fillRect(rv1.x, rv1.y, Math.max(1, rv1.w), Math.max(1, rv1.h));
+            mainCtx.fillRect(rv2.x, rv2.y, Math.max(1, rv2.w), Math.max(1, rv2.h));
+          }
+        }
+
+        // 3. Reciprocating Escapement Anchor Pendulum & Coiling Hairspring inside the Gear Room!
+        const spin = tick * 0.045;
+        const pendPivotX = toZoomX(X0 + 5.0);
+        const pendPivotY = toZoomY(Y0 + 13.2);
+        const pendSwing = Math.sin(tick * 0.24) * 0.52;
+        const pendBobX = pendPivotX + Math.sin(pendSwing) * (2.2 * pxSize);
+        const pendBobY = pendPivotY + Math.cos(pendSwing) * (2.2 * pxSize);
+        mainCtx.strokeStyle = "#e0bc70";
+        mainCtx.lineWidth = Math.max(1, Math.round(0.14 * pxSize));
+        mainCtx.beginPath();
+        mainCtx.moveTo(pendPivotX, pendPivotY);
+        mainCtx.lineTo(pendBobX, pendBobY);
+        mainCtx.stroke();
+        mainCtx.fillStyle = "#ff5e7e";
+        mainCtx.beginPath();
+        mainCtx.arc(pendBobX, pendBobY, Math.max(1.5, 0.28 * pxSize), 0, TAU);
+        mainCtx.fill();
+
+        // 4. Multi-scale meshing Antikythera gears surrounding the central 2x1 World-Slot (`dx=4..6, dy=18..19`)
+        drawDetailedGear(
+          toZoomX(X0 + 2.8),
+          toZoomY(Y0 + 15.2),
+          2.1 * pxSize,
+          mag > 24 ? 36 : mag > 8 ? 24 : 12,
+          spin,
+          "#d8a648",
+          "#9c7228",
+          "#ff5e7e"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 7.4),
+          toZoomY(Y0 + 21.4),
+          1.8 * pxSize,
+          mag > 24 ? 32 : mag > 8 ? 20 : 10,
+          -spin * 1.25,
+          "#c88a38",
+          "#8c5a1e",
+          "#5ef2ff"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 2.5),
+          toZoomY(Y0 + 22.1),
+          1.25 * pxSize,
+          mag > 20 ? 24 : 12,
+          spin * 1.75,
+          "#b69058",
+          "#785a32",
+          "#e0bc70"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 7.6),
+          toZoomY(Y0 + 15.4),
+          1.2 * pxSize,
+          mag > 20 ? 22 : 12,
+          -spin * 1.85,
+          "#7eced4",
+          "#468a90",
+          "#ffd43b"
+        );
+
+        // Fine planetary pinion gears directly engaging the top, bottom, left, and right edges of the 2x1 World-Slot!
+        drawDetailedGear(
+          toZoomX(X0 + 3.35),
+          toZoomY(Y0 + 18.5),
+          0.62 * pxSize,
+          mag > 25 ? 24 : 12,
+          -spin * 2.4,
+          "#e8c268",
+          "#a88234",
+          "#ffd43b"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 6.65),
+          toZoomY(Y0 + 18.5),
+          0.62 * pxSize,
+          mag > 25 ? 24 : 12,
+          spin * 2.4,
+          "#e8c268",
+          "#a88234",
+          "#ffd43b"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 4.5),
+          toZoomY(Y0 + 17.35),
+          0.58 * pxSize,
+          mag > 25 ? 20 : 10,
+          spin * 3.0,
+          "#78ead4",
+          "#3a8c82",
+          "#e8f8f4"
+        );
+        drawDetailedGear(
+          toZoomX(X0 + 5.5),
+          toZoomY(Y0 + 19.65),
+          0.58 * pxSize,
+          mag > 25 ? 20 : 10,
+          -spin * 3.0,
+          "#78ead4",
+          "#3a8c82",
+          "#e8f8f4"
+        );
+
+        // 5. Progressive Sub-Mechanisms around the 2x1 World-Slot (`dx = 4..6, dy = 18..19`) as `mag` increases:
+        //    Precision brass gear-rack teeth, dovetail guide rails, vernier ticks & pumping micro-clamps!
+        if (mag >= 4.0) {
+          const slotRect = rectZ(4, 18, 2, 1);
+          const rackH = Math.max(1, Math.round(0.08 * pxSize));
+          const toothStep = Math.max(2, Math.round(0.11 * pxSize));
+          mainCtx.fillStyle = "#d8a84e";
+          for (let tx = slotRect.x; tx < slotRect.x + slotRect.w; tx += toothStep) {
+            mainCtx.fillRect(tx, slotRect.y - rackH, Math.max(1, Math.floor(toothStep * 0.55)), rackH);
+            mainCtx.fillRect(tx, slotRect.y + slotRect.h, Math.max(1, Math.floor(toothStep * 0.55)), rackH);
+          }
+          const clampW = Math.max(1, Math.round(0.08 * pxSize));
+          for (let ty = slotRect.y; ty < slotRect.y + slotRect.h; ty += toothStep) {
+            mainCtx.fillRect(slotRect.x - clampW, ty, clampW, Math.max(1, Math.floor(toothStep * 0.55)));
+            mainCtx.fillRect(slotRect.x + slotRect.w, ty, clampW, Math.max(1, Math.floor(toothStep * 0.55)));
+          }
+          // Sub-pixel vernier scale & planetary micro-pinions at high zoom (`mag >= 18`)
+          if (mag >= 18.0) {
+            const subR = Math.max(2, 0.16 * pxSize);
+            drawDetailedGear(slotRect.x - subR * 1.4, slotRect.y - subR * 1.2, subR, 14, spin * 5.2, "#e0bc70", "#9c7228", "#ff5e7e");
+            drawDetailedGear(slotRect.x + slotRect.w + subR * 1.4, slotRect.y - subR * 1.2, subR, 14, -spin * 5.2, "#e0bc70", "#9c7228", "#5ef2ff");
+            drawDetailedGear(slotRect.x - subR * 1.4, slotRect.y + slotRect.h + subR * 1.2, subR, 14, -spin * 5.2, "#7eced4", "#468a90", "#ffd43b");
+            drawDetailedGear(slotRect.x + slotRect.w + subR * 1.4, slotRect.y + slotRect.h + subR * 1.2, subR, 14, spin * 5.2, "#7eced4", "#468a90", "#ffd43b");
+          }
         }
       }
-    }
 
-    // Subtle HUD reticle at the recursive zoom locus
-    const ht = global.HardcoreTab && global.HardcoreTab.HardcoreTabRenderer;
-    if (ht) {
-      const label = `HOLONOMIC ZOOM ${ ((Math.round(zMod) % 5) + 5) % 5 }/5 (${mag.toFixed(1)}X) @ MONOLITH (${Math.round(fx / SCALE)},${Math.round((NATIVE_H - fy) / SCALE)})`;
-      ht.drawMicroText(primeRenderer, 8, 28, label, 255, 212, 59, 0.95, 42);
+      // -----------------------------------------------------------------------
+      // C. MULTIPLE MODIFIED / FLIPPED / PIXEL-AVERAGED RECURSIVE COPIES OF THE
+      //    WORLD INSIDE DIFFERENT SECTIONS OF THE MONOLITH!
+      // -----------------------------------------------------------------------
+      // 1. Head Visor Optic Slot (`dx = 3..7, dy = 4..5`): Horizontally flipped (mirror) + cyan-phosphor filtered world
+      //    with a 1px transparent moiré scanline screen and scanning optic bar!
+      const visorSlot = rectZ(3, 4, 4, 1);
+      if (visorSlot.w >= 4 && visorSlot.h >= 2 && visorSlot.x + visorSlot.w > 0 && visorSlot.x < NATIVE_W) {
+        mainCtx.save();
+        mainCtx.translate(visorSlot.x + visorSlot.w, visorSlot.y);
+        mainCtx.scale(-1, 1);
+        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, visorSlot.w, visorSlot.h);
+        mainCtx.restore();
+        mainCtx.fillStyle = "rgba(45, 225, 245, 0.34)";
+        mainCtx.fillRect(visorSlot.x, visorSlot.y, visorSlot.w, visorSlot.h);
+        fillMoireScreenRect(visorSlot.x, visorSlot.y, visorSlot.w, visorSlot.h, "rgba(185, 252, 255, 0.25)", null, 0.32, 0.9);
+      }
+
+      // 2. Upper-Left & Upper-Right Gear-Room Escapement Windows (`dx = 2..4, dy = 13..14` and `dx = 6..8, dy = 13..14`):
+      //    Left: Vertically flipped (upside-down) + warm amber-brass prime-cycled filter
+      //    Right: Horizontally & vertically inverted + emerald-aether prime-cycled filter
+      const auxLeft = rectZ(2, 13, 2, 1);
+      if (auxLeft.w >= 3 && auxLeft.h >= 2) {
+        mainCtx.save();
+        mainCtx.translate(auxLeft.x, auxLeft.y + auxLeft.h);
+        mainCtx.scale(1, -1);
+        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, auxLeft.w, auxLeft.h);
+        mainCtx.restore();
+        mainCtx.fillStyle = "rgba(245, 190, 65, 0.34)";
+        mainCtx.fillRect(auxLeft.x, auxLeft.y, auxLeft.w, auxLeft.h);
+      }
+      const auxRight = rectZ(6, 13, 2, 1);
+      if (auxRight.w >= 3 && auxRight.h >= 2) {
+        mainCtx.save();
+        mainCtx.translate(auxRight.x + auxRight.w, auxRight.y + auxRight.h);
+        mainCtx.scale(-1, -1);
+        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, auxRight.w, auxRight.h);
+        mainCtx.restore();
+        mainCtx.fillStyle = "rgba(105, 245, 185, 0.32)";
+        mainCtx.fillRect(auxRight.x, auxRight.y, auxRight.w, auxRight.h);
+      }
+
+      // 3. Lower Torso & Chassis Pixel-Averaged Recursive World Mosaic (`dy = 25..37, dx = 2..8`):
+      //    Each 2x1 cell replaces a Monolith pixel with a miniature copy of the world tinted by the EXACT RGB
+      //    of the Monolith pixel it replaces (sampled from `snapRaw`), so from afar it forms the Monolith's
+      //    circuitry/chassis and as you zoom in it reveals miniature recursive worlds!
+      if (mag >= 2.2 && mag <= 110) {
+        for (let my = 25; my <= 37; my += 2) {
+          for (let mx = 2; mx <= 7; mx += 2) {
+            const cell = rectZ(mx, my, 2, 1);
+            if (cell.w < 3 || cell.h < 2) continue;
+            if (cell.x + cell.w < 0 || cell.x >= NATIVE_W || cell.y + cell.h < 0 || cell.y >= NATIVE_H) continue;
+
+            // Sample exact RGB of the Monolith pixel being replaced from `snapRaw`
+            let pR = 38, pG = 68, pB = 78;
+            if (snapRaw) {
+              const sxSample = Math.max(0, Math.min(NATIVE_W - 1, Math.round(X0 + mx)));
+              const sySample = Math.max(0, Math.min(NATIVE_H - 1, Math.round(Y0 + my)));
+              const sOff = (sySample * NATIVE_W + sxSample) << 2;
+              pR = snapRaw[sOff];
+              pG = snapRaw[sOff + 1];
+              pB = snapRaw[sOff + 2];
+            }
+
+            mainCtx.save();
+            const mode = (mx + my) % 6;
+            if (mode === 0) {
+              mainCtx.translate(cell.x + cell.w, cell.y);
+              mainCtx.scale(-1, 1);
+              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, cell.w, cell.h);
+            } else if (mode === 2) {
+              mainCtx.translate(cell.x, cell.y + cell.h);
+              mainCtx.scale(1, -1);
+              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, cell.w, cell.h);
+            } else {
+              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, cell.x, cell.y, cell.w, cell.h);
+            }
+            mainCtx.restore();
+            mainCtx.fillStyle = `rgba(${pR}, ${pG}, ${pB}, 0.48)`;
+            mainCtx.fillRect(cell.x, cell.y, cell.w, cell.h);
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // D. PRIMARY 2x1 GEAR-ROOM MECHANISM SLOT (`dx = 4..6, dy = 18..19` —
+      //    Exact 2 Pixels Across by 1 Pixel High inside the Monolith Gear Room!):
+      //    - Aligned to the exact 2-pixel-wide slot in the Monolith's Gear Room at ALL zoom levels!
+      //    - NO hairline border around it!
+      //    - Projects the live world into the 2x1 slot (using a slight vertical crop + aspect blend that
+      //      smoothly resolves to 1:1 device-pixel exactness across 1008x630 as `zMod -> 5.0`!).
+      // -----------------------------------------------------------------------
+      const primarySlot = rectZ(4, 18, 2, 1);
+      const fullBlend = Math.max(0, Math.min(1, (zMod - 3.6) / 1.4));
+      const boxX = Math.round(primarySlot.x * (1 - fullBlend) + 0 * fullBlend);
+      const boxY = Math.round(primarySlot.y * (1 - fullBlend) + 0 * fullBlend);
+      const boxW = Math.max(2, Math.round(primarySlot.w * (1 - fullBlend) + NATIVE_W * fullBlend));
+      const boxH = Math.max(1, Math.round(primarySlot.h * (1 - fullBlend) + NATIVE_H * fullBlend));
+
+      if (boxW >= 2 && boxH >= 1) {
+        // Slight vertical crop when projecting the 8:5 world into the 2:1 mechanism slot, decaying to 0 crop as fullBlend -> 1
+        const cropFrac = (1 - fullBlend) * 0.14;
+        const cropSy = Math.round(NATIVE_H * cropFrac * 0.5);
+        const cropSh = Math.max(1, NATIVE_H - cropSy * 2);
+        mainCtx.drawImage(zoomState.snapCanvas, 0, cropSy, NATIVE_W, cropSh, boxX, boxY, boxW, boxH);
+
+        // When the 2x1 slot is mid-sized (`boxW >= 24 && fullBlend < 0.85`), overlay subtle 1:1 device-pixel
+        // moiré dither shimmer inside the slot so it has crisp device-pixel texture at every intermediate scale!
+        if (boxW >= 24 && fullBlend < 0.85) {
+          fillMoireScreenRect(
+            boxX,
+            boxY,
+            boxW,
+            boxH,
+            "rgba(168, 232, 228, 0.10)",
+            null,
+            0.22 * (1 - fullBlend),
+            0.65
+          );
+        }
+      }
     }
 
     mainCtx.restore();
