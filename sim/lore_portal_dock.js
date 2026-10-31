@@ -1124,19 +1124,11 @@
       zoomState.focusY = Math.max(16, Math.min(NATIVE_H - 16, Math.round(nativeY)));
     }
     zoomState.totalZoomClicks++;
-    if (zoomState.depth < 0) {
-      zoomState.depth = zoomState.depth + 1;
-      zoomState.targetZoom = zoomState.depth;
-    } else {
-      const nextDepth = (zoomState.depth + 1) % 5;
-      if (nextDepth === 0 && zoomState.depth === 4) {
-        // Animate smoothly through 5.0 (the 5-zoom holonomic loop!) back to 0.0
-        zoomState.targetZoom = 5.0;
-      } else {
-        zoomState.targetZoom = nextDepth;
-      }
-      zoomState.depth = nextDepth;
-    }
+    // Unwrapped monotonic zoom step (+1) on the cyclic 5-step holonomic loop:
+    // Zooming in 0 -> 1 -> 2 -> 3 -> 4 -> 5 zooms continuously INTO the 2x1 gear-room screen
+    // until at 5 (≡ 0 mod 5) that new screen fills 1008x630 and you are already back at origin!
+    zoomState.targetZoom = Math.round(zoomState.targetZoom) + 1;
+    zoomState.depth = ((zoomState.targetZoom % 5) + 5) % 5;
 
     if (global.SlopesAudio && typeof global.SlopesAudio.playPortalShift === "function") {
       global.SlopesAudio.playPortalShift(zoomState.depth !== 0);
@@ -1155,14 +1147,13 @@
     if (typeof nativeY === "number" && !isNaN(nativeY)) {
       zoomState.focusY = Math.max(16, Math.min(NATIVE_H - 16, Math.round(nativeY)));
     }
-    if (zoomState.depth > 0) {
-      zoomState.depth = zoomState.depth - 1;
-      zoomState.targetZoom = zoomState.depth;
-    } else {
-      // Zoom out from 0 -> -1 (0.72x Wide Panorama) -> -2 (0.50x Multi-Sector Horizon) -> 0 (1.0x Origin)
-      zoomState.depth = zoomState.depth <= -2 ? 0 : zoomState.depth - 1;
-      zoomState.targetZoom = zoomState.depth;
-    }
+    zoomState.totalZoomClicks++;
+    // Unwrapped monotonic zoom-out step (-1) on the cyclic 5-step holonomic loop:
+    // Zooming out from 0 (≡ 5 mod 5) -> 4 -> 3 -> 2 -> 1 -> 0 shrinks the current screen
+    // into the 2x1 gear-room slot of the outer Monolith until at 0 you are back at origin!
+    zoomState.targetZoom = Math.round(zoomState.targetZoom) - 1;
+    zoomState.depth = ((zoomState.targetZoom % 5) + 5) % 5;
+
     if (global.SlopesAudio && typeof global.SlopesAudio.playPortalShift === "function") {
       global.SlopesAudio.playPortalShift(false);
     }
@@ -1171,56 +1162,54 @@
   }
 
   function resetZoom() {
-    zoomState.targetZoom = 0;
-    zoomState.continuousZoom = 0;
+    // Snap to the nearest multiple of 5 so reset never winds backward across multiple layers
+    const nearestOrigin = Math.round(zoomState.continuousZoom / 5) * 5;
+    zoomState.targetZoom = nearestOrigin;
+    zoomState.continuousZoom = nearestOrigin;
     zoomState.depth = 0;
     zoomState.customFocusFrames = 0;
     updateChronosDomUI();
   }
 
   function stepAndRenderRecursiveZoom(primeRenderer, world) {
-    // Smoothly interpolate continuousZoom toward targetZoom
+    // Smoothly interpolate continuousZoom toward targetZoom along the unbounded real line
     const diff = zoomState.targetZoom - zoomState.continuousZoom;
-    if (Math.abs(diff) > 0.002) {
-      zoomState.continuousZoom += diff * 0.22;
+    if (Math.abs(diff) > 0.0015) {
+      zoomState.continuousZoom += diff * 0.18;
     } else {
       zoomState.continuousZoom = zoomState.targetZoom;
     }
 
-    // Wrap modulo 5 so that completing the 5th zoom (continuousZoom reaching 5.0)
-    // lands seamlessly back at 0.0 (where you began)!
-    if (zoomState.continuousZoom >= 4.985 && zoomState.targetZoom >= 5) {
-      zoomState.continuousZoom = 0;
-      zoomState.targetZoom = 0;
-      zoomState.depth = 0;
-      updateChronosDomUI();
-    }
+    // Cyclic modulo-5 zoom phase in [0, 5):
+    // Travelling ONLY IN (0 -> 1 -> 2 -> 3 -> 4 -> 5 ≡ 0) or ONLY OUT (0 ≡ 5 -> 4 -> 3 -> 2 -> 1 -> 0)
+    // both traverse the full recursive Monolith loop and land seamlessly back at origin!
+    const zMod = ((zoomState.continuousZoom % 5) + 5) % 5;
 
-    // Continuously track the exact 2x1 pixel Gear-Room Mechanism Slot inside the Player Monolith (`TACHIMA-307`)
-    // so the zoom locus is ALWAYS centered on that 2x1 pixel slot inside the Monolith's chest gear room!
+    // Continuously track the exact 2x1 pixel Gear-Room Mechanism Slot (`dx=4..6, dy=18..19`)
+    // inside the Player Monolith (`TACHIMA-307`)!
+    let slotX = NATIVE_W * 0.5 - 1;
+    let slotY = NATIVE_H * 0.5;
     if (world && world.P) {
       const pcx = Math.round(world.P.x);
       const pyTop = COARSE_H - Math.round(world.P.y) - 6;
       const monoX0 = pcx * SCALE - 2;
       const monoY0 = pyTop * SCALE;
-      // Exact center of the 2-pixel-wide by 1-pixel-high slot (`monoX0 + 4 .. monoX0 + 6`, `monoY0 + 18 .. monoY0 + 19`)
-      const slotCenterX = Math.max(14, Math.min(NATIVE_W - 14, monoX0 + 5.0));
-      const slotCenterY = Math.max(14, Math.min(NATIVE_H - 14, monoY0 + 18.5));
-      zoomState.focusX = slotCenterX;
-      zoomState.focusY = slotCenterY;
+      slotX = monoX0 + 4;
+      slotY = monoY0 + 18;
+      zoomState.focusX = slotX + 1.0;
+      zoomState.focusY = slotY + 0.5;
       zoomState.monoX0 = monoX0;
       zoomState.monoY0 = monoY0;
     }
 
-    if (Math.abs(zoomState.continuousZoom) < 0.008) return; // At exact 1x macro origin (0/5), no zoom warp needed!
+    // At exact 1x macro origin (zMod ≈ 0 or zMod ≈ 5 when settled), the 2x1 slot already fills 1008x630 1:1!
+    if ((zMod < 0.002 || zMod > 4.998) && Math.abs(diff) <= 0.0015) return;
 
     const mainCanvas = typeof document !== "undefined" ? document.getElementById("pi-shift") : null;
     const mainCtx = mainCanvas ? mainCanvas.getContext("2d") : null;
     const scratchCtx = ensureZoomScratchCanvas(mainCtx);
     if (!mainCanvas || !mainCtx || !scratchCtx) return;
 
-    const fx = zoomState.focusX;
-    const fy = zoomState.focusY;
     zoomState.animTick = ((zoomState.animTick || 0) + 1) & 0x7fffffff;
     const tick = ((world && typeof world.frameCount === "number" ? world.frameCount : 0) + zoomState.animTick) | 0;
 
@@ -1254,62 +1243,23 @@
     scratchCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
     scratchCtx.drawImage(mainCanvas, 0, 0);
 
-    // WIDE PANORAMIC ZOOM-OUT MODE (continuousZoom < 0: -1 = 0.72x, -2 = 0.50x)
-    if (zoomState.continuousZoom < 0) {
-      const wideScale = Math.pow(0.71, Math.abs(zoomState.continuousZoom)); // ~0.71x at -1, ~0.50x at -2
-      const dstW = Math.round(NATIVE_W * wideScale);
-      const dstH = Math.round(NATIVE_H * wideScale);
-      const dstX = Math.round((NATIVE_W - dstW) * 0.5);
-      const dstY = Math.round((NATIVE_H - dstH) * 0.55);
-
-      mainCtx.save();
-      mainCtx.imageSmoothingEnabled = false;
-      mainCtx.fillStyle = `rgb(${Math.round(bgR * 0.58)}, ${Math.round(bgG * 0.62)}, ${Math.round(bgB * 0.65)})`;
-      mainCtx.fillRect(0, 0, NATIVE_W, NATIVE_H);
-      const seaY = dstY + Math.round(dstH * 0.82);
-      mainCtx.fillStyle = `rgb(${Math.round(bgR * 0.28)}, ${Math.round(bgG * 0.34)}, ${Math.round(bgB * 0.40)})`;
-      mainCtx.fillRect(0, seaY, NATIVE_W, NATIVE_H - seaY);
-
-      // Multi-parallax 1px dither moiré horizon bands in wide mode
-      mainCtx.fillStyle = "rgba(168, 224, 218, 0.14)";
-      for (let py = 0; py < seaY; py += 2) {
-        const shiftA = (py + Math.floor(tick * 0.12)) & 7;
-        for (let px = shiftA; px < NATIVE_W; px += 8) {
-          if (((px * 3 + py * 5) & 7) < 2) mainCtx.fillRect(px, py, 1, 1);
-        }
-      }
-
-      // Draw ghosted neighboring West & East sector silhouettes on the left and right!
-      mainCtx.globalAlpha = 0.52;
-      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX - dstW - 6, dstY, dstW, dstH);
-      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX + dstW + 6, dstY, dstW, dstH);
-      mainCtx.globalAlpha = 1.0;
-
-      // Draw current sector centered at wide scale with NO hairline border around it
-      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX, dstY, dstW, dstH);
-      mainCtx.restore();
-      return;
-    }
-
-    const zMod = ((zoomState.continuousZoom % 5) + 5) % 5;
-
-    // Magnification factor across the 5 zoom steps (zMod = 0 -> 5):
-    // At zMod = 0: mag = 1.0x.
-    // At zMod = 5: the 2-pixel-wide Gear Room slot (width = 2 native pixels) magnifies by 504x (2 * 504 = 1008 = NATIVE_W)
-    // so the 2x1 slot inside the Monolith's gear room expands to fill the entire 1008x630 screen!
-    const FULL_SLOT_MAG = NATIVE_W / 2; // 504.0x
-    const mag = Math.pow(FULL_SLOT_MAG, zMod / 5.0);
-    const srcW = NATIVE_W / mag;
-    const srcH = NATIVE_H / mag;
-    // Anchor the zoom camera so the 2x1 Gear-Room slot (fx, fy) remains at the exact fixed point!
-    const uAnchor = fx / NATIVE_W;
-    const vAnchor = fy / NATIVE_H;
-    const sx = fx - uAnchor * srcW;
-    const sy = fy - vAnchor * srcH;
+    // Exact homothety anchoring the 2x1 Gear-Room slot `[slotX..slotX+2, slotY..slotY+1]` to `[0..NATIVE_W, 0..NATIVE_H]`:
+    // - At zMod = 0: magX = 1, magY = 1 -> srcW = 1008, srcH = 630, sx = 0, sy = 0.
+    // - At zMod = 5: magX = 504, magY = 630 -> srcW = 2, srcH = 1, sx = slotX, sy = slotY,
+    //   so `rectZ(4, 18, 2, 1)` expands directly into `(0, 0, 1008, 630)` and you are already back at origin!
+    const magX = Math.pow(NATIVE_W / 2, zMod / 5.0);
+    const magY = Math.pow(NATIVE_H / 1, zMod / 5.0);
+    const mag = Math.sqrt(magX * magY);
+    const srcW = NATIVE_W / magX;
+    const srcH = NATIVE_H / magY;
+    const u0 = Math.max(0, Math.min(1, slotX / (NATIVE_W - 2)));
+    const v0 = Math.max(0, Math.min(1, slotY / (NATIVE_H - 1)));
+    const sx = u0 * (NATIVE_W - srcW);
+    const sy = v0 * (NATIVE_H - srcH);
 
     // Helper to project unzoomed native coordinates (nx, ny) into zoomed screen coordinates
-    const toZoomX = (nx) => (nx - sx) * mag;
-    const toZoomY = (ny) => (ny - sy) * mag;
+    const toZoomX = (nx) => (nx - sx) * magX;
+    const toZoomY = (ny) => (ny - sy) * magY;
 
     const eco = (global.SlopesGame && global.SlopesGame.ecologySystem && global.SlopesGame.ecologySystem.eco) || null;
     const cosmic = (global.SlopesGame && global.SlopesGame.cosmicSystem && global.SlopesGame.cosmicSystem.cosmic) || null;
@@ -1319,8 +1269,7 @@
     mainCtx.save();
     mainCtx.imageSmoothingEnabled = false;
 
-    // When zMod is very close to 0 (< 0.08) or very close to 5.0 (> 4.92), blend smoothly with the 1x frame
-    if (!blocks || !zoomState.hiResImgData || zMod < 0.05) {
+    if (!blocks || !zoomState.hiResImgData) {
       mainCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
       mainCtx.drawImage(zoomState.snapCanvas, sx, sy, srcW, srcH, 0, 0, NATIVE_W, NATIVE_H);
       mainCtx.restore();
@@ -1372,7 +1321,7 @@
     };
 
     for (let px = 0; px < NATIVE_W; px++) {
-      const wx = sx + px / mag;
+      const wx = sx + px / magX;
       colWorldX[px] = wx;
       const coarseF = wx / SCALE - 0.5;
       const elev = sampleSmoothElev(coarseF);
@@ -1412,7 +1361,7 @@
     // Accumulate adjacent-object illumination (Town hearths/braziers, Dwarf forges, Crystals, TimeCrystals, Vats, Lava)
     const addLightSource = (arr, nativeX, radiusNative, strength) => {
       const zCx = toZoomX(nativeX);
-      const zRad = radiusNative * mag;
+      const zRad = radiusNative * magX;
       if (zCx + zRad < 0 || zCx - zRad >= NATIVE_W || zRad < 1) return;
       const x0 = Math.max(0, Math.floor(zCx - zRad));
       const x1 = Math.min(NATIVE_W - 1, Math.ceil(zCx + zRad));
@@ -1474,7 +1423,7 @@
     const skyTintB = p211 * 9 + p1103 * 6;
 
     for (let y = 0; y < NATIVE_H; y++) {
-      const wy = sy + y / mag;
+      const wy = sy + y / magY;
       const skyV = Math.max(0, Math.min(1, wy / NATIVE_H));
       const rowOff = y * NATIVE_W * 4;
       const bRowA = ((y + parShift04Y) & 7) << 3;
@@ -2688,36 +2637,48 @@
       // -----------------------------------------------------------------------
       // D. PRIMARY 2x1 GEAR-ROOM MECHANISM SLOT (`dx = 4..6, dy = 18..19` —
       //    Exact 2 Pixels Across by 1 Pixel High inside the Monolith Gear Room!):
-      //    - Aligned to the exact 2-pixel-wide slot in the Monolith's Gear Room at ALL zoom levels!
-      //    - NO hairline border around it!
-      //    - Projects the live world into the 2x1 slot (using a slight vertical crop + aspect blend that
-      //      smoothly resolves to 1:1 device-pixel exactness across 1008x630 as `zMod -> 5.0`!).
+      //    - Locked to the exact 2x1 slot (`rectZ(4, 18, 2, 1)`) at ALL zoom levels!
+      //    - Under our exact homothety (`magX = 504^(zMod/5)`, `magY = 630^(zMod/5)`),
+      //      `rectZ(4, 18, 2, 1)` expands continuously into `(0, 0, 1008, 630)` as `zMod -> 5.0`!
+      //    - When zooming into the final frame (`4 -> 5 ≡ 0`), you zoom straight INTO this
+      //      new screen until it fills the viewport and you are already back where you started!
       // -----------------------------------------------------------------------
+      if (zMod < 0.30) {
+        // Smooth C0 cross-fade across the 0/5 origin seam so starting to zoom in (0 -> 1)
+        // or finishing zooming out (1 -> 0) transitions seamlessly from the 1x macro frame
+        mainCtx.save();
+        mainCtx.globalAlpha = Math.max(0, Math.min(1, 1 - zMod / 0.30));
+        mainCtx.drawImage(zoomState.snapCanvas, sx, sy, srcW, srcH, 0, 0, NATIVE_W, NATIVE_H);
+        mainCtx.restore();
+      }
+
       const primarySlot = rectZ(4, 18, 2, 1);
-      const fullBlend = Math.max(0, Math.min(1, (zMod - 3.6) / 1.4));
-      const boxX = Math.round(primarySlot.x * (1 - fullBlend) + 0 * fullBlend);
-      const boxY = Math.round(primarySlot.y * (1 - fullBlend) + 0 * fullBlend);
-      const boxW = Math.max(2, Math.round(primarySlot.w * (1 - fullBlend) + NATIVE_W * fullBlend));
-      const boxH = Math.max(1, Math.round(primarySlot.h * (1 - fullBlend) + NATIVE_H * fullBlend));
+      if (primarySlot.w >= 2 && primarySlot.h >= 1) {
+        mainCtx.drawImage(
+          zoomState.snapCanvas,
+          0,
+          0,
+          NATIVE_W,
+          NATIVE_H,
+          primarySlot.x,
+          primarySlot.y,
+          primarySlot.w,
+          primarySlot.h
+        );
 
-      if (boxW >= 2 && boxH >= 1) {
-        // Slight vertical crop when projecting the 8:5 world into the 2:1 mechanism slot, decaying to 0 crop as fullBlend -> 1
-        const cropFrac = (1 - fullBlend) * 0.14;
-        const cropSy = Math.round(NATIVE_H * cropFrac * 0.5);
-        const cropSh = Math.max(1, NATIVE_H - cropSy * 2);
-        mainCtx.drawImage(zoomState.snapCanvas, 0, cropSy, NATIVE_W, cropSh, boxX, boxY, boxW, boxH);
-
-        // When the 2x1 slot is mid-sized (`boxW >= 24 && fullBlend < 0.85`), overlay subtle 1:1 device-pixel
-        // moiré dither shimmer inside the slot so it has crisp device-pixel texture at every intermediate scale!
-        if (boxW >= 24 && fullBlend < 0.85) {
+        // When the 2x1 slot is mid-sized (`primarySlot.w >= 24 && zMod < 3.6`), overlay subtle 1:1 device-pixel
+        // moiré dither shimmer inside the slot that fades to 0 before the final zoom-in (`zMod: 4 -> 5`)
+        // so the new screen is 100% pure 1:1 world as you arrive back at origin!
+        const moireFade = Math.max(0, Math.min(1, (3.6 - zMod) / 0.8));
+        if (primarySlot.w >= 24 && moireFade > 0.01) {
           fillMoireScreenRect(
-            boxX,
-            boxY,
-            boxW,
-            boxH,
+            primarySlot.x,
+            primarySlot.y,
+            primarySlot.w,
+            primarySlot.h,
             "rgba(168, 232, 228, 0.10)",
             null,
-            0.22 * (1 - fullBlend),
+            0.22 * moireFade,
             0.65
           );
         }
