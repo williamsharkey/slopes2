@@ -113,9 +113,16 @@
         setTimeout(() => {
           const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
           idle(() => {
-            void ensureRealTabComputerBooted("TAB-01").catch(() => {});
+            void ensureRealTabComputerBooted("TAB-01")
+              .then((tc) => syncCredentialsToRealFs(tc))
+              .then(() => {
+                if (window.SlopesSocialTui && typeof window.SlopesSocialTui.render === "function") {
+                  window.SlopesSocialTui.render();
+                }
+              })
+              .catch(() => {});
           });
-        }, 1200);
+        }, 400);
       }
     } catch (_) {}
   })();
@@ -298,6 +305,9 @@
         iframe = document.createElement("iframe");
         iframe.id = "slopes2-real-tabcomputer-iframe";
         iframe.title = "Real TabComputer Linux Runtime";
+        iframe.tabIndex = -1;
+        iframe.setAttribute("inert", "");
+        iframe.setAttribute("aria-hidden", "true");
         iframe.allow = "clipboard-read; clipboard-write; cross-origin-isolated";
         // Hidden offscreen at all times while streaming into Hardcore Hairline pixels (no xterm view!)
         iframe.style.cssText = [
@@ -312,7 +322,7 @@
           "opacity:0",
           "pointer-events:none",
         ].join(";");
-        iframe.src = "./tabcomputer/index.html?profile=tabcomputer&ui=terminal";
+        iframe.src = "./tabcomputer/index.html?profile=tabcomputer&ui=terminal&v=1037_3";
         screenDiv.appendChild(iframe);
       }
       bridgeState.iframe = iframe;
@@ -324,6 +334,11 @@
         try {
           const cw = iframe.contentWindow;
           if (cw) {
+            // Prevent hidden offscreen xterm inside iframe from stealing focus from parent #mobile-bottom-input!
+            if (cw.HTMLElement && cw.HTMLElement.prototype && !cw.HTMLElement.prototype.__slopesNoFocusSteal) {
+              cw.HTMLElement.prototype.__slopesNoFocusSteal = true;
+              cw.HTMLElement.prototype.focus = function () {};
+            }
             // Ensure API proxy calls inside the iframe route to https://tabcomputer.com
             cw.__TABCOMPUTER_ORIGIN__ = "https://tabcomputer.com";
             installTabComputerApiFetchInterceptor(cw);
@@ -366,28 +381,14 @@
         const st = await tc.fs.stat("/var/lib/tabcomputer/claude-vm.json").catch(() => null);
         if (st && st.size > 0) {
           delete tc.shell.env["CLAUDE_NATIVE"];
-          return "claude --dangerously-skip-permissions" + suffix;
-        }
-      }
-      if (bridgeState.claudeVmRangeSupported === true) {
-        delete tc.shell.env["CLAUDE_NATIVE"];
-        return "claude --dangerously-skip-permissions" + suffix;
-      }
-      if (bridgeState.claudeVmRangeSupported === undefined) {
-        const probeUrl = rewriteTabComputerApiUrl("/claude-releases/2.1.316/linux-x64-musl/claude");
-        const r = await fetch(probeUrl, {
-          method: "GET",
-          headers: { Range: "bytes=0-63" },
-          cache: "no-store",
-        }).catch(() => null);
-        bridgeState.claudeVmRangeSupported = Boolean(r && r.status === 206);
-        if (bridgeState.claudeVmRangeSupported) {
-          delete tc.shell.env["CLAUDE_NATIVE"];
-          return "claude --dangerously-skip-permissions" + suffix;
+          return "claude" + suffix;
         }
       }
     } catch (_) {}
-    return "claude --npm --dangerously-skip-permissions" + suffix;
+    // While background preinstall of claude-vm is still running (or on first boot),
+    // launch `claude --npm` immediately (~2s startup, no 55MB download wait), and `claude.ts`
+    // automatically adds `--dangerously-skip-permissions` once.
+    return "claude --npm" + suffix;
   }
 
   async function prewarmTabComputerClaude(tc, cw) {
@@ -540,9 +541,11 @@
       }
     } catch (_) {}
 
-    // Hydrate `/home/user/slopes2` live source checkout & attach 0-frame-drop `fs.writeFile` hot-reload hook
-    await hydrateSlopes2Checkout(tc);
+    // Hydrate `/home/user/slopes2` live source checkout asynchronously in background & attach 0-frame-drop `fs.writeFile` hot-reload hook
     installInstantHotReloadFsHook(tc);
+    setTimeout(() => {
+      void hydrateSlopes2Checkout(tc).catch(() => {});
+    }, 600);
 
     // Seed `/home/user/AGENTS.md`, `/home/user/.claude/CLAUDE.md`, `/home/user/slopes2/AGENTS.md`, and `/tmp/slopes2_status.json`
     const tf = getActiveTabForm();
@@ -1126,7 +1129,7 @@
     const forms = (global.SlopesTabForms && global.SlopesTabForms.tabForms) || [];
     for (let i = 0; i < forms.length; i++) {
       const tf = forms[i];
-      if (tf.realTabActive && tf.shell && Array.isArray(tf.shell.lines)) {
+      if (tf.realTabActive && tf.id === bridgeState.activeTabFormId && tf.shell && Array.isArray(tf.shell.lines)) {
         tf.shell.lines.length = 0;
         const tail = extracted.slice(-36);
         for (let j = 0; j < tail.length; j++) {

@@ -1429,8 +1429,6 @@
       const wy = sy + y / magY;
       const skyV = Math.max(0, Math.min(1, wy / NATIVE_H));
       const rowOff = y * NATIVE_W * 4;
-      const bRowA = ((y + parShift04Y) & 7) << 3;
-      const bRowB = ((y + parShift11Y) & 7) << 3;
 
       for (let x = 0; x < NATIVE_W; x++) {
         const idx = rowOff + (x << 2);
@@ -1439,119 +1437,78 @@
         const warmL = colLightWarm[x];
         const cyanL = colLightCyan[x];
 
-        // Two-layer 1:1 device-pixel Bayer & rotated halftone thresholds at mismatched parallax depths -> Moiré!
-        const bayerA = ZOOM_BAYER8[bRowA | ((x + parShift04X) & 7)];
-        const bayerB = ZOOM_BAYER8[bRowB | (((x + parShift11X) + ((y + parShift04Y) >> 1)) & 7)];
-        const moireBeat = 0.5 * (bayerA + bayerB);
-
         if (y < surfZY) {
           // -------------------------------------------------------------------
-          // A. ABOVE TERRAIN SPLINE: MULTI-PARALLAX SKY, RIDGES, MIST & SEA
+          // A. ABOVE TERRAIN SPLINE: CLEAN SKY, RIDGES, MIST & SEA (NO ARTIFICIAL MOIRÉ)
           // -------------------------------------------------------------------
-          // 1. Atmospheric sky gradient with multi-parallax moiré dither screen
-          const grad = 0.76 + 0.38 * (1 - skyV) + (moireBeat - 0.5) * 0.14;
-          let r = bgR * grad + skyTintR;
-          let g = bgG * grad + skyTintG;
-          let b = bgB * grad + skyTintB;
+          // 1. Clean atmospheric sky matching the unzoomed world sky color
+          const grad = 0.94 + 0.10 * (1 - skyV);
+          let r = bgR * grad + skyTintR * 0.35;
+          let g = bgG * grad + skyTintG * 0.35;
+          let b = bgB * grad + skyTintB * 0.35;
 
-          // High-altitude cirrus / astral moiré filaments in upper sky
-          if (wy < NATIVE_H * 0.42) {
-            const cirrusPhase = Math.sin((x + parShift04X) * 0.045 + (y - parShift04Y) * 0.09) *
-                                Math.cos((x - parShift11X) * 0.038 - y * 0.07);
-            if (cirrusPhase > bayerA * 0.85 + 0.1) {
-              r += (212 - r) * 0.24;
-              g += (234 - g) * 0.26;
-              b += (238 - b) * 0.28;
-            }
-          }
-
-          // 2. Parallax 0.08x Far Horizon Mountains (1px stepped Bayer + diagonal hatch screen)
+          // 2. Parallax 0.08x Far Horizon Mountains (clean solid silhouette, no Bayer moiré)
           const farZY = colFarRidgeY[x];
           if (y >= farZY) {
             const dFar = (y - farZY) / Math.max(8, NATIVE_H * 0.25 * mag);
-            const farScreen = ZOOM_BAYER8[((y & 7) << 3) | ((x + parShift04X) & 7)];
-            const snowCap = dFar < 0.06 && farScreen < 0.62 - dFar * 6;
-            const mR = snowCap ? 210 : 42 + bgR * 0.32;
-            const mG = snowCap ? 222 : 56 + bgG * 0.34;
-            const mB = snowCap ? 226 : 68 + bgB * 0.38;
-            const blend = farScreen < 0.78 ? 0.68 : 0.38;
+            const snowCap = dFar < 0.035;
+            const mR = snowCap ? 196 : 38 + bgR * 0.38;
+            const mG = snowCap ? 214 : 58 + bgG * 0.42;
+            const mB = snowCap ? 218 : 68 + bgB * 0.44;
+            const blend = 0.56;
             r += (mR - r) * blend;
             g += (mG - g) * blend;
             b += (mB - b) * blend;
           }
 
-          // 3. Parallax 0.22x Drifting Cloud / Mist Veil (transparent dither screen bleeding over far mountains!)
+          // 3. Parallax 0.22x Drifting Cloud / Mist Veil (smooth translucent band, no dither grid)
           const mTop = colMistTopY[x];
           const mBot = colMistBotY[x];
           if (y >= mTop && y <= mBot) {
             const mMid = 0.5 * (mTop + mBot);
             const mHalf = Math.max(2, 0.5 * (mBot - mTop));
-            const env = 1 - Math.abs(y - mMid) / mHalf;
-            const mistDither = ZOOM_BAYER8[(((y + (tick >> 2)) & 7) << 3) | ((x + parShift22X) & 7)];
-            if (env * 0.82 > mistDither) {
-              const aMist = env * 0.42;
-              r += (216 - r) * aMist;
-              g += (228 - g) * aMist;
-              b += (228 - b) * aMist;
-            }
+            const env = Math.max(0, 1 - Math.abs(y - mMid) / mHalf);
+            const aMist = env * env * 0.18;
+            r += (212 - r) * aMist;
+            g += (226 - g) * aMist;
+            b += (226 - b) * aMist;
           }
 
-          // 4. Parallax 0.48x Foothills & Ancient Ruin Silhouettes (multi-fill moiré dither screen)
+          // 4. Parallax 0.48x Foothills Silhouette (clean smooth tone, no moiré screen)
           const footZY = colFoothillY[x];
           if (y >= footZY) {
-            const footScreenA = ZOOM_BAYER8[((y & 7) << 3) | ((x + parShift48X) & 7)];
-            const footScreenB = ((x + parShift48X + y * 2) & 3) * 0.25;
-            if (0.5 * (footScreenA + footScreenB) < 0.66) {
-              const fR = 28 + bgR * 0.22;
-              const fG = 40 + bgG * 0.25;
-              const fB = 48 + bgB * 0.28;
-              r += (fR - r) * 0.58;
-              g += (fG - g) * 0.58;
-              b += (fB - b) * 0.58;
-            }
+            const fR = 28 + bgR * 0.26;
+            const fG = 44 + bgG * 0.28;
+            const fB = 50 + bgB * 0.30;
+            r += (fR - r) * 0.48;
+            g += (fG - g) * 0.48;
+            b += (fB - b) * 0.48;
           }
 
-          // 5. Coastal Sea / Basin Water with 3-Layer Parallax Moiré Caustics & Prime-Cycled Glints
+          // 5. Coastal Sea / Basin Water (clean depth gradient & crest line, no moiré caustics)
           if (y >= seaZoomY && colSurfNativeY[x] > seaNativeY - 1.5) {
             const waterDepthPx = y - seaZoomY;
             const waterDepthN = waterDepthPx / mag;
-            const waveFoam = waterDepthPx < Math.max(2, mag * 0.28);
-            const wScreen1 = ZOOM_BAYER8[(((y + (tick >> 1)) & 7) << 3) | ((x + parShift22X) & 7)];
-            const wScreen2 = ZOOM_BAYER8[(((y - (tick >> 2)) & 7) << 3) | ((x - parShift48X + (y >> 1)) & 7)];
-            const causticMoire = Math.abs(wScreen1 - wScreen2) < 0.16;
-            if (waveFoam && ((x + y + (tick >> 1)) & 1) === 0) {
-              r = 218;
-              g = 244;
-              b = 246;
+            const waveFoam = waterDepthPx < Math.max(2, mag * 0.24);
+            if (waveFoam) {
+              r = 186;
+              g = 236;
+              b = 240;
             } else {
               const deepT = Math.min(1, waterDepthN / 28);
               const wR = 16 + (1 - deepT) * 28;
               const wG = 62 + (1 - deepT) * 76;
               const wB = 78 + (1 - deepT) * 84;
-              r = r * 0.22 + wR * 0.78;
-              g = g * 0.22 + wG * 0.78;
-              b = b * 0.22 + wB * 0.78;
-              if (causticMoire) {
-                const cBoost = (1 - deepT * 0.6) * (0.35 + 0.15 * p211);
-                r += (156 - r) * cBoost;
-                g += (238 - g) * cBoost;
-                b += (245 - b) * cBoost;
-              }
-              // Specular prime-cycle water glints when P1=211 and P2=307 constructively interfere
-              if (waterDepthPx < mag * 2.2 && p211 + p307 > 0.45 && ((x * 5 + y * 3 + tick) & 31) === 0) {
-                r = 248;
-                g = 236;
-                b = 188;
-              }
+              r = r * 0.18 + wR * 0.82;
+              g = g * 0.18 + wG * 0.82;
+              b = b * 0.18 + wB * 0.82;
             }
           }
 
-          // 6. Preserve non-sky foreground objects from `snapRaw` (e.g., flying Tab-Forms, Airships, HUD text)
-          //    filtered through a 1px device-pixel anti-block dither screen so they never look like flat giant squares!
+          // 6. Preserve non-sky foreground objects from `snapRaw` cleanly at 100% opacity (zero Bayer holes!)
           if (snapRaw) {
             const sxi = Math.max(0, Math.min(NATIVE_W - 1, wx | 0));
             const syi = Math.max(0, Math.min(NATIVE_H - 1, wy | 0));
-            // Skip the Monolith bounding box (`X0-3..X0+14, Y0-2..Y0+45`) because Section 4 redraws the Monolith in full 1px zoom!
             const inMonoBox =
               world.P &&
               wx >= zoomState.monoX0 - 3 &&
@@ -1565,12 +1522,10 @@
               const sb = snapRaw[sIdx + 2];
               const sa = snapRaw[sIdx + 3];
               const diffSky = Math.abs(sr - bgR) + Math.abs(sg - bgG) + Math.abs(sb - bgB);
-              if (sa > 120 && diffSky > 68 && wy < colSurfNativeY[x] - 4) {
-                // Blend via 1px device-pixel dither screen so zoomed sprites gain crisp woven dither texture
-                const fgBlend = moireBeat < 0.72 ? 0.76 : 0.42;
-                r += (sr - r) * fgBlend;
-                g += (sg - g) * fgBlend;
-                b += (sb - b) * fgBlend;
+              if (sa > 120 && diffSky > 48 && wy < colSurfNativeY[x] - 4) {
+                r = sr;
+                g = sg;
+                b = sb;
               }
             }
           }
@@ -1591,33 +1546,26 @@
           hiData[idx + 3] = 255;
         } else {
           // -------------------------------------------------------------------
-          // B. BELOW CONTINUOUS TERRAIN SPLINE: 1PX TOPSOIL, INTERLOCKING COBBLES,
-          //    MULTI-PARALLAX GEOLOGICAL MOIRÉ STRATA & PRIME-CYCLED VEINS
+          // B. BELOW CONTINUOUS TERRAIN SPLINE: CLEAN TOPSOIL, STONE COBBLES & VEINS
+          //    (NO ARTIFICIAL MOIRÉ / BAYER DITHER GRIDS)
           // -------------------------------------------------------------------
           const depthPx = y - surfZY;
           const depthN = depthPx / mag;
 
-          // Multi-layer subterranean parallax dither screens (1.0x bedding vs 1.19x cleavage)
-          const rockBayerA = ZOOM_BAYER8[(((y + parShift04Y) & 7) << 3) | ((x + parShift100X) & 7)];
-          const rockHatchB = (((x + parShift119X) + ((y - parShift04Y) << 1)) & 7) * 0.125;
-          const rockMoire = 0.5 * (rockBayerA + rockHatchB);
-
           let r, g, b;
           const crestPx = Math.max(2.5, Math.min(10, mag * 0.55));
           if (depthPx < crestPx) {
-            // 1. Crisp 1px topsoil & moss ridge crest following the smooth spline
-            const mossMix = rockMoire < 0.52 ? 1 : 0;
-            r = mossMix ? 88 : 64;
-            g = mossMix ? 148 + p499 * 12 : 124;
-            b = mossMix ? 112 + p211 * 10 : 108;
-            // Morning dew / mineral glint on the very top 1px edge when prime cycles align
+            // 1. Clean topsoil & moss ridge crest following the smooth spline
+            r = 76;
+            g = 142 + p499 * 8;
+            b = 110 + p211 * 6;
             if (depthPx < 1.5 && ((x + tick) & 7) === 0 && p211 + p307 > 0.2) {
-              r = 186;
-              g = 242;
-              b = 228;
+              r = 166;
+              g = 232;
+              b = 216;
             }
           } else {
-            // 2. Staggered interlocking stone cobbles & sedimentary bedding courses
+            // 2. Staggered interlocking stone cobbles & sedimentary bedding courses (clean solid tones)
             const courseH = Math.max(3, Math.min(18, Math.round(mag * 1.35)));
             const courseIdx = Math.floor(depthPx / courseH);
             const inCourseY = Math.floor(depthPx) % courseH;
@@ -1631,15 +1579,14 @@
             const deepFade = Math.max(0.32, 1 - depthN / 62);
 
             if (isMortar && depthN < 24) {
-              r = 22 * deepFade;
-              g = 36 * deepFade;
-              b = 44 * deepFade;
+              r = 20 * deepFade;
+              g = 34 * deepFade;
+              b = 40 * deepFade;
             } else {
-              // Base slate/basalt/ochre stone tone modulated by 2-layer geological moiré dither
-              const moireShift = (rockMoire - 0.5) * 26 + (stoneHash - 0.5) * 18;
-              r = (44 + stoneHash * 22 + moireShift) * deepFade;
-              g = (66 + stoneHash * 24 + moireShift) * deepFade;
-              b = (74 + stoneHash * 20 + moireShift) * deepFade;
+              const toneShift = (stoneHash - 0.5) * 14;
+              r = (32 + stoneHash * 16 + toneShift) * deepFade;
+              g = (56 + stoneHash * 18 + toneShift) * deepFade;
+              b = (62 + stoneHash * 16 + toneShift) * deepFade;
             }
 
             // 3. Continuous Neighbor-Connected Glowing Aetherium & Gold-Quartz Veins (Prime-Cycled!)
@@ -1683,26 +1630,15 @@
 
     mainCtx.putImageData(zoomState.hiResImgData, 0, 0);
 
-    // Helper to draw a 2-layer parallax moiré dither-screened translucent rectangle on `mainCtx`
-    const fillMoireScreenRect = (rx, ry, rw, rh, colA, colB, density, depthShift) => {
+    // Clean solid/translucent rectangle fill (no artificial moiré dither patterns)
+    const fillMoireScreenRect = (rx, ry, rw, rh, colA) => {
       const x0 = Math.max(0, Math.round(rx));
       const y0 = Math.max(0, Math.round(ry));
       const x1 = Math.min(NATIVE_W, Math.round(rx + rw));
       const y1 = Math.min(NATIVE_H, Math.round(ry + rh));
-      if (x1 <= x0 || y1 <= y0) return;
-      const shA = Math.round(sx * depthShift + tick * 0.15);
-      const shB = Math.round(sy * depthShift * 1.3 - tick * 0.11);
-      for (let py = y0; py < y1; py++) {
-        const bRow = ((py + shB) & 7) << 3;
-        for (let px = x0; px < x1; px++) {
-          const tA = ZOOM_BAYER8[bRow | ((px + shA) & 7)];
-          const tB = (((px - shA) * 3 + (py + shB) * 5) & 7) * 0.125;
-          if (tA < density) {
-            mainCtx.fillStyle = (tB < 0.5 && colB) ? colB : colA;
-            mainCtx.fillRect(px, py, 1, 1);
-          }
-        }
-      }
+      if (x1 <= x0 || y1 <= y0 || !colA) return;
+      mainCtx.fillStyle = colA;
+      mainCtx.fillRect(x0, y0, x1 - x0, y1 - y0);
     };
 
     // =========================================================================

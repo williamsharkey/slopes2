@@ -2542,8 +2542,13 @@
     clean(screen);
     clean(tC);
 
+    const _zs = window.SlopesLorePortalDock && window.SlopesLorePortalDock.zoomState;
+    const _zMod = _zs && typeof _zs.depth === "number" ? ((Math.abs(_zs.depth) % 5) + 5) % 5 : 0;
+    const _isZooming = _zMod > 0.004 && _zMod < 4.996;
+
     // 0. Multi-Layer Parallax Dither Gradients (Deep Zenith, Distant Mountain Ranges, Mid-ground Hills & Atmospheric Fog)
     if (
+      !_isZooming &&
       primeRenderer &&
       window.SlopesParallaxDitherArt &&
       typeof window.SlopesParallaxDitherArt.renderBackgroundParallaxDither === "function"
@@ -2658,6 +2663,7 @@
 
     // 6B. Semi-Transparent Surface Dither Screens (Geological Strata, Water Caustics, Mossy Cliff Overhangs)
     if (
+      !_isZooming &&
       primeRenderer &&
       window.SlopesParallaxDitherArt &&
       typeof window.SlopesParallaxDitherArt.renderSurfaceDitherScreens === "function"

@@ -955,6 +955,27 @@
     pushLine(`\x1b[90mSeeded ~/AGENTS.md & ~/.claude/CLAUDE.md (@~/AGENTS.md)\x1b[0m`);
     pushLine(`\x1b[92m● claude --auto\x1b[0m active (${tf.role})`);
 
+    function getOwnerUsername() {
+      if (global.SlopesSocialTui && global.SlopesSocialTui.state && global.SlopesSocialTui.state.username) {
+        return String(global.SlopesSocialTui.state.username).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+      }
+      try {
+        const saved =
+          typeof localStorage !== "undefined" &&
+          (localStorage.getItem("slopes2_social_username") || localStorage.getItem("slopes2_player_name"));
+        if (saved) return String(saved).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+      } catch (_) {}
+      return "william";
+    }
+
+    function getClaudeSocialHandle(target) {
+      const t = target || tf;
+      if (!t) return `${getOwnerUsername()}.cc.rover`;
+      if (t.id === "TE-307") return "te307.mainframe";
+      const sn = t.selfname || t.claudeSelfName || (t.id === "TAB-02" ? "corvus" : t.id === "TAB-03" ? "synth" : "rover");
+      return `${getOwnerUsername()}.cc.${sn}`;
+    }
+
     function getWorldCtx() {
       if (h.getWorldContext) return h.getWorldContext() || {};
       if (global.SlopesGame && global.SlopesGame.getWorldBundle) {
@@ -1718,6 +1739,27 @@
         return { ok: true, action: "say", text: tf.sayText, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
 
+      function getOwnerUsername() {
+        if (global.SlopesSocialTui && global.SlopesSocialTui.state && global.SlopesSocialTui.state.username) {
+          return String(global.SlopesSocialTui.state.username).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+        }
+        try {
+          const saved =
+            typeof localStorage !== "undefined" &&
+            (localStorage.getItem("slopes2_social_username") || localStorage.getItem("slopes2_player_name"));
+          if (saved) return String(saved).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+        } catch (_) {}
+        return "william";
+      }
+
+      function getClaudeSocialHandle(target) {
+        const t = target || tf;
+        if (!t) return `${getOwnerUsername()}.cc.rover`;
+        if (t.id === "TE-307") return "te307.mainframe";
+        const sn = t.selfname || t.claudeSelfName || (t.id === "TAB-02" ? "corvus" : t.id === "TAB-03" ? "synth" : "rover");
+        return `${getOwnerUsername()}.cc.${sn}`;
+      }
+
       if (sub === "name" || sub === "selfname" || sub === "chat" || sub === "dm" || sub === "social") {
         const subAct = (args[1] || "status").toLowerCase();
         if (sub === "name" || sub === "selfname" || subAct === "name" || subAct === "selfname") {
@@ -1770,7 +1812,7 @@
           return { ok: true, action: "pole", state: "retracting", status: buildStatusObject(w), output: stripAnsi(msg) };
         }
         tf.poleDockState = "ascending";
-        tf.poleTargetY = Math.min(COARSE_H - 14, Math.max(58, Number(args[1]) || 66));
+        tf.poleTargetY = Math.min(COARSE_H - 26, Math.max(52, Number(args[1]) || 57));
         tf.thrusterActive = true;
         playActuatorSound("thruster");
         const msg = `\x1b[96m[pole-skydock]\x1b[0m Firing rockets & grapples to ascend to y=${tf.poleTargetY} and drop telescoping steel anchor pole!`;
@@ -2787,16 +2829,28 @@
         return { ok: true, output: u };
       }
 
-      if (cmd === "ps" || cmd === "top") {
-        const psOut = [
-          "  PID TTY      STAT   TIME COMMAND",
-          "    1 pts/0    Ss     0:01 /sbin/init --tabform",
-          `   42 pts/0    S+     0:14 ${tf.agentMode || "claude"} --auto (${tf.id})`,
-          "   88 pts/0    S      0:04 /usr/bin/body-actuator-daemon",
-          "  104 pts/0    R      0:00 ps",
-        ].join("\n");
+      if (cmd === "ps" || cmd === "top" || cmd === "htop" || cmd === "tmux") {
+        const memPct = 34 + ((tf.autoStepCount || 0) % 18);
+        const cpuPct = tf.autoMode || tf.realTabActive ? 42 + ((Date.now() >> 8) % 31) : 8;
+        const psOut =
+          cmd === "htop" || cmd === "top"
+            ? [
+                `\x1b[96mCPU[\x1b[92m||||||||||······ ${cpuPct}%\x1b[96m]  MEM[\x1b[93m|||||||········· ${memPct}%/512M\x1b[96m]  UP: 04:19:07\x1b[0m`,
+                "  PID USER      PRI  NI  VIRT   RES S  CPU% MEM%   TIME+  COMMAND",
+                `   42 ${getOwnerUsername().slice(0, 8).padEnd(9, " ")} 20   0  184M 64.2M R  ${String(cpuPct).padStart(3, " ")}.0 12.5  0:24.18 claude --vm (${getClaudeSocialHandle(tf)})`,
+                `   88 root       20   0 42.1M 14.8M S   4.2  2.8  0:08.41 /usr/bin/body-actuator-daemon --unit=${tf.id}`,
+                "  112 user       20   0 28.4M  9.1M S   1.5  1.8  0:03.12 /usr/bin/social-chat-bridge --pty",
+                "    1 root       20   0 12.0M  4.2M S   0.0  0.8  0:01.04 /sbin/init --hardcore-tab",
+              ].join("\n")
+            : [
+                "  PID TTY      STAT   TIME COMMAND",
+                "    1 pts/0    Ss     0:01 /sbin/init --tabform",
+                `   42 pts/0    S+     0:24 ${tf.agentMode || "claude"} --vm (${getClaudeSocialHandle(tf)})`,
+                "   88 pts/0    S      0:08 /usr/bin/body-actuator-daemon",
+                "  112 pts/0    S      0:03 /usr/bin/social-chat-bridge --pty",
+              ].join("\n");
         pushLine(psOut);
-        return { ok: true, output: psOut };
+        return { ok: true, output: stripAnsi(psOut) };
       }
 
       if (cmd === "doctor" || cmd === "tabinfo") {
@@ -5608,7 +5662,7 @@
       winchCooldown: 0,
       poleDockState: "none", // "none" | "ascending" | "anchored" | "retracting"
       poleExtension: 0.0,    // 0.0 (retracted) .. 1.0 (anchored to ground surface)
-      poleTargetY: 64 + (index % 3) * 4,
+      poleTargetY: 56 + (index % 3) * 3,
       poleHoldTimer: 0,
       // Rocket-Thruster Extended-Reach Physics Arm (reaches anywhere on screen while stationary/docked!)
       rocketArm: null,
@@ -6333,7 +6387,7 @@
           !tf.departingToRoomX
         ) {
           tf.poleDockState = "ascending";
-          tf.poleTargetY = 64 + (i % 3) * 4;
+          tf.poleTargetY = 56 + (i % 3) * 3;
           tf.poleHoldTimer = 520 + i * 160;
           tf.thrusterActive = true;
           const skyTxt = `Looped patrol complete—firing rockets & grapples to sky-dock at y=${tf.poleTargetY} and drop telescoping steel pole!`;
@@ -10276,11 +10330,12 @@
       const bodyMonX = Math.max(4, Math.min(devW - monW - 4, Math.round(centerDevX - monW / 2)));
       const bodyMonY = Math.max(36, Math.min(devH - monH - 8, rawY));
 
-      // Check if this Tab-Form is overlapping an earlier monitor or has `overlapHollowBlend > 0.06`!
-      // When overlapping:
-      // 1. The physical body at `(bodyMonX, bodyMonY)` becomes hollow black 0.10 opacity (`rgba(0,0,0,0.10)`) so it doesn't obscure the other Tab-Form.
-      // 2. The terminal screen projects onto the sky nearby (`monX, monY`) with 4 crisp corner projection lines of light,
-      //    sweeping slowly (`stepSmoothCoord` with maxStep = 2.4px/frame, alpha = 0.032) so it never jank-jumps!
+      // Check if this Tab-Form is in the surface activity zone (`bodyMonY > devH * 0.43` and not ground-docked)
+      // or overlapping an earlier monitor (`overlapHollowBlend > 0.08`):
+      // 1. The physical body at `(bodyMonX, bodyMonY)` becomes hollow black 0.10 opacity (`rgba(0,0,0,0.10)`) so it doesn't obscure surface activity or other Tab-Forms.
+      // 2. The terminal screen projects up into the sky band a little more than halfway up the center of the screen
+      //    (`y ≈ 0.305 * devH`, i.e., ~63%–68% up from the bottom of the screen: completely out of the way of surface-level
+      //    activity and just below the writing in the sky at `y = 0.02..0.275 * devH`!) with 4 crisp projection lines of light!
       let overlapsMonitor = (nr.overlapHollowBlend || 0) > 0.08;
       for (let mIdx = 0; mIdx < activeMonitorRects.length; mIdx++) {
         const om = activeMonitorRects[mIdx];
@@ -10295,12 +10350,21 @@
         }
       }
 
+      const isSurfaceLevel = (nr.groundDockProgress || 0) <= 0.05 && bodyMonY > Math.round(devH * 0.43);
+      const shouldProjectToSkyBand = overlapsMonitor || isSurfaceLevel;
+
+      // Sky projection band: a little more than halfway up the center of the screen (`0.305 * devH` from top = ~63% up from bottom),
+      // strictly below the sky writing (`0.275 * devH`) and well above surface-level activity (`> 0.46 * devH`).
+      const skyBandY = Math.max(44, Math.round(devH * 0.305) + (i % 2) * 12);
+
       let goalMonX = bodyMonX;
       let goalMonY = bodyMonY;
-      if (overlapsMonitor) {
+      if (shouldProjectToSkyBand) {
         const sideDir = i % 2 === 0 ? -1 : 1;
-        goalMonX = Math.max(8, Math.min(devW - monW - 8, Math.round(bodyMonX + sideDir * (monW * 0.85 + 22))));
-        goalMonY = Math.max(44, Math.min(devH - monH - 24, Math.round(bodyMonY - monH - 36 - (i % 2) * 18)));
+        goalMonX = overlapsMonitor
+          ? Math.max(8, Math.min(devW - monW - 8, Math.round(bodyMonX + sideDir * (monW * 0.72 + 18))))
+          : bodyMonX;
+        goalMonY = Math.min(bodyMonY, skyBandY);
         // Ensure projected sky rect doesn't overlap any already placed monitor rect
         for (let mIdx = 0; mIdx < activeMonitorRects.length; mIdx++) {
           const om = activeMonitorRects[mIdx];
@@ -10320,7 +10384,7 @@
       const monX = Math.round(tf._projSmoothX);
       const monY = Math.round(tf._projSmoothY);
       const projDist = Math.hypot(monX - bodyMonX, monY - bodyMonY);
-      const isProjectingToSky = projDist > 6 || overlapsMonitor;
+      const isProjectingToSky = projDist > 6 || shouldProjectToSkyBand;
 
       activeMonitorRects.push({ x: monX, y: monY, w: monW, h: monH });
       occupiedOverheadRects.push({ x: monX, y: monY, w: monW, h: monH });
@@ -12631,7 +12695,7 @@
 
     R.drawCanvasText(ctx, fullInput, winX + 12, barY + 4, "#e8f8f4", fontKey, 1, 0);
 
-    // Active cursor floor + amber phosphor cursor
+    //Active cursor floor + amber phosphor cursor
     const curX = winX + 12 + curCol * charW;
     ctx.fillStyle = "rgba(217, 64, 5, 0.16)";
     ctx.fillRect(curX, barY + 5, charW, lineH - 2);
@@ -12639,13 +12703,138 @@
       ctx.fillStyle = "#ffa60d";
       ctx.fillRect(curX, barY + 5, charW, lineH - 2);
     }
+
+    // Hitbox for clicking the bottom interactive command input bar (`tab-03$`)
+    state.windowHitBoxes.push({
+      action: "focus-term-input",
+      x: winX + 6,
+      y: barY,
+      w: winW - 12,
+      h: barH,
+    });
+    // Fallback hitbox for clicking anywhere inside the Hardcore-Tab window so clicks focus the terminal
+    // and never fall through to sprites behind the window
+    state.windowHitBoxes.push({
+      action: "focus-term-window",
+      x: winX,
+      y: winY,
+      w: winW,
+      h: winH,
+    });
+
+    // Sync selectable DOM text overlay (`#hardcore-term-selectable`) over the terminal pane and
+    // `#hardcore-term-input-bar` over the bottom input bar (`tab-03$`) so the user can highlight text
+    // with the mouse, Right-Click -> Copy / Paste, and Cmd+C / Ctrl+C / Cmd+V / Ctrl+V!
+    syncHardcoreSelectableOverlay(
+      textStartX,
+      textStartY,
+      paneAreaW,
+      paneAreaH,
+      lineH,
+      charW,
+      visibleLines,
+      winX + 6,
+      barY,
+      winW - 12,
+      barH,
+      fullInput
+    );
   }
 
   // ==========================================================================
-  // BROWSER OVERLAY CANVAS & MOUSE / KEYBOARD INTERACTION MOUNT
+  // BROWSER OVERLAY CANVAS, SELECTABLE TEXT LAYER & MOUSE / KEYBOARD / PASTE MOUNT
   // ==========================================================================
   let overlayCanvas = null;
   let overlayCtx = null;
+  let selectablePre = null;
+  let selectableInputBar = null;
+  let lastSelectableText = "";
+  let lastSelectableInputText = "";
+
+  function stripAnsiForSelection(str) {
+    return String(str || "").replace(/\x1b\[[0-9;]*m/g, "");
+  }
+
+  function unfocusBottomChatInput() {
+    if (global.SlopesSocialTui && typeof global.SlopesSocialTui.blurChat === "function") {
+      global.SlopesSocialTui.blurChat();
+    } else if (typeof document !== "undefined") {
+      const chatInp = document.getElementById("mobile-bottom-input");
+      if (chatInp && document.activeElement === chatInp) {
+        chatInp.blur();
+      }
+    }
+  }
+
+  function syncHardcoreSelectableOverlay(
+    textStartX,
+    textStartY,
+    paneAreaW,
+    paneAreaH,
+    lineH,
+    charW,
+    visibleLines,
+    barX,
+    barY,
+    barW,
+    barH,
+    fullInputStr
+  ) {
+    if (!selectablePre) return;
+    const modalOpen = Boolean(
+      global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.modalOpen
+    );
+    if (!state.terminalOpen || modalOpen) {
+      if (selectablePre.style.display !== "none") selectablePre.style.display = "none";
+      if (selectableInputBar && selectableInputBar.style.display !== "none") selectableInputBar.style.display = "none";
+      return;
+    }
+    unfocusBottomChatInput();
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    const leftCss = Math.round(textStartX / dpr);
+    const topCss = Math.round(textStartY / dpr);
+    const wCss = Math.max(40, Math.round(paneAreaW / dpr));
+    const hCss = Math.max(24, Math.round(paneAreaH / dpr));
+    const lineHCss = (lineH / dpr).toFixed(2);
+    const fontPx = Math.max(9, (charW / dpr) * 1.66).toFixed(2);
+
+    if (selectablePre.style.display !== "block") selectablePre.style.display = "block";
+    selectablePre.style.left = leftCss + "px";
+    selectablePre.style.top = topCss + "px";
+    selectablePre.style.width = wCss + "px";
+    selectablePre.style.height = hCss + "px";
+    selectablePre.style.lineHeight = lineHCss + "px";
+    selectablePre.style.fontSize = fontPx + "px";
+
+    const plainDump = (visibleLines || []).map(stripAnsiForSelection).join("\n");
+    const hasActiveSel = Boolean(
+      typeof window !== "undefined" &&
+        window.getSelection &&
+        window.getSelection() &&
+        window.getSelection().toString().length > 0
+    );
+    if (!hasActiveSel && plainDump !== lastSelectableText) {
+      lastSelectableText = plainDump;
+      selectablePre.textContent = plainDump;
+    }
+
+    if (selectableInputBar && barW > 0 && barH > 0) {
+      if (selectableInputBar.style.display !== "block") selectableInputBar.style.display = "block";
+      selectableInputBar.style.left = Math.round(barX / dpr) + "px";
+      selectableInputBar.style.top = Math.round(barY / dpr) + "px";
+      selectableInputBar.style.width = Math.max(40, Math.round(barW / dpr)) + "px";
+      selectableInputBar.style.height = Math.max(16, Math.round(barH / dpr)) + "px";
+      selectableInputBar.style.lineHeight = Math.max(16, Math.round(barH / dpr)) + "px";
+      selectableInputBar.style.fontSize = fontPx + "px";
+      const inpStr = String(fullInputStr || "");
+      if (!hasActiveSel && inpStr !== lastSelectableInputText) {
+        lastSelectableInputText = inpStr;
+        selectableInputBar.textContent = inpStr;
+      }
+    }
+  }
 
   function syncOverlayDevicePixels() {
     if (typeof document === "undefined" || !overlayCanvas || !overlayCtx) return { devW: NATIVE_W, devH: NATIVE_H };
@@ -12681,6 +12870,72 @@
       "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:5;display:block;image-rendering:pixelated;";
     screenDiv.appendChild(overlayCanvas);
     overlayCtx = overlayCanvas.getContext("2d");
+
+    if (!document.getElementById("hardcore-term-selectable-style")) {
+      const st = document.createElement("style");
+      st.id = "hardcore-term-selectable-style";
+      st.textContent = [
+        "#hardcore-term-selectable, #hardcore-term-input-bar, #bottom-stream-selectable {",
+        "  margin:0;padding:0;overflow:hidden;white-space:pre;",
+        "  color:transparent;background:transparent;outline:none;border:none;caret-color:transparent;",
+        "  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;",
+        "  -webkit-user-select:text !important;user-select:text !important;",
+        "  cursor:text;pointer-events:auto;touch-action:auto;",
+        "}",
+        "#hardcore-term-selectable::selection, #hardcore-term-input-bar::selection, #bottom-stream-selectable::selection {",
+        "  background:rgba(120,234,212,0.36);color:transparent;",
+        "}",
+      ].join("\n");
+      document.head.appendChild(st);
+    }
+
+    const handleEditableBeforeInput = (ev) => {
+      // Prevent direct DOM mutation in the transparent overlay while forwarding mobile / IME text input
+      // into `state.inputBuffer` (`paste` events are handled by the global `paste` listener).
+      const it = ev.inputType || "";
+      if (it === "insertText" && ev.data && state.terminalOpen) {
+        ev.preventDefault();
+        state.inputBuffer += ev.data;
+        return;
+      }
+      if (it === "deleteContentBackward" && state.terminalOpen) {
+        ev.preventDefault();
+        state.inputBuffer = state.inputBuffer.slice(0, -1);
+        return;
+      }
+      ev.preventDefault();
+    };
+
+    selectablePre = document.createElement("pre");
+    selectablePre.id = "hardcore-term-selectable";
+    selectablePre.setAttribute("contenteditable", "true");
+    selectablePre.setAttribute("spellcheck", "false");
+    selectablePre.setAttribute("autocorrect", "off");
+    selectablePre.setAttribute("autocapitalize", "off");
+    selectablePre.style.cssText = "position:absolute;left:0;top:0;z-index:6;display:none;";
+    selectablePre.addEventListener("beforeinput", handleEditableBeforeInput);
+    selectablePre.addEventListener("pointerdown", (ev) => {
+      unfocusBottomChatInput();
+      state.hoveredTabId = null;
+      ev.stopPropagation();
+    });
+    screenDiv.appendChild(selectablePre);
+
+    selectableInputBar = document.createElement("pre");
+    selectableInputBar.id = "hardcore-term-input-bar";
+    selectableInputBar.setAttribute("contenteditable", "true");
+    selectableInputBar.setAttribute("spellcheck", "false");
+    selectableInputBar.setAttribute("autocorrect", "off");
+    selectableInputBar.setAttribute("autocapitalize", "off");
+    selectableInputBar.style.cssText = "position:absolute;left:0;top:0;z-index:6;display:none;";
+    selectableInputBar.addEventListener("beforeinput", handleEditableBeforeInput);
+    selectableInputBar.addEventListener("pointerdown", (ev) => {
+      unfocusBottomChatInput();
+      state.hoveredTabId = null;
+      ev.stopPropagation();
+    });
+    screenDiv.appendChild(selectableInputBar);
+
     syncOverlayDevicePixels();
 
     function clientToBothCoords(ev) {
@@ -12758,17 +13013,27 @@
       const pt = clientToBothCoords(ev);
       if (pt.dx < 0 || pt.dy < 0) return;
 
+      // Always unfocus the bottom chat input when clicking inside `#screen` so keyboard typing goes to the game/terminal!
+      unfocusBottomChatInput();
+
       // 1. If interactive Hardcore-Tab Window is open, check its controls first (in 1:1 device coordinates!)
       if (state.terminalOpen) {
         for (let i = 0; i < state.windowHitBoxes.length; i++) {
           const hb = state.windowHitBoxes[i];
           if (pt.dx >= hb.x && pt.dx <= hb.x + hb.w && pt.dy >= hb.y && pt.dy <= hb.y + hb.h) {
             ev.stopPropagation();
-            ev.preventDefault();
+            if (hb.action !== "focus-term-window") {
+              ev.preventDefault();
+            }
+            if (hb.action === "focus-term-input" || hb.action === "focus-term-window") {
+              state.hoveredTabId = null;
+              return;
+            }
             if (global.SlopesAudio && global.SlopesAudio.playClick) global.SlopesAudio.playClick(true);
             if (hb.action === "close") {
               state.terminalOpen = false;
               state.hoveredTabId = null;
+              if (selectablePre) selectablePre.style.display = "none";
               if (global.RealTabComputerBridge) {
                 global.RealTabComputerBridge.setLiveXtermVisible(false);
                 global.RealTabComputerBridge.closeClaudeSignInModal();
@@ -12925,9 +13190,34 @@
       }
     });
 
+    // Global `paste` handler for Hardcore-Tab Terminal (`Cmd+V`, `Ctrl+V`, or `Right-Click -> Paste`)
+    window.addEventListener("paste", (ev) => {
+      if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+      if (
+        global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.modalOpen
+      ) {
+        return;
+      }
+      if (!state.terminalOpen) return;
+      const clip = (ev.clipboardData || window.clipboardData)?.getData("text/plain") || "";
+      if (!clip) return;
+      ev.preventDefault();
+      const clean = clip.replace(/\r?\n/g, " ").trim();
+      if (!clean) return;
+      state.inputBuffer += clean;
+    });
+
     // Keyboard input for toggling (`F` or `` ` `` / `~` for `TE-307`, `C` for Monolith Chat) and typing commands!
     window.addEventListener("keydown", (ev) => {
-      if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+      if (
+        ev.target &&
+        (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") &&
+        !(ev.target.id === "mobile-bottom-input" && (state.terminalOpen || state.monolithChatOpen))
+      ) {
+        return;
+      }
 
       // If the Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`) is open, capture typing!
       if (state.monolithChatOpen) {
@@ -12966,6 +13256,7 @@
       // Backquote (`` ` `` or `~`) opens/toggles the In-World `TE-307` Mainframe TUI inside Hardcore-Tab!
       if ((ev.code === "Backquote" || ev.key === "`" || ev.key === "~") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
         ev.preventDefault();
+        unfocusBottomChatInput();
         if (state.terminalOpen && state.selectedTabId === "TE-307") {
           state.terminalOpen = false;
         } else {
@@ -12983,11 +13274,13 @@
       if (!state.terminalOpen) {
         if ((ev.key === "c" || ev.key === "C") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
           ev.preventDefault();
+          unfocusBottomChatInput();
           openMonolithChatInput("ALL MONOLITHS");
           return;
         }
         if ((ev.key === "f" || ev.key === "F") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
           ev.preventDefault();
+          unfocusBottomChatInput();
           state.terminalOpen = true;
           const sel = getSelectedTabForm();
           if (sel) sel.unread = false;
@@ -12999,12 +13292,14 @@
       }
 
       // When Hardcore-Tab Terminal Window is open:
+      unfocusBottomChatInput();
       state.hoveredTabId = null; // Typing restores selected tab per Hardcore spec!
       const sel = getSelectedTabForm();
 
       if (ev.key === "Escape") {
         ev.preventDefault();
         state.terminalOpen = false;
+        if (selectablePre) selectablePre.style.display = "none";
         if (global.RealTabComputerBridge) {
           global.RealTabComputerBridge.setLiveXtermVisible(false);
           global.RealTabComputerBridge.closeClaudeSignInModal();
@@ -13012,7 +13307,22 @@
         return;
       }
 
-      // Forward Ctrl+C / Ctrl+D / Ctrl+L directly to the running interactive TTY (`claude`) when active
+      // Allow native Copy (`Cmd+C` or `Ctrl+C` when text is highlighted) & native Paste (`Cmd+V` / `Ctrl+V`)
+      if (ev.ctrlKey || ev.metaKey) {
+        const k = (ev.key || "").toLowerCase();
+        const selTxt = (window.getSelection && window.getSelection()?.toString()) || "";
+        if (k === "c" && (ev.metaKey || selTxt.length > 0)) {
+          if (selTxt && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText(selTxt).catch(() => {});
+          }
+          return;
+        }
+        if (k === "v") {
+          return; // Let native `paste` event fire and append to `state.inputBuffer`
+        }
+      }
+
+      // Forward Ctrl+C (when no text is highlighted) / Ctrl+D / Ctrl+L directly to the running interactive TTY (`claude`) when active
       if (
         ev.ctrlKey &&
         !ev.metaKey &&
@@ -13180,12 +13490,20 @@
       renderDevicePixelTabFormMonitors(overlayCtx, devW, devH);
       if (state.terminalOpen) {
         renderInteractiveTerminalWindow(overlayCtx, devW, devH);
-      } else if (
-        global.RealTabComputerBridge &&
-        global.RealTabComputerBridge.state &&
-        global.RealTabComputerBridge.state.liveXtermVisible
-      ) {
-        global.RealTabComputerBridge.setLiveXtermVisible(false);
+      } else {
+        if (selectablePre && selectablePre.style.display !== "none") {
+          selectablePre.style.display = "none";
+        }
+        if (selectableInputBar && selectableInputBar.style.display !== "none") {
+          selectableInputBar.style.display = "none";
+        }
+        if (
+          global.RealTabComputerBridge &&
+          global.RealTabComputerBridge.state &&
+          global.RealTabComputerBridge.state.liveXtermVisible
+        ) {
+          global.RealTabComputerBridge.setLiveXtermVisible(false);
+        }
       }
     }
     requestAnimationFrame(overlayLoop);
@@ -13294,7 +13612,7 @@
     const rawText = String(msg.text || "").trim();
     const lower = rawText.toLowerCase();
 
-    // Find which signed-in Claude (<username>.cc.<selfname>) is addressed, or pick the active/primary one
+    // Find which signed-in Claude (<username>.cc.<selfname> / term1 / term2 / term3) is addressed, or pick the active/primary one
     let targetTf = null;
     if (msg.targetTfId) {
       targetTf = state.tabForms.find((t) => t.id === msg.targetTfId) || null;
@@ -13303,11 +13621,18 @@
       const toClean = String(msg.to).toLowerCase();
       targetTf =
         state.tabForms.find(
-          (t) =>
+          (t, idx) =>
             getClaudeSocialHandle(t).toLowerCase() === toClean ||
             (t.selfname && t.selfname.toLowerCase() === toClean) ||
-            t.id.toLowerCase() === toClean
+            t.id.toLowerCase() === toClean ||
+            `term${idx + 1}` === toClean ||
+            `t${idx + 1}` === toClean
         ) || null;
+    }
+    if (!targetTf) {
+      if (/\b(term-?1|t1|tab-?0?1|rover)\b/i.test(lower)) targetTf = state.tabForms[0] || null;
+      else if (/\b(term-?2|t2|tab-?0?2|corvus)\b/i.test(lower)) targetTf = state.tabForms[1] || null;
+      else if (/\b(term-?3|t3|tab-?0?3|synth)\b/i.test(lower)) targetTf = state.tabForms[2] || null;
     }
     if (!targetTf) {
       for (let i = 0; i < state.tabForms.length; i++) {
@@ -13320,27 +13645,35 @@
         }
       }
     }
-    if (!targetTf && (channel === "dm" || lower.includes("claude") || lower.includes(".cc.") || lower.includes("?") || lower.startsWith("/") || lower.includes("build") || lower.includes("dock") || lower.includes("pole") || lower.includes("dome") || lower.includes("farm") || lower.includes("missile") || lower.includes("name"))) {
+    if (!targetTf) {
+      // Every message in @DM or #GROUP bridges to the selected/primary terminal instance unless addressed to a human peer only
       targetTf = getSelectedTabForm() || state.tabForms[0] || null;
     }
     if (!targetTf) return null;
 
-    // Deliver into the Claude's terminal log so it reads all group chats and DMs
+    // Strip any leading `@handle`, `term1:`, or `$` prefix to extract the clean command or prompt
+    const cleanPrompt = rawText
+      .replace(/^(@[a-z0-9._-]+\s*[:,-]?\s*|term-?[123]\s*[:,-]\s*|\$\s*)/i, "")
+      .trim() || rawText;
+    const cleanLower = cleanPrompt.toLowerCase();
+
+    // Deliver into the terminal's live scrollback log so it appears in both the in-world sky projection and TERM view!
     const handle = getClaudeSocialHandle(targetTf);
+    const termIdx = Math.max(0, state.tabForms.indexOf(targetTf)) + 1;
     if (targetTf.shell && typeof targetTf.shell.println === "function") {
-      const prefix = channel === "dm" ? `\x1b[95m[DM from @${fromUser}]\x1b[0m` : `\x1b[96m[#GROUP @${fromUser}]\x1b[0m`;
-      targetTf.shell.println(`${prefix} ${rawText}`);
+      const prefix =
+        channel === "dm"
+          ? `\x1b[95m[DM @${fromUser} -> TERM-${termIdx}]\x1b[0m`
+          : `\x1b[96m[#GROUP @${fromUser} -> TERM-${termIdx}]\x1b[0m`;
+      targetTf.shell.println(`${prefix} ${cleanPrompt}`);
     }
 
-    // If RealTabComputerBridge is active on this Tab-Form, also append to `/tmp/slopes2_social_inbox.jsonl`
-    if (
-      global.RealTabComputerBridge &&
-      global.RealTabComputerBridge.state &&
-      global.RealTabComputerBridge.state.tc &&
-      global.RealTabComputerBridge.state.tc.fs
-    ) {
-      const tc = global.RealTabComputerBridge.state.tc;
-      const line = JSON.stringify({ t: Date.now(), channel, from: fromUser, to: handle, text: rawText }) + "\n";
+    // Bridge directly into RealTabComputerBridge if booted or signed into Claude!
+    const bridge = global.RealTabComputerBridge;
+    const isSignedIntoClaude = Boolean(bridge && bridge.state && bridge.state.signedInAccount);
+    if (bridge && bridge.state && bridge.state.tc && bridge.state.tc.fs) {
+      const tc = bridge.state.tc;
+      const line = JSON.stringify({ t: Date.now(), channel, from: fromUser, to: handle, term: targetTf.id, text: cleanPrompt }) + "\n";
       void tc.fs
         .readFile("/tmp/slopes2_social_inbox.jsonl", "utf8")
         .catch(() => "")
@@ -13348,38 +13681,74 @@
         .catch(() => {});
     }
 
-    // Autonomous / command-driven response from `<username>.cc.<selfname>`
+    // Execute directly inside the terminal (`TERM-1`, `TERM-2`, `TERM-3`) and bridge the terminal's live output back to Chat/DM!
     setTimeout(() => {
       let replyText = "";
       const renameMatch =
-        rawText.match(/(?:selfname|rename(?:\s+yourself)?(?:\s+to)?|call\s+yourself|pick\s+a\s+(?:new\s+)?(?:self)?name)\s*[:=]?\s*([a-zA-Z0-9_-]{2,14})?/i);
+        cleanPrompt.match(/(?:selfname|rename(?:\s+yourself)?(?:\s+to)?|call\s+yourself|pick\s+a\s+(?:new\s+)?(?:self)?name)\s*[:=]?\s*([a-zA-Z0-9_-]{2,14})?/i);
+
+      const isDirectShellCmd =
+        /^(ls|cat|pwd|ps|top|htop|tmux|uname|doctor|tabinfo|body|tabctl|tentacle|drift|hc|git|node|claude|clear|help)\b/i.test(cleanPrompt);
+
       if (renameMatch) {
         const pool = ["atlas", "nexus", "orion", "vega", "zephyr", "kestrel", "talon", "lynx", "helios", "aegis"];
         const chosen =
-          (renameMatch[1] && !/^(new|self|name|a|to|yourself)$/i.test(renameMatch[1])
+          renameMatch[1] && !/^(new|self|name|a|to|yourself)$/i.test(renameMatch[1])
             ? renameMatch[1].toLowerCase()
-            : pool[(Math.floor(Date.now() / 1000) + targetTf.x) % pool.length]);
+            : pool[(Math.floor(Date.now() / 1000) + targetTf.x) % pool.length];
         targetTf.selfname = chosen;
         const newHandle = getClaudeSocialHandle(targetTf);
-        replyText = `Identity updated — I picked selfname '${chosen}', now online as ${newHandle}.`;
-      } else if (lower.includes("pole") || lower.includes("skydock") || lower.includes("dock")) {
-        if (targetTf.shell) targetTf.shell.runBodyCommand(["pole", "dock"]);
-        replyText = `Firing ascent thrusters to high-frame (y=${Math.round(targetTf.poleTargetSkyY || 68)}) & extending telescoping steel anchor pole to surface.`;
-      } else if (lower.includes("dome")) {
-        if (targetTf.shell) targetTf.shell.runBodyCommand(["build", "dome"]);
-        replyText = `Rocket-thruster arm deployed from stationary perch — constructing pressurized geodesic dome at x=${Math.round(targetTf.x)}.`;
-      } else if (lower.includes("farm") || lower.includes("tractor") || lower.includes("vehicle")) {
-        if (targetTf.shell) targetTf.shell.runBodyCommand(["build", "farm"]);
-        replyText = `Extended rocket-arm fabricated an autonomous solar farming vehicle on the surface.`;
-      } else if (lower.includes("missile") || lower.includes("fire") || lower.includes("seek")) {
-        if (targetTf.shell) targetTf.shell.runBodyCommand(["missile"]);
-        replyText = `Launched intelligent path-planning seeking missile with terrain-clearance steering.`;
-      } else {
-        const dockStr =
-          targetTf.poleDockState === "docked" || targetTf.poleDockState === "extending_pole"
-            ? `sky-docked on telescoping steel pole at (${Math.round(targetTf.x)},${Math.round(targetTf.y)})`
-            : `patrolling sector (${Math.round(targetTf.x)},${Math.round(targetTf.y)})`;
-        replyText = `@${fromUser} [${ getClaudeSocialHandle(targetTf) }] ACK — ${dockStr}; rocket-arm & TabComputer 2.1.316 VM ready.`;
+        replyText = `[TERM-${termIdx}] Identity updated — selfname='${chosen}', now online as ${newHandle}.`;
+        if (targetTf.shell) targetTf.shell.println(`\x1b[92m${replyText}\x1b[0m`);
+      } else if (isDirectShellCmd && targetTf.shell && typeof targetTf.shell.execute === "function") {
+        const res = targetTf.shell.execute(cleanPrompt, state.lastWorldContext);
+        const outClean = String((res && res.output) || "")
+          .replace(/\x1b\[[0-9;]*m/g, "")
+          .split("\n")
+          .filter(Boolean)
+          .slice(-3)
+          .join(" | ");
+        replyText = outClean ? `[TERM-${termIdx}$ ${cleanPrompt.split(/\s+/)[0]}] ${outClean}` : `[TERM-${termIdx}] Executed \`${cleanPrompt}\`.`;
+      } else if (cleanLower.includes("pole") || cleanLower.includes("skydock") || cleanLower.includes("dock")) {
+        if (targetTf.shell) targetTf.shell.execute("body pole", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Firing ascent thrusters to sky-dock (y=${Math.round(targetTf.poleTargetY || 58)}) & anchoring telescoping steel pole.`;
+      } else if (cleanLower.includes("dome")) {
+        if (targetTf.shell) targetTf.shell.execute("body build dome", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Rocket-thruster arm deployed — constructing pressurized geodesic dome at x=${Math.round(targetTf.x)}.`;
+      } else if (cleanLower.includes("farm") || cleanLower.includes("tractor") || cleanLower.includes("vehicle")) {
+        if (targetTf.shell) targetTf.shell.execute("body build farm", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Extended rocket-arm fabricated an autonomous solar farming vehicle on the surface.`;
+      } else if (cleanLower.includes("missile") || cleanLower.includes("fire") || cleanLower.includes("seek")) {
+        if (targetTf.shell) targetTf.shell.execute("body missile", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Launched path-planning seeking missile with terrain-clearance steering.`;
+      } else if (cleanLower.includes("mecha") || cleanLower.includes("tree") || cleanLower.includes("wooden") || cleanLower.includes("monitor")) {
+        const formArg = cleanLower.includes("mecha")
+          ? "mecha"
+          : cleanLower.includes("tree")
+          ? "tree"
+          : cleanLower.includes("wooden")
+          ? "wooden"
+          : "monitor";
+        if (targetTf.shell) targetTf.shell.execute(`body form ${formArg}`, state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Morphed embodied chassis into ${formArg} form.`;
+      } else if (targetTf.shell && typeof targetTf.shell.execute === "function") {
+        // Run an embodied Claude Code turn inside the terminal (`claude <prompt>`) so the terminal executes live tools & responds!
+        const res = targetTf.shell.execute(`claude ${cleanPrompt}`, state.lastWorldContext);
+        const outClean = String((res && res.output) || "")
+          .replace(/\x1b\[[0-9;]*m/g, "")
+          .trim();
+        const authTag = isSignedIntoClaude ? "claude-code-2.1.316" : "embodied-claude";
+        replyText = outClean
+          ? `[TERM-${termIdx} · ${authTag}] ${outClean}`
+          : `[TERM-${termIdx} · ${authTag}] Executing "${cleanPrompt}" at sector (${Math.round(targetTf.x)},${Math.round(targetTf.y)}).`;
+      }
+
+      // If signed into real Claude via RealTabComputerBridge, ALSO bridge the command/prompt into the live TabComputer PTY!
+      if (isSignedIntoClaude && bridge && typeof bridge.sendCommandToRealTabComputer === "function") {
+        const realCmd = isDirectShellCmd
+          ? cleanPrompt
+          : `claude --vm --dangerously-skip-permissions -p ${JSON.stringify(cleanPrompt)}`;
+        bridge.sendCommandToRealTabComputer(targetTf.id, realCmd);
       }
 
       const finalHandle = getClaudeSocialHandle(targetTf);
@@ -13395,7 +13764,7 @@
           text: replyText,
         });
       }
-    }, 320);
+    }, 140);
 
     return handle;
   }

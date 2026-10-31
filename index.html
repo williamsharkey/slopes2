@@ -25,7 +25,7 @@ canvas{
 #shell{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
 body.fullscreen-mode #shell{display:none}
 #screen{
-  position:fixed;z-index:2;background:#081419;overflow:hidden;
+  position:fixed;z-index:2;background:#112c32;overflow:hidden;
   border:2px solid #28464e;
 }
 body.fullscreen-mode #screen{
@@ -34,7 +34,11 @@ body.fullscreen-mode #screen{
 #pi-shift{
   width:100%;height:100%;display:block;
   background-color:rgb(42,161,152);
-  transition:background-color 12s ease;
+  opacity:0;
+  transition:opacity 0.22s ease, background-color 12s ease;
+}
+#pi-shift.ready{
+  opacity:1;
 }
 #hud-canvas{
   position:absolute;left:0;right:0;bottom:0;width:100%;height:22px;
@@ -113,6 +117,17 @@ body.fullscreen-mode #social-tui-canvas:hover{
 }
 #mobile-bottom-input::placeholder{color:#5e8e96}
 #mobile-bottom-input:focus{border-color:#ffd43b;background:rgba(10,28,36,0.98)}
+#bottom-stream-selectable{
+  position:fixed;z-index:6;display:none;
+  margin:0;padding:0;overflow:hidden;white-space:pre;
+  color:transparent;background:transparent;outline:none;border:none;caret-color:transparent;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  -webkit-user-select:text !important;user-select:text !important;
+  cursor:text;pointer-events:auto;touch-action:auto;
+}
+#bottom-stream-selectable::selection{
+  background:rgba(120,234,212,0.36);color:transparent;
+}
 #dlg{
   position:fixed;inset:0;z-index:10;display:none;place-items:center;
   background:rgba(4,9,12,0.78);
@@ -157,35 +172,26 @@ body.fullscreen-mode #social-tui-canvas:hover{
 <canvas id="fullscreen-btn"></canvas>
 <canvas id="osd"></canvas>
 <canvas id="social-tui-canvas" title="Hardcore Hairline Social Mesh, Claude Agents (<user>.cc.<selfname>), Group/DM Chat, Terminal & Controller Switcher"></canvas>
+<pre id="bottom-stream-selectable" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off"></pre>
 <input id="mobile-bottom-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" />
 
 <div id="dlg">
   <canvas id="dlg-canvas"></canvas>
 </div>
 
-<script src="font.js?v=27"></script>
-<script src="audio.js?v=27"></script>
-<script src="sim/wasm_bridge.js?v=27"></script>
-<script src="sim/ecology_design.js?v=27"></script>
-<script src="sim/cosmic_engine.js?v=27"></script>
-<script src="sim/pentagonal_rotation.js?v=27"></script>
-<script src="sim/hardcore_tab.js?v=27"></script>
-<script src="sim/real_tabcomputer_bridge.js?v=27"></script>
-<script src="sim/tabform_lifeforms.js?v=27"></script>
-<script src="sim/genetic_flora_engine.js?v=27"></script>
-<script src="sim/parallax_dither_art.js?v=27"></script>
-<script src="slopes2.js?v=27"></script>
-<script src="sim/ai_interface.js?v=27"></script>
-<script src="sim/lore_portal_dock.js?v=27"></script>
+<script src="font.js?v=29"></script>
 <script>
 (() => {
   "use strict";
 
-  // --- iOS Safari Gesture / Zoom / Callout Lock ---
+  // --- iOS Safari Gesture / Zoom Lock (keep native selectstart & contextmenu enabled for terminal highlight & right-click copy/paste!) ---
   const kill = (e) => { e.preventDefault(); };
-  ["gesturestart", "gesturechange", "gestureend", "dblclick", "contextmenu", "selectstart"].forEach((ev) =>
+  ["gesturestart", "gesturechange", "gestureend", "dblclick"].forEach((ev) =>
     document.addEventListener(ev, kill, { passive: false })
   );
+  document.querySelectorAll(".pad").forEach((padEl) => {
+    ["contextmenu", "selectstart"].forEach((ev) => padEl.addEventListener(ev, kill, { passive: false }));
+  });
   document.addEventListener("touchmove", (e) => {
     if (e.touches && e.touches.length > 1) e.preventDefault();
   }, { passive: false });
@@ -1232,7 +1238,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
       }
     }
     socialState.chatDraft = "";
-    if (mobileBottomInput && socialState.bottomMode === "chat") {
+    if (mobileBottomInput && socialState.bottomMode !== "terminal") {
       mobileBottomInput.value = "";
     }
     renderSocialTuiCanvas();
@@ -1282,6 +1288,55 @@ body.fullscreen-mode #social-tui-canvas:hover{
     renderSocialTuiCanvas();
   }
 
+  const bottomSelectablePre = document.getElementById("bottom-stream-selectable");
+  let lastBottomSelectableText = "";
+
+  if (bottomSelectablePre) {
+    bottomSelectablePre.addEventListener("beforeinput", (ev) => {
+      ev.preventDefault();
+    });
+  }
+
+  function syncBottomSelectableOverlay(socLeft, socTop, cssW, streamTopDev, streamHDev, lineHDev, charWDev, linesArr) {
+    if (!bottomSelectablePre) return;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    if (isFullscreenMode || !linesArr || linesArr.length === 0) {
+      if (bottomSelectablePre.style.display !== "none") bottomSelectablePre.style.display = "none";
+      return;
+    }
+    const leftCss = socLeft + 6;
+    const topCss = socTop + Math.round(streamTopDev / dpr);
+    const wCss = Math.max(60, cssW - 12);
+    const hCss = Math.max(18, Math.round(streamHDev / dpr));
+    const lineHCss = (lineHDev / dpr).toFixed(2);
+    const fontPx = Math.max(10, (charWDev / dpr) * 1.66).toFixed(2);
+
+    if (bottomSelectablePre.style.display !== "block") bottomSelectablePre.style.display = "block";
+    bottomSelectablePre.style.left = leftCss + "px";
+    bottomSelectablePre.style.top = topCss + "px";
+    bottomSelectablePre.style.width = wCss + "px";
+    bottomSelectablePre.style.height = hCss + "px";
+    bottomSelectablePre.style.lineHeight = lineHCss + "px";
+    bottomSelectablePre.style.fontSize = fontPx + "px";
+
+    const plainDump = linesArr.join("\n");
+    const hasActiveSel = Boolean(
+      window.getSelection && window.getSelection() && window.getSelection().toString().length > 0
+    );
+    if (!hasActiveSel && plainDump !== lastBottomSelectableText) {
+      lastBottomSelectableText = plainDump;
+      bottomSelectablePre.textContent = plainDump;
+    }
+  }
+
+  function blurChatInput() {
+    socialState.chatInputFocused = false;
+    socialState.editingName = false;
+    if (mobileBottomInput && document.activeElement === mobileBottomInput) {
+      mobileBottomInput.blur();
+    }
+  }
+
   function setBottomMode(mode) {
     const clean = mode === "chat" || mode === "terminal" ? mode : "controller";
     socialState.bottomMode = clean;
@@ -1291,13 +1346,13 @@ body.fullscreen-mode #social-tui-canvas:hover{
       window.SlopesTabForms.state.terminalOpen = false;
     }
     if (mobileBottomInput) {
-      if (clean === "chat") {
-        mobileBottomInput.value = socialState.chatDraft || "";
-      } else if (clean === "terminal") {
+      if (clean === "terminal") {
         mobileBottomInput.value = socialState.termInputDraft || "";
       } else {
+        mobileBottomInput.value = socialState.chatDraft || "";
+      }
+      if (clean === "controller") {
         mobileBottomInput.blur();
-        mobileBottomInput.style.display = "none";
       }
     }
     if (typeof solve === "function") {
@@ -1410,7 +1465,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
     // =========================================================================
     // ROW 1: 3-MODE FOCUS SWITCHER BAR (`[CTRL]` | `[CHAT]` | `[TERM]`) + CLAUDE AUTH
     // =========================================================================
-    const hdrCssH = isExpanded ? 30 : 25;
+    const hdrCssH = isExpanded ? 30 : 24;
     const hdrH = hdrCssH * p;
     ctx.fillStyle = "rgba(10, 26, 34, 0.90)";
     ctx.fillRect(p, p, W - 2 * p, hdrH);
@@ -1484,13 +1539,38 @@ body.fullscreen-mode #social-tui-canvas:hover{
     const roster = getRosterEntries();
     const selPeer = roster.find((r) => r.id === socialState.selectedPeerId) || roster[0];
 
+    // On wider screens in `controller` mode, also render quick `#GROUP` / `@DM` / `DRIFT` channel chips in Row 1!
+    if (mode === "controller") {
+      const quickTabs = [
+        { id: "group", label: "#GROUP" },
+        { id: "dm", label: selPeer ? `@DM:${selPeer.selfname || selPeer.handle.slice(0, 8)}` : "@DM" },
+      ];
+      for (let i = 0; i < quickTabs.length; i++) {
+        const qt = quickTabs[i];
+        const act = socialState.activeTab === qt.id;
+        const qw = measTxt(qt.label, uiSpec) + 10 * p;
+        if (curX + qw > claudeBtnX - 4 * p) break;
+        ctx.fillStyle = act ? "rgba(38, 86, 96, 0.90)" : "rgba(14, 30, 38, 0.75)";
+        ctx.fillRect(curX, 2 * p, qw, hdrH - 3 * p);
+        ctx.strokeStyle = act ? "#ffd43b" : "#2c5460";
+        ctx.strokeRect(curX + 0.5, 2 * p + 0.5, qw - 1, hdrH - 3 * p - 1);
+        drawTxt(qt.label, curX + 5 * p, hdrTextY, act ? "#ffd43b" : "#a8d8d0", uiSpec);
+        socialState.hitBoxes.push({ id: `tab:${qt.id}`, x: curX, y: 0, w: qw, h: hdrH + 2 * p });
+        curX += qw + 4 * p;
+      }
+    }
+
     // =========================================================================
     // MODE 1: COMPACT CONTROLLER MODE (`mode === "controller"`)
     // =========================================================================
     if (mode === "controller") {
-      if (mobileBottomInput) mobileBottomInput.style.display = "none";
+      if (bottomSelectablePre && bottomSelectablePre.style.display !== "none") {
+        bottomSelectablePre.style.display = "none";
+      }
+      const footerCssH = 24;
+      const footerH = footerCssH * p;
       const bodyY = hdrH + 2 * p;
-      const bodyH = Math.max(10 * p, H - bodyY - p);
+      const bodyH = Math.max(10 * p, H - bodyY - footerH - p);
       const lineH = uiSpec.h + 2 * p;
       const maxLines = Math.max(1, Math.floor((bodyH - 2 * p) / lineH));
       const msgs =
@@ -1506,7 +1586,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
         const clipped = rawLine.length > maxChars ? rawLine.slice(0, maxChars - 1) + "…" : rawLine;
         drawTxt(clipped, 6 * p, ly, m.color || "#cde8e2", uiSpec);
       }
-      // Tapping anywhere in the compact message preview expands Chat mode!
+      // Tapping the message preview expands Chat mode!
       socialState.hitBoxes.push({
         id: "mode:chat",
         x: 0,
@@ -1514,6 +1594,47 @@ body.fullscreen-mode #social-tui-canvas:hover{
         w: W,
         h: bodyH,
       });
+
+      // Instant-typing Bottom Input Bar in Controller Mode (`0ms` ready, bridges directly to TERM-1/2/3 & #GROUP)
+      const footY = H - footerH;
+      ctx.fillStyle = "rgba(8, 22, 28, 0.94)";
+      ctx.fillRect(p, footY, W - 2 * p, footerH - p);
+      ctx.fillStyle = "#2b5864";
+      ctx.fillRect(p, footY, W - 2 * p, p);
+
+      const sendLbl = "SEND";
+      const sendW = measTxt(sendLbl, uiSpec) + 10 * p;
+      const sendX = W - sendW - 4 * p;
+      const promptLbl =
+        socialState.activeTab === "dm" && selPeer
+          ? `@${selPeer.selfname || selPeer.handle.slice(0, 7)}>`
+          : `#GROUP>`;
+      const promptW = measTxt(promptLbl, uiSpec) + 6 * p;
+      const footTextY = footY + Math.max(1, Math.floor((footerH - uiSpec.h) / 2));
+      drawTxt(promptLbl, 5 * p, footTextY, "#ffd43b", uiSpec);
+
+      ctx.fillStyle = "rgba(26, 78, 88, 0.92)";
+      ctx.fillRect(sendX, footY + 2 * p, sendW, footerH - 4 * p);
+      ctx.strokeStyle = "#78ead4";
+      ctx.strokeRect(sendX + 0.5, footY + 2 * p + 0.5, sendW - 1, footerH - 4 * p - 1);
+      drawTxt(sendLbl, sendX + 5 * p, footTextY, "#78ead4", uiSpec);
+      socialState.hitBoxes.push({ id: "send_chat", x: sendX, y: footY, w: sendW + 4 * p, h: footerH });
+
+      if (mobileBottomInput && !isFullscreenMode) {
+        const inLeft = socLeft + Math.round(promptW / dpr) + 2;
+        const inTop = socTop + cssH - footerCssH + 2;
+        const inW = Math.max(70, cssW - Math.round(promptW / dpr) - Math.round(sendW / dpr) - 10);
+        const inH = footerCssH - 4;
+        mobileBottomInput.style.display = "block";
+        mobileBottomInput.style.left = inLeft + "px";
+        mobileBottomInput.style.top = inTop + "px";
+        mobileBottomInput.style.width = inW + "px";
+        mobileBottomInput.style.height = inH + "px";
+        mobileBottomInput.placeholder =
+          socialState.activeTab === "dm" && selPeer
+            ? `Message ${selPeer.handle} (live terminal)...`
+            : `Type to chat or @${socialState.username}.cc.rover...`;
+      }
       return;
     }
 
@@ -1588,6 +1709,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
       const maxCols = Math.max(22, Math.floor((W - 16 * p) / Math.max(6, bodySpec.w)));
 
       if (socialState.activeTab === "drift") {
+        if (bottomSelectablePre) bottomSelectablePre.style.display = "none";
         const driftPeers = socialState.humanPeers;
         const cardH = Math.max(lineH * 2 + 4 * p, Math.floor(feedH / Math.max(1, driftPeers.length)));
         for (let i = 0; i < driftPeers.length; i++) {
@@ -1634,6 +1756,16 @@ body.fullscreen-mode #social-tui-canvas:hover{
           const row = visibleRows[i];
           drawTxt(row.text, 8 * p, feedY + 2 * p + i * lineH, row.color, bodySpec);
         }
+        syncBottomSelectableOverlay(
+          socLeft,
+          socTop,
+          cssW,
+          feedY + 2 * p,
+          feedH - 4 * p,
+          lineH,
+          bodySpec.w,
+          visibleRows.map((r) => r.text)
+        );
       }
 
       // Bottom Docked Input Bar (`y = H - footerH .. H`)
@@ -1725,12 +1857,12 @@ body.fullscreen-mode #social-tui-canvas:hover{
       ctx.fillRect(p, row3Y + chipRowH, W - 2 * p, p);
 
       const quickCmds = [
-        { lbl: "claude --auto", cmd: "claude --auto" },
+        { lbl: "claude", cmd: "claude" },
+        { lbl: "htop", cmd: "htop" },
         { lbl: "form", cmd: "body form cycle" },
         { lbl: "dock/pole", cmd: "body dock toggle" },
         { lbl: "tentacle", cmd: "tentacle grab human" },
         { lbl: "status", cmd: "body status" },
-        { lbl: "drift", cmd: "drift fork" },
       ];
       let qx = 4 * p;
       const qTextY = row3Y + Math.max(1, Math.floor((chipRowH - uiSpec.h) / 2));
@@ -1779,6 +1911,16 @@ body.fullscreen-mode #social-tui-canvas:hover{
       for (let i = 0; i < visTerm.length; i++) {
         drawTxt(visTerm[i].text, 8 * p, streamY + 2 * p + i * lineH, visTerm[i].color, bodySpec);
       }
+      syncBottomSelectableOverlay(
+        socLeft,
+        socTop,
+        cssW,
+        streamY + 2 * p,
+        streamH - 4 * p,
+        lineH,
+        bodySpec.w,
+        visTerm.map((r) => r.text)
+      );
 
       // Bottom Docked Terminal Input Bar (`y = H - footerH .. H`)
       const footY = H - footerH;
@@ -1827,6 +1969,17 @@ body.fullscreen-mode #social-tui-canvas:hover{
       }
     });
     mobileBottomInput.addEventListener("keydown", (e) => {
+      // If the in-screen Hardcore-Tab terminal window is open, blur this bottom chat input and let
+      // the key event bubble to the Hardcore-Tab terminal so typing is never trapped in the chat box!
+      if (
+        window.SlopesTabForms &&
+        window.SlopesTabForms.state &&
+        (window.SlopesTabForms.state.terminalOpen || window.SlopesTabForms.state.monolithChatOpen)
+      ) {
+        mobileBottomInput.blur();
+        socialState.chatInputFocused = false;
+        return;
+      }
       e.stopPropagation();
       if (e.key === "Enter") {
         e.preventDefault();
@@ -1931,11 +2084,8 @@ body.fullscreen-mode #social-tui-canvas:hover{
           }
           if (hb.id === "focus_chat_input") {
             socialState.editingName = false;
-            if (mobileBottomInput && socialState.bottomMode !== "controller") {
+            if (mobileBottomInput) {
               mobileBottomInput.focus();
-            } else {
-              setBottomMode("chat");
-              if (mobileBottomInput) setTimeout(() => mobileBottomInput.focus(), 20);
             }
             return;
           }
@@ -1959,6 +2109,15 @@ body.fullscreen-mode #social-tui-canvas:hover{
   window.addEventListener(
     "keydown",
     (e) => {
+      if (
+        window.SlopesTabForms &&
+        window.SlopesTabForms.state &&
+        (window.SlopesTabForms.state.terminalOpen || window.SlopesTabForms.state.monolithChatOpen)
+      ) {
+        socialState.chatInputFocused = false;
+        socialState.editingName = false;
+        return;
+      }
       if (!socialState.editingName && !socialState.chatInputFocused) return;
       if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
       e.stopPropagation();
@@ -2005,6 +2164,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
     setUsername: applyUsernameChange,
     setBottomMode,
     getBottomMode: () => socialState.bottomMode,
+    blurChat: blurChatInput,
     hotReloadIntoDriftFork,
     receiveClaudeSocialPost(pkt) {
       if (!pkt || !pkt.text) return;
@@ -2693,6 +2853,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
   });
 
   scr.addEventListener("pointerdown", () => {
+    blurChatInput();
     if (window.SlopesAudio) window.SlopesAudio.unlock();
   });
 
@@ -2746,6 +2907,30 @@ body.fullscreen-mode #social-tui-canvas:hover{
     heldKeys.delete(k);
     triggerKey(k, false);
   });
+})();
+</script>
+<script src="audio.js?v=29"></script>
+<script src="sim/wasm_bridge.js?v=29"></script>
+<script src="sim/ecology_design.js?v=29"></script>
+<script src="sim/cosmic_engine.js?v=29"></script>
+<script src="sim/pentagonal_rotation.js?v=29"></script>
+<script src="sim/hardcore_tab.js?v=29"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=29"></script>
+<script src="sim/tabform_lifeforms.js?v=29"></script>
+<script src="sim/genetic_flora_engine.js?v=29"></script>
+<script src="sim/parallax_dither_art.js?v=29"></script>
+<script src="slopes2.js?v=29"></script>
+<script src="sim/ai_interface.js?v=29"></script>
+<script src="sim/lore_portal_dock.js?v=29"></script>
+<script>
+(() => {
+  const pi = document.getElementById("pi-shift");
+  if (pi) {
+    requestAnimationFrame(() => pi.classList.add("ready"));
+  }
+  if (window.SlopesSocialTui && typeof window.SlopesSocialTui.render === "function") {
+    window.SlopesSocialTui.render();
+  }
 })();
 </script>
 </body>
