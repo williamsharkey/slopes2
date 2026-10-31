@@ -1904,22 +1904,54 @@
         return { ok: true, action: "dig", x: cx, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
 
-      const helpMsg = `Usage: body <status|form|roam|drive|winch|smooth|thrust|goto|arm|bus|perch|eject|say|build|sim|create|rotate|harvester|castle|missile|dig|theme|exolayer|allegiance|msg|reclaim|split|prog>`;
+      const helpMsg = `Usage: body <status|form|dock|rise|roam|drive|winch|smooth|thrust|goto|arm|bus|perch|eject|say|build|sim|create|rotate|harvester|castle|missile|dig|theme|exolayer|allegiance|msg|reclaim|split|prog>`;
 
-      if (sub === "form" || sub === "chassis" || sub === "morph" || sub === "shape") {
+      if (sub === "dock" || sub === "rise" || sub === "undock" || sub === "submerge") {
+        const arg = (args[1] || (sub === "rise" || sub === "undock" ? "rise" : sub === "dock" || sub === "submerge" ? "dock" : "toggle")).toLowerCase();
+        const curW = state.lastWorldContext;
+        const curSx = curW && (curW.worldX !== undefined ? curW.worldX : curW.screenX !== undefined ? curW.screenX : 0);
+        const curLy = curW && curW.worldLayer !== undefined ? curW.worldLayer : 0;
+        const onScreenCount = state.tabForms.filter((t) => !t.isOffScreen && t.roomX === curSx && (t.roomY || 0) === curLy).length;
+        if (arg === "rise" || arg === "up" || arg === "undock" || arg === "off") {
+          tf.groundDocked = false;
+          tf.groundDockTimer = 460;
+        } else if (onScreenCount <= 1) {
+          tf.groundDocked = false;
+          const warnMsg = `\x1b[93m[ground-dock]\x1b[0m Only 1 Tab-Form is on screen—remaining mobile above ground (ground-docking only activates when >1 Tab-Form is on screen).`;
+          pushLine(warnMsg);
+          return { ok: true, action: "dock", groundDocked: false, status: buildStatusObject(w), output: stripAnsi(warnMsg) };
+        } else {
+          tf.groundDocked = arg === "dock" || arg === "on" || arg === "submerge" ? true : !tf.groundDocked;
+          tf.groundDockTimer = tf.groundDocked ? 420 : 480;
+          if (tf.groundDocked) {
+            tf.thrusterActive = false;
+            tf.Flying = false;
+          }
+        }
+        playActuatorSound("winch");
+        const msg = tf.groundDocked
+          ? `\x1b[96m[ground-dock]\x1b[0m ${tf.id} docked into the ground! Top surface contoured to match terrain surface; terminal remains readable below ground.`
+          : `\x1b[92m[ground-rise]\x1b[0m ${tf.id} rose up from the ground and resumed full mobile patrol with claws, wheels & perches!`;
+        pushLine(msg);
+        return { ok: true, action: "dock", groundDocked: tf.groundDocked, status: buildStatusObject(w), output: stripAnsi(msg) };
+      }
+
+      if (sub === "form" || sub === "chassis" || sub === "morph" || sub === "shape" || sub === "compact") {
         const arg = (args[1] || "cycle").toLowerCase();
-        const formKeys = ["mecha", "wooden-robot", "living-tree", "monitor"];
-        let nextForm = tf.chassisForm || "mecha";
-        if (arg === "cycle" || arg === "next" || arg === "shift") {
+        const formKeys = ["monitor", "monolith", "mecha", "wooden-robot", "living-tree"];
+        let nextForm = tf.chassisForm || "monitor";
+        if (arg === "cycle" || arg === "next" || arg === "shift" || arg === "toggle") {
           const curIdx = formKeys.indexOf(nextForm);
           nextForm = formKeys[(curIdx + 1) % formKeys.length];
+        } else if (arg.includes("monolith") || arg.includes("slab") || arg.includes("obelisk")) {
+          nextForm = "monolith";
         } else if (arg.includes("mecha") || arg.includes("mech") || arg.includes("bot")) {
           nextForm = "mecha";
         } else if (arg.includes("wood") || arg.includes("timber") || arg.includes("clock")) {
           nextForm = "wooden-robot";
         } else if (arg.includes("tree") || arg.includes("ent") || arg.includes("flora") || arg.includes("living")) {
           nextForm = "living-tree";
-        } else if (arg.includes("mon") || arg.includes("box") || arg.includes("full") || arg.includes("screen")) {
+        } else if (arg.includes("mon") || arg.includes("box") || arg.includes("full") || arg.includes("screen") || arg.includes("term")) {
           nextForm = "monitor";
         } else {
           const curIdx = formKeys.indexOf(nextForm);
@@ -1928,7 +1960,10 @@
         tf.chassisForm = nextForm;
         tf.formLocked = arg !== "auto";
         playActuatorSound("arm");
-        const msg = `\x1b[96m[shape-shift]\x1b[0m ${tf.id} shifted into compact '${nextForm.toUpperCase()}' form (scrolling terminal glyphs wrap across face & body)!`;
+        const msg =
+          nextForm === "monitor"
+            ? `\x1b[92m[shape-shift]\x1b[0m ${tf.id} deployed full Embodied Terminal-Form body with rooftop humans, bird perches, claws, wheels & thrusters!`
+            : `\x1b[96m[shape-shift]\x1b[0m ${tf.id} shifted into compact '${nextForm.toUpperCase()}' form (click [TERM BODY] or run 'body form monitor' to restore full terminal body)!`;
         pushLine(msg);
         return { ok: true, action: "form", chassisForm: nextForm, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
@@ -2891,9 +2926,12 @@
       initialPassengers: [
         { type: "child", role: "child", color: [255, 205, 95] },
         { type: "villager", role: "builder", color: [255, 145, 55] },
+        { type: "villager", role: "mason", color: [255, 165, 70] },
+        { type: "child", role: "scout", color: [255, 215, 110] },
       ],
       initialBirds: [
         { name: "Corvus-Scout", side: "left", wingPhase: 0.4 },
+        { name: "Corvus-Ridge", side: "right", wingPhase: 1.9 },
       ],
     },
     {
@@ -2914,6 +2952,8 @@
       initialSay: "CORVUS ORACLE PERCHED",
       initialPassengers: [
         { type: "villager", role: "seer-keeper", color: [255, 160, 65] },
+        { type: "child", role: "sky-pupil", color: [255, 210, 100] },
+        { type: "villager", role: "navigator", color: [255, 140, 50] },
       ],
       initialBirds: [
         { name: "Corvus-Alpha", side: "left", wingPhase: 0.0 },
@@ -2939,9 +2979,11 @@
       initialPassengers: [
         { type: "villager", role: "vat-engineer", color: [255, 150, 60] },
         { type: "child", role: "apprentice", color: [255, 210, 105] },
+        { type: "villager", role: "botanist", color: [255, 170, 75] },
       ],
       initialBirds: [
         { name: "Corvus-Vat", side: "right", wingPhase: 0.9 },
+        { name: "Corvus-Spore", side: "left", wingPhase: 2.3 },
       ],
     },
   ];
@@ -5385,7 +5427,7 @@
         suctionPhase: 0,
       },
       tentacles: null, // Populated below with 3x14 Verlet/FABRIK biomechanical snake tentacles
-      busOpen: index === 2 ? false : arch.busOpen !== false,
+      busOpen: arch.busOpen !== false,
       busPassengers: JSON.parse(JSON.stringify(arch.initialPassengers || [])),
       perchesOpen: arch.perchesOpen !== false,
       perchedBirds: JSON.parse(JSON.stringify(arch.initialBirds || [])),
@@ -5455,19 +5497,27 @@
       spriteTransparency: 0.08, // 0..0.50 (up to 0.5 transparent on sprite)
       zoomTransparency: 0.14,   // 0..0.80 (up to 0.8 transparent when zoomed)
       defaultHover: !!arch.thrusterActive,
-      // Compact Shape-Shifting Forms ("mecha", "wooden-robot", "living-tree", or "monitor")
-      chassisForm: opts.chassisForm || (index === 0 ? "mecha" : index === 1 ? "wooden-robot" : "living-tree"),
-      formLocked: false,
-      formShiftTimer: 160 + index * 55,
-      // World-Frame Discovery, Delayed Following (~within a minute) & Mind-of-Their-Own Autonomy:
-      // At startup (Screen 0,0), terminals are out in neighboring sectors so you don't start with all terminals in frame!
-      // You can use arrows to find them, or come across them when they randomly wander in to visit you.
-      homeScreenX: index === 0 ? 1 : index === 1 ? -1 : 2,
+      // Embodied Terminal-Form Body ("monitor") by default!
+      // Only shifts into compact forms ("monolith", "mecha", "wooden-robot", "living-tree") if the user clicks
+      // the [COMPACT FORM] button after opening the terminal (or runs `body form ...`).
+      chassisForm: opts.chassisForm || "monitor",
+      formLocked: true,
+      formShiftTimer: 360 + index * 90,
+      // Ground-Docking Mode (only activates when >1 Tab-Form is on screen to save screen space;
+      // top surface contours to match the ground surface so objects can walk over it while terminal output remains readable,
+      // and rises up again to be mobile as normal!)
+      groundDocked: false,
+      groundDockProgress: 0,
+      groundDockTimer: index === 0 ? 150 : 380 + index * 120,
+      // Start TAB-01 and TAB-02 on Screen (0,0) so Embodied Terminal-Forms with rooftop humans, perches for birds,
+      // claws, wheels, and thrusters are immediately visible on screen (and can demonstrate ground-docking when >1 are on screen),
+      // while TAB-03 explores Sector (1,0) and can wander over!
+      homeScreenX: index === 0 ? 0 : index === 1 ? 0 : 1,
       homeScreenY: 0,
-      roomX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 1 : index === 1 ? -1 : 2,
+      roomX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 0 : index === 1 ? 0 : 1,
       roomY: opts.roomY !== undefined ? opts.roomY : 0,
-      currentScreenX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 1 : index === 1 ? -1 : 2,
-      isOffScreen: opts.roomX !== undefined ? opts.roomX !== 0 : true,
+      currentScreenX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 0 : index === 1 ? 0 : 1,
+      isOffScreen: opts.roomX !== undefined ? opts.roomX !== 0 : index >= 2,
       followRequested: false, // Toggled by clicking the hover [+ FOLLOW ME] button or `body follow`
       followEtaTicks: 0,      // When following across frames, takes ~8..45s (within a minute) to trek over!
       randomVisitTimer: index === 0 ? 1500 : index === 1 ? 2600 : 3800, // Randomly wanders into your frame later!
@@ -5849,6 +5899,10 @@
     });
 
     const playerX = world && world.P && typeof world.P.x === "number" ? world.P.x : 60;
+    const onScreenTabForms = state.tabForms.filter(
+      (t) => t.roomX === curScreenX && (t.roomY || 0) === curLayer
+    );
+    const onScreenCount = onScreenTabForms.length;
 
     for (let i = 0; i < state.tabForms.length; i++) {
       const tf = state.tabForms[i];
@@ -5878,7 +5932,8 @@
         tf.dimDepth = Math.max(0, tf.dimDepth - (0.0075 + i * 0.001));
       }
 
-      // 0B. Dynamic Shape-Shifting between Compact Forms ("mecha", "wooden-robot", "living-tree") when needed!
+      // 0B. Only shape-shift between compact forms if the user explicitly unlocked auto-morphing (`body form auto`);
+      //     otherwise keep the Embodied Terminal-Form body ("monitor") or whichever form the user selected via button!
       if (!tf.formLocked && tf.chassisForm !== "monitor") {
         tf.formShiftTimer = (tf.formShiftTimer || 180) - 1;
         if (tf.formShiftTimer <= 0) {
@@ -5976,6 +6031,46 @@
 
       // `tf` is in the CURRENT frame!
       tf.isOffScreen = false;
+
+      // 0C2. Ground-Docking Mode to Save Screen Space (ONLY when `onScreenCount > 1`!):
+      //      When more than one Tab-Form is on screen, non-flying Tab-Forms can periodically dock into the ground
+      //      so their top surface matches the shape of the ground surface (other objects can go on top of them
+      //      and you can still read the terminal output), and then rise up again to be mobile like normal!
+      if (onScreenCount <= 1) {
+        tf.groundDocked = false;
+      } else if (!tf.catchingUp && (tf.chassisForm || "monitor") === "monitor") {
+        tf.groundDockTimer = (tf.groundDockTimer === undefined ? 220 + i * 160 : tf.groundDockTimer) - 1;
+        if (tf.groundDockTimer <= 0) {
+          if (tf.groundDocked) {
+            // Rise up again and be mobile like normal!
+            tf.groundDocked = false;
+            tf.groundDockTimer = 420 + ((state.tickCount * 13 + i * 149) % 320);
+            if (!tf.vx || Math.abs(tf.vx) < 0.03) {
+              tf.vx = (tf.facing || 1) * 0.08;
+            }
+            const riseTxt = "Rising up from ground-dock! Extending wheels, claws & bird perches for mobile patrol.";
+            if (tf.shell) tf.shell.pushLine(`\x1b[92m[ground-rise]\x1b[0m ${riseTxt}`);
+            pushOverheadThought(tf, riseTxt, "#69db7c");
+          } else if (!tf.thrusterActive && !tf.Flying) {
+            // Check how many other on-screen Tab-Forms are currently ground-docked so at least 1 stays mobile above ground
+            const dockedOthers = onScreenTabForms.filter((o) => o.id !== tf.id && o.groundDocked).length;
+            if (dockedOthers < onScreenCount - 1) {
+              tf.groundDocked = true;
+              tf.groundDockTimer = 360 + ((state.tickCount * 17 + i * 113) % 240);
+              const dockTxt = "Docking into ground to save screen space—top surface contoured to terrain; terminal stays live!";
+              if (tf.shell) tf.shell.pushLine(`\x1b[96m[ground-dock]\x1b[0m ${dockTxt}`);
+              pushOverheadThought(tf, dockTxt, tf.accentHex || "#78ead4");
+            } else {
+              tf.groundDockTimer = 180 + i * 70;
+            }
+          } else {
+            tf.groundDockTimer = 240 + i * 90;
+          }
+        }
+      }
+      const targetDockP = tf.groundDocked && onScreenCount > 1 ? 1.0 : 0.0;
+      tf.groundDockProgress = (tf.groundDockProgress || 0) + (targetDockP - (tf.groundDockProgress || 0)) * 0.12;
+      if (Math.abs(tf.groundDockProgress - targetDockP) < 0.008) tf.groundDockProgress = targetDockP;
 
       // 0D. If `tf` decided of its own accord ("mind of its own") to go help in an adjacent room, walk to the edge & depart!
       if (tf.departingToRoomX !== null && tf.departingToRoomX !== undefined) {
@@ -6085,8 +6180,10 @@
         continue;
       }
 
-      // 1. Autonomous target navigation (`body goto <x> [y]`)
-      if (tf.targetX !== null && tf.targetX !== undefined) {
+      // 1. Autonomous target navigation (`body goto <x> [y]`) — pause horizontal driving while ground-docked
+      if ((tf.groundDockProgress || 0) > 0.35) {
+        // Stationary while docked into the ground contour; other objects can walk right over the top surface!
+      } else if (tf.targetX !== null && tf.targetX !== undefined) {
         const dx = tf.targetX - tf.x;
         if (Math.abs(dx) <= 0.8) {
           tf.x = tf.targetX;
@@ -8549,10 +8646,10 @@
     const acc = tf.accentRgb || [120, 234, 212];
     const chas = tf.chassisRgb || [14, 34, 42];
     const bez = isSelected || isHovered ? acc : tf.bezelRgb || [56, 118, 132];
-    const cForm = tf.chassisForm || "mecha";
+    const cForm = tf.chassisForm || "monitor";
 
-    // If in compact shape-shifting form ("mecha", "wooden-robot", "living-tree"), render a compact ~22x28 sprite
-    // so terminals don't clutter the world, and wrap scrolling terminal characters across their face & body!
+    // If user explicitly switched into a compact shape-shifting form ("monolith", "mecha", "wooden-robot", "living-tree"),
+    // render a compact ~22x28 sprite and wrap scrolling terminal characters across its face & body!
     if (cForm !== "monitor") {
       const cw = Math.max(8, Math.round(22 * dimScale));
       const ch = Math.max(10, Math.round(28 * dimScale));
@@ -8566,7 +8663,17 @@
         primeRenderer.fillNativeRect(centerPx, horizonPy, 1, Math.max(2, ty - horizonPy), acc[0], acc[1], acc[2], 0.32);
       }
 
-      if (cForm === "mecha") {
+      if (cForm === "monolith") {
+        // Sleek 1:4:9 Obsidian Terminal Monolith Slab with glowing horizontal circuit strata & perched crow
+        const monoW = Math.max(7, Math.round(13 * dimScale));
+        const monoH = Math.max(14, Math.round(30 * dimScale));
+        const monoX = centerPx - Math.floor(monoW / 2);
+        const monoY = groundPy - monoH;
+        primeRenderer.fillNativeRect(monoX - 1, monoY - 1, monoW + 2, monoH + 1, bez[0], bez[1], bez[2], dAlpha * 0.9);
+        primeRenderer.fillNativeRect(monoX, monoY, monoW, monoH, 8, 14, 20, dAlpha);
+        primeRenderer.fillNativeRect(monoX + 1, monoY + 3, monoW - 2, 1, acc[0], acc[1], acc[2], dAlpha);
+        primeRenderer.fillNativeRect(monoX + 2, monoY + Math.floor(monoH * 0.45), monoW - 4, 1, 255, 212, 59, dAlpha);
+      } else if (cForm === "mecha") {
         // Sleek Bipedal Cyber-Mecha with visor, shoulder thrusters & articulated legs
         const legW = Math.max(2, Math.round(3 * dimScale));
         const legH = Math.max(3, Math.round(8 * dimScale));
@@ -8655,8 +8762,8 @@
       return;
     }
 
-    // Body dimensions in 840x525 native pixels (when explicitly in full "monitor" form):
-    // 87px wide (~12.4 coarse cells) x 38px tall monitor body + 10px rooftop bus + 6px wheels = 54px total height
+    // Body dimensions in 840x525 native pixels (default Embodied Terminal-Form "monitor" body):
+    // 87px wide (~12.4 coarse cells) x 38px tall monitor body + 9px rooftop bus + 6px wheels = 53px total height
     const bodyW = Math.max(24, Math.round(87 * dimScale));
     const bodyH = Math.max(12, Math.round(38 * dimScale));
     const wheelH = Math.max(2, Math.round(6 * dimScale));
@@ -8665,10 +8772,37 @@
 
     const leftPx = Math.max(4, Math.min(NATIVE_W - bodyW - 4, Math.round(centerPx - bodyW / 2)));
     const rightPx = leftPx + bodyW;
-    const bodyBotPy = Math.max(60, Math.min(NATIVE_H - 12, groundPy - wheelH));
-    const bodyTopPy = bodyBotPy - bodyH;
+
+    // Ground-Docking Mode (`tf.groundDockProgress` 0..1):
+    // When >1 Tab-Form is on screen, a Tab-Form can dock into the ground so its top surface matches the shape
+    // of the ground surface (`surfPyAt(px)`), other objects can move on top of it, and you can still read the terminal output!
+    const dockP = Math.max(0, Math.min(1, tf.groundDockProgress || 0));
+    const wCtx = state.lastWorldContext;
+    const wBlocks = wCtx && wCtx.Blocks;
+    const seaLvl = wCtx && typeof wCtx.SeaLevel === "number" ? wCtx.SeaLevel : 14;
+    function surfPyAt(px) {
+      if (!wBlocks) return groundPy;
+      const c = Math.max(0, Math.min(COARSE_W - 1, Math.floor(px / SCALE)));
+      const h = Math.max(seaLvl, wBlocks[c] || 18);
+      return Math.round((COARSE_H - h) * SCALE);
+    }
+
+    const undockedBotPy = Math.max(60, Math.min(NATIVE_H - 12, groundPy - wheelH));
+    const undockedTopPy = undockedBotPy - bodyH;
+    // When docked (`dockP -> 1`), sink the body into the subterranean ground so `bodyTopPy` aligns with `groundPy`
+    const sinkOffsetPy = Math.round(dockP * (bodyH + wheelH - 2));
+    const bodyTopPy = Math.min(NATIVE_H - bodyH - 4, undockedTopPy + sinkOffsetPy);
+    const bodyBotPy = bodyTopPy + bodyH;
     const busLeftPx = leftPx + Math.floor((bodyW - busW) / 2);
     const busTopPy = bodyTopPy - busH;
+
+    // Compute per-column top surface profile across `leftPx..rightPx` matching the ground surface when docked
+    const surfProfile = [];
+    for (let dx = 0; dx < bodyW; dx++) {
+      const px = leftPx + dx;
+      const sPy = surfPyAt(px);
+      surfProfile.push(Math.round(bodyTopPy * (1 - dockP) + sPy * dockP));
+    }
 
     // Record hit box in 840x525 native coordinates so clicking the sprite opens its terminal!
     state.spriteHitBoxes.push({
@@ -9072,22 +9206,28 @@
 
     // ------------------------------------------------------------------------
     // D. ROOFTOP PASSENGER BUS DECK (Top of Tab-Form carrying 3x3 Orange People)
+    //    When ground-docked (`dockP > 0`), each column of the top deck contours to match the ground surface!
     // ------------------------------------------------------------------------
-    // Bus outer cabin & 1px safety rail
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, busW, busH, 16, 38, 46, 0.96);
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, busW, 1, acc[0], acc[1], acc[2], 0.95);
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
-    primeRenderer.fillNativeRect(busLeftPx + busW - 1, busTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
+    for (let bx = 0; bx < busW; bx++) {
+      const colTopPy = surfProfile[Math.min(bodyW - 1, Math.floor((bodyW - busW) / 2) + bx)] - busH;
+      primeRenderer.fillNativeRect(busLeftPx + bx, colTopPy, 1, busH, 16, 38, 46, 0.96);
+      primeRenderer.fillNativeRect(busLeftPx + bx, colTopPy, 1, 1, acc[0], acc[1], acc[2], 0.95);
+    }
+    const leftBusTopPy = surfProfile[Math.floor((bodyW - busW) / 2)] - busH;
+    const rightBusTopPy = surfProfile[Math.min(bodyW - 1, Math.floor((bodyW - busW) / 2) + busW - 1)] - busH;
+    primeRenderer.fillNativeRect(busLeftPx, leftBusTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
+    primeRenderer.fillNativeRect(busLeftPx + busW - 1, rightBusTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
 
     // Boarding door indicator on left side of bus
     const doorCol = tf.busOpen ? [85, 235, 135] : [225, 95, 85];
-    primeRenderer.fillNativeRect(busLeftPx + 2, busTopPy + 2, 4, busH - 2, doorCol[0], doorCol[1], doorCol[2], 0.9);
+    primeRenderer.fillNativeRect(busLeftPx + 2, leftBusTopPy + 2, 4, busH - 2, doorCol[0], doorCol[1], doorCol[2], 0.9);
 
-    // 6 Panoramic Bus Windows + Visible Orange Villagers / Children riding inside!
+    // 6 Panoramic Bus Windows + Visible Orange Villagers / Children riding on top (following ground contour when docked)!
     const passengers = tf.busPassengers || [];
     for (let slot = 0; slot < 6; slot++) {
       const wx = busLeftPx + 8 + slot * 8;
-      const wy = busTopPy + 2;
+      const profIdx = Math.min(bodyW - 1, Math.max(0, wx - leftPx + 3));
+      const wy = surfProfile[profIdx] - busH + 2;
       // Dark glass window well
       primeRenderer.fillNativeRect(wx, wy, 6, 6, 6, 16, 20, 0.95);
       if (slot < passengers.length) {
@@ -9104,24 +9244,25 @@
     // E. FOLD-OUT UPPER BIRD PERCHES & PERCHED SEER CROWS (`body perch`)
     // ------------------------------------------------------------------------
     if (tf.perchesOpen) {
-      // Left T-perch & Right T-perch on upper corners of chassis
+      // Left T-perch & Right T-perch on upper corners of chassis (following ground surface contour when docked)
       const leftPerchX = leftPx + 4;
       const rightPerchX = rightPx - 12;
-      const perchY = bodyTopPy - 5;
+      const leftPerchY = surfProfile[Math.min(bodyW - 1, 7)] - 5;
+      const rightPerchY = surfProfile[Math.max(0, bodyW - 9)] - 5;
 
       // Perch struts
-      primeRenderer.fillNativeRect(leftPerchX + 3, perchY, 2, 5, 165, 205, 210, 0.95);
-      primeRenderer.fillNativeRect(leftPerchX, perchY, 8, 1, 215, 240, 235, 1);
+      primeRenderer.fillNativeRect(leftPerchX + 3, leftPerchY, 2, 5, 165, 205, 210, 0.95);
+      primeRenderer.fillNativeRect(leftPerchX, leftPerchY, 8, 1, 215, 240, 235, 1);
 
-      primeRenderer.fillNativeRect(rightPerchX + 3, perchY, 2, 5, 165, 205, 210, 0.95);
-      primeRenderer.fillNativeRect(rightPerchX, perchY, 8, 1, 215, 240, 235, 1);
+      primeRenderer.fillNativeRect(rightPerchX + 3, rightPerchY, 2, 5, 165, 205, 210, 0.95);
+      primeRenderer.fillNativeRect(rightPerchX, rightPerchY, 8, 1, 215, 240, 235, 1);
 
       // Render perched Seer Crows (Corvus) on the perches!
       const birds = tf.perchedBirds || [];
       for (let bIdx = 0; bIdx < Math.min(2, birds.length); bIdx++) {
         const bird = birds[bIdx];
         const bx = bIdx === 0 ? leftPerchX + 2 : rightPerchX + 2;
-        const by = perchY - 5;
+        const by = (bIdx === 0 ? leftPerchY : rightPerchY) - 5;
         const flap = Math.round(Math.sin(bird.wingPhase || tick * 0.2) * 2);
 
         // Obsidian crow body + tail + head
@@ -9138,13 +9279,24 @@
 
     // ------------------------------------------------------------------------
     // F. ANODIZED TERMINAL BODY SHELL & LIVE TERMINAL MONITOR
+    //    When ground-docked (`dockP > 0`), the top surface of the Term-Form matches the exact contour of the ground!
     // ------------------------------------------------------------------------
     // Outer chassis fill (respects spriteTransparency up to 0.50 transparent!)
     const spriteTrans = Math.max(0, Math.min(0.5, tf.spriteTransparency || 0));
     const scrAlpha = Math.max(0.5, 1.0 - spriteTrans);
     const scrBg = tf.screenBgRgb || [4, 10, 14];
     const scrTxtRgb = tf.screenTextRgb || acc;
-    primeRenderer.fillNativeRect(leftPx, bodyTopPy, bodyW, bodyH, chas[0], chas[1], chas[2], Math.max(0.55, scrAlpha));
+    for (let dx = 0; dx < bodyW; dx++) {
+      const colTop = surfProfile[dx];
+      const colH = Math.max(12, bodyBotPy - colTop);
+      primeRenderer.fillNativeRect(leftPx + dx, colTop, 1, colH, chas[0], chas[1], chas[2], Math.max(0.55, scrAlpha));
+      // Top surface contour bezel matching ground surface shape!
+      primeRenderer.fillNativeRect(leftPx + dx, colTop, 1, 1, bez[0], bez[1], bez[2], 1);
+      if (dockP > 0.25) {
+        // Subtle glowing surface-bridge turf/brass strip so objects walking over the docked terminal have a flush surface
+        primeRenderer.fillNativeRect(leftPx + dx, colTop - 1, 1, 1, acc[0], acc[1], acc[2], 0.72 * dockP);
+      }
+    }
 
     // Inner Terminal Screen (`83 x 27` native pixels)
     const scrX = leftPx + 2;
@@ -9170,6 +9322,8 @@
       scrH,
       isSelected,
       isHovered,
+      groundDockProgress: dockP,
+      surfProfile,
     };
 
     // Always draw the anodized monitor bezel and dark inner screen well on `#pi-shift` so the
@@ -9478,19 +9632,51 @@
       };
 
       // Outer 1-device-pixel hairline monitor bezel & backdrop
+      // When ground-docked (`nr.groundDockProgress > 0.05`), contour the top surface of the terminal monitor
+      // to match the exact shape of the ground surface (`nr.surfProfile`) while keeping the terminal output readable below!
       const bgRgba = `rgba(${scrBg[0]}, ${scrBg[1]}, ${scrBg[2]}, ${scrAlpha.toFixed(2)})`;
-      R.drawHairlineRect(ctx, monX, monY, monW, monH, bezHex, bgRgba);
-      if (isHovered || isSelected) {
-        R.drawHairlineRect(ctx, monX - 1, monY - 1, monW + 2, monH + 2, accHex, null);
+      const dockP = nr.groundDockProgress || 0;
+      if (dockP > 0.05 && Array.isArray(nr.surfProfile) && nr.surfProfile.length > 0) {
+        const sProf = nr.surfProfile;
+        ctx.save();
+        ctx.beginPath();
+        for (let sx = 0; sx <= monW; sx += 2) {
+          const pIdx = Math.min(sProf.length - 1, Math.max(0, Math.floor((sx / Math.max(1, monW)) * (sProf.length - 1))));
+          const surfDevY = Math.round((sProf[pIdx] / NATIVE_H) * devH);
+          const topY = Math.round(monY * (1 - dockP) + surfDevY * dockP);
+          if (sx === 0) ctx.moveTo(monX + sx, topY);
+          else ctx.lineTo(monX + sx, topY);
+        }
+        ctx.lineTo(monX + monW, monY + monH);
+        ctx.lineTo(monX, monY + monH);
+        ctx.closePath();
+        ctx.fillStyle = bgRgba;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = isHovered || isSelected ? accHex : bezHex;
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        R.drawHairlineRect(ctx, monX, monY, monW, monH, bezHex, bgRgba);
+        if (isHovered || isSelected) {
+          R.drawHairlineRect(ctx, monX - 1, monY - 1, monW + 2, monH + 2, accHex, null);
+        }
       }
 
-      R.drawHairlineRect(ctx, monX, monY, monW, hdrH, bezHex, "rgba(8, 22, 28, 0.96)");
+      R.drawHairlineRect(ctx, monX, monY, monW, hdrH, bezHex, "rgba(8, 22, 28, 0.92)");
 
       // Active tab dot (4x4 device pixels) + `h12x26` Tab Header Title
       ctx.fillStyle = accHex;
       ctx.fillRect(monX + 4, monY + Math.floor((hdrH - 4) / 2), 4, 4);
       const maxHdrChars = Math.max(6, Math.floor((monW - 34) / charW));
-      const modeTag = tf.realTabActive ? "LINUX" : tf.paneLayout === "split-v" ? "CLAUDE|HAIKU" : (tf.agentMode || "CLAUDE").toUpperCase();
+      const modeTag =
+        dockP > 0.5
+          ? "GROUND-DOCK"
+          : tf.realTabActive
+          ? "LINUX"
+          : tf.paneLayout === "split-v"
+          ? "CLAUDE|HAIKU"
+          : (tf.agentMode || "CLAUDE").toUpperCase();
       const headerLabel = `${tf.id} ${modeTag}`.slice(0, maxHdrChars);
       R.drawCanvasText(ctx, headerLabel, monX + 11, monY + 1, accHex, fontKey, 1, 0);
 
@@ -10983,6 +11169,35 @@
       }
     }
 
+    // Button in Terminal Header Bar to toggle between Embodied Terminal-Form Body ("monitor") and Compact Forms ("monolith"/"mecha"/"tree")!
+    if (previewTf && previewTf.id !== "TE-307") {
+      const isCompact = (previewTf.chassisForm || "monitor") !== "monitor";
+      const formBtnLbl = isCompact ? `TERM BODY (${(previewTf.chassisForm || "").toUpperCase()})` : "COMPACT FORM";
+      const formBtnW = formBtnLbl.length * charW + 14;
+      const formBtnX = leftMostBtnX - formBtnW - 6;
+      if (formBtnX > winX + 130) {
+        R.drawHairlineRect(
+          ctx,
+          formBtnX,
+          btnY,
+          formBtnW,
+          btnH,
+          isCompact ? "#ffd43b" : "#78ead4",
+          isCompact ? "#282008" : "#0a222a"
+        );
+        R.drawCanvasText(ctx, formBtnLbl, formBtnX + 7, btnY + 1, isCompact ? "#ffd43b" : "#78ead4", fontKey, 1, 0);
+        state.windowHitBoxes.push({
+          action: "run-cmd",
+          cmd: "body form cycle",
+          x: formBtnX,
+          y: btnY,
+          w: formBtnW,
+          h: btnH,
+        });
+        leftMostBtnX = formBtnX;
+      }
+    }
+
     const maxTitleCols = Math.max(12, Math.floor((leftMostBtnX - (winX + 12)) / charW));
     R.drawCanvasText(ctx, rawTitle.slice(0, maxTitleCols), winX + 10, winY + 4, previewTf.accentHex || "#78ead4", fontKey, 1, 0);
 
@@ -11474,7 +11689,8 @@
             { label: "rotate 3 (5-fold)", cmd: "rotate 3" },
           ]
         : [
-            { label: "shift form (mecha/tree)", cmd: "body form cycle" },
+            { label: "compact monolith/bot", cmd: "body form cycle" },
+            { label: "dock/rise in ground", cmd: "body dock toggle" },
             { label: "roam / local screen", cmd: "body roam cycle" },
             { label: "board ghost ship!", cmd: "body ghost" },
             { label: "bury in green fauna", cmd: "body bury" },

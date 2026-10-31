@@ -2190,9 +2190,10 @@
 
       // --------------------------------------------------------------------
       // 8. RENDER 22x15 COARSE-CELL (154x105 NATIVE PIXEL) RECURSIVE PiP VIEWPORT
-      //    IN UPPER-RIGHT WHEN PLAYER IS WITHIN 6 COARSE CELLS OF A RECURSIVE OBJECT
+      //    (Rendered in external `#minimap-canvas` when present so `#pi-shift` is never obscured!)
       // --------------------------------------------------------------------
-      if (cosmic.pipTarget && cosmic.pipTarget.pocket) {
+      const hasExternalMinimap = typeof document !== "undefined" && !!document.getElementById("minimap-canvas");
+      if (!hasExternalMinimap && cosmic.pipTarget && cosmic.pipTarget.pocket) {
         renderRecursivePipViewport(renderer, cosmic.pipTarget);
       }
     }
