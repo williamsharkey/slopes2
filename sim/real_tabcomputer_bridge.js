@@ -1704,7 +1704,12 @@
 
     return {
       prefix: "/dom",
+      mountPoint: "dom",
+      handles(p) {
+        return typeof p === "string" && (p === "/dom" || p.startsWith("/dom/"));
+      },
       exists(p) {
+        if (!this.handles(p)) return false;
         if (p === "/dom" || p === "/dom/ctl" || p === "/dom/title" || p === "/dom/url" || p === "/dom/viewport" || p === "/dom/scripts" || p === "/dom/styles" || p === "/dom/body") {
           return true;
         }
@@ -1719,6 +1724,7 @@
         return resolveElement(sub) !== null;
       },
       isDirectory(p) {
+        if (!this.handles(p)) return false;
         if (p === "/dom" || p === "/dom/body") return true;
         if (p === "/dom/ctl" || p === "/dom/title" || p === "/dom/url" || p === "/dom/viewport" || p === "/dom/scripts" || p === "/dom/styles") return false;
         const sub = p.slice(5);
@@ -1726,7 +1732,8 @@
         if (LEAF_FILES.has(leaf)) return false;
         return resolveElement(sub) !== null;
       },
-      readFile(p) {
+      _readText(p) {
+        if (!this.handles(p)) return null;
         if (p === "/dom/ctl") return lastCtlOutput + (lastCtlOutput.endsWith("\n") ? "" : "\n");
         if (p === "/dom/title") return (hostDoc.title || "") + "\n";
         if (p === "/dom/url") return (hostWin.location ? hostWin.location.href : "") + "\n";
@@ -1735,8 +1742,8 @@
             width: hostWin.innerWidth,
             height: hostWin.innerHeight,
             dpr: hostWin.devicePixelRatio || 1,
-            coarseGrid: { W: 144, H: 90 },
-            nativeCanvas: { W: 1008, H: 630 },
+            coarseGrid: { W: 120, H: 75 },
+            nativeCanvas: { W: 840, H: 525 },
           }, null, 2) + "\n";
         }
         if (p === "/dom/scripts") {
@@ -1773,12 +1780,23 @@
           const r = el.getBoundingClientRect();
           return JSON.stringify({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }) + "\n";
         }
-        if (leaf === "children") return this.readdir("/dom/" + elPath).join("\n") + "\n";
+        if (leaf === "children") return (this.readdir("/dom/" + elPath) || []).join("\n") + "\n";
         if (leaf === "value") return (el.value || "") + "\n";
         return null;
       },
+      readFile(p, encoding) {
+        const txt = this._readText(p);
+        if (txt === null) return null;
+        return encoding === "utf8" ? txt : new TextEncoder().encode(txt);
+      },
       writeFile(p, content) {
-        const val = String(content || "").replace(/\n$/, "");
+        if (!this.handles(p)) return false;
+        const rawStr = typeof content === "string"
+          ? content
+          : content instanceof Uint8Array
+          ? new TextDecoder().decode(content)
+          : String(content || "");
+        const val = rawStr.replace(/\n$/, "");
         if (p === "/dom/ctl") {
           const lines = val.split("\n").map((l) => l.trim()).filter(Boolean);
           const results = lines.map((l) => executeHostCtlLine(l));
@@ -1822,6 +1840,7 @@
         return false;
       },
       readdir(p) {
+        if (!this.handles(p)) return null;
         if (p === "/dom") {
           const base = ["ctl", "title", "url", "viewport", "scripts", "styles", "body"];
           if (hostDoc) {
@@ -1832,7 +1851,7 @@
           return base;
         }
         const el = resolveElement(p.slice(5));
-        if (!el) return [];
+        if (!el) return null;
         const entries = Array.from(LEAF_FILES);
         const counts = new Map();
         for (let i = 0; i < el.children.length; i++) {
@@ -1854,12 +1873,15 @@
         return entries;
       },
       stat(p) {
+        if (!this.handles(p) || !this.exists(p)) return null;
         const now = Date.now();
         const isDir = this.isDirectory(p);
+        const txt = isDir ? "" : (this._readText(p) || "");
         return {
+          path: p,
           type: isDir ? "dir" : "file",
           mode: isDir ? 0o755 : 0o644,
-          size: isDir ? 0 : (this.readFile(p) || "").length,
+          size: isDir ? 0 : txt.length,
           mtime: now,
           ctime: now,
           isDirectory: () => isDir,
@@ -1867,7 +1889,14 @@
           isSymbolicLink: () => false,
         };
       },
+      lstat(p) {
+        return this.stat(p);
+      },
+      readlink() {
+        return null;
+      },
       unlink(p) {
+        if (!this.handles(p)) return false;
         const el = resolveElement(p.slice(5));
         if (!el || el === hostDoc.body || el === hostDoc.documentElement) return false;
         el.remove();
@@ -1880,12 +1909,16 @@
     if (!tc || !tc.fs || typeof document === "undefined") return;
     const hostProvider = createHostDomProvider(global.document, global);
     if (Array.isArray(tc.fs.virtualProviders)) {
-      const idx = tc.fs.virtualProviders.findIndex((vp) => vp && vp.prefix === "/dom");
+      const idx = tc.fs.virtualProviders.findIndex(
+        (vp) => vp && (vp.prefix === "/dom" || vp.mountPoint === "dom")
+      );
       if (idx >= 0) {
         tc.fs.virtualProviders[idx] = hostProvider;
       } else {
-        tc.fs.virtualProviders.unshift(hostProvider);
+        tc.fs.virtualProviders.push(hostProvider);
       }
+    } else if (typeof tc.fs.addVirtualProvider === "function") {
+      tc.fs.addVirtualProvider(hostProvider);
     } else if (typeof tc.fs.registerProvider === "function") {
       tc.fs.registerProvider(hostProvider);
     }
