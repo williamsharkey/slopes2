@@ -5338,7 +5338,7 @@
       isOffScreen: opts.roomX !== undefined ? opts.roomX !== 0 : true,
       followRequested: false, // Toggled by clicking the hover [+ FOLLOW ME] button or `body follow`
       followEtaTicks: 0,      // When following across frames, takes ~8..45s (within a minute) to trek over!
-      randomVisitTimer: index === 0 ? 220 : index === 1 ? 760 : 1580, // Randomly wanders into your frame!
+      randomVisitTimer: index === 0 ? 1500 : index === 1 ? 2600 : 3800, // Randomly wanders into your frame later!
       mindOfOwnTimer: 320 + index * 140,
       departingToRoomX: null,
       _hoverLinger: 0,
@@ -7363,10 +7363,10 @@
         y: Math.max(seaLevel + 1, blocks[92] || 20),
         vx: -0.09,
         targetX: 78,
-        roomX: 0,
+        roomX: -1, // Exploring Sector (-1,0) West and occasionally crossing into your sector!
         roomY: 0,
         chatBubble: "My drifted C-kernel is seeding bamboo & brass domes here!",
-        chatTimer: 220,
+        chatTimer: 140,
         lastEditOp: "FLORA_AND_MASONRY",
         editBeamTimer: 0,
         editTargetX: 88,
@@ -8895,8 +8895,8 @@
       renderOverheadStreamAndFollowBtn(tf, centerDevX, topAnchorY, isHovered, isSelected);
     }
 
-    // 1a. Render Clickable Edge Directional Waypoint Arrows (`◀` / `▶`) for Off-Screen Terminals (`tf.isOffScreen`)
-    //     so you don't start with all terminals in frame, can use arrows to find them, or click `[+FOLLOW]` so they trek to you!
+    // 1a. Render Compact Clickable Edge Directional Waypoint Arrows (`◀` / `▶`) for Off-Screen Terminals (`tf.isOffScreen`)
+    //     so you don't start with all terminals crowding the frame, can use arrows to find them, or hover & click `[+FOLLOW]`!
     const curW0 = state.lastWorldContext;
     const curSx0 = curW0 && (curW0.worldX !== undefined ? curW0.worldX : curW0.screenX !== undefined ? curW0.screenX : 0);
     const curLy0 = curW0 && curW0.worldLayer !== undefined ? curW0.worldLayer : 0;
@@ -8910,29 +8910,28 @@
       if (dxRoom === 0 && dyRoom === 0) continue;
       const isLeft = dxRoom < 0;
       const slot = isLeft ? leftArrowIdx++ : rightArrowIdx++;
-      const wy = Math.round(devH * 0.22) + slot * (lineH + 10);
+      const wy = Math.round(devH * 0.24) + slot * (lineH + 8);
       const distStr = `${Math.abs(dxRoom)}${isLeft ? "W" : "E"}`;
       const etaSec = tf.followRequested && tf.followEtaTicks > 0 ? Math.max(1, Math.ceil(tf.followEtaTicks / 60)) : 0;
-      const statusSnippet =
-        tf.followRequested && etaSec > 0
-          ? `TREKKING ~${etaSec}s`
-          : tf.overheadStream && tf.overheadStream.length > 0
-          ? String(tf.overheadStream[tf.overheadStream.length - 1].text || "").slice(0, 18)
-          : "AUTONOMOUS";
-      const wpLabel = isLeft
-        ? `◀ ${tf.id} [${distStr}: ${statusSnippet}]`
-        : `[${distStr}: ${statusSnippet}] ${tf.id} ▶`;
-      const wpW = wpLabel.length * charW + 12;
-      const wpH = lineH + 4;
-      const followTag = tf.followRequested ? "[✓FOLLOW]" : "[+FOLLOW]";
-      const folW = followTag.length * charW + 10;
-      const wx = isLeft ? 10 : Math.max(10, devW - wpW - 10);
-      const folX = isLeft ? wx + wpW + 4 : wx - folW - 4;
+      const isArrowHov = state.hoveredTabId === tf.id;
+      const wpLabel = isArrowHov
+        ? isLeft
+          ? `◀ ${tf.id} [${distStr}${etaSec ? " ~" + etaSec + "s" : ""}]`
+          : `[${distStr}${etaSec ? " ~" + etaSec + "s" : ""}] ${tf.id} ▶`
+        : isLeft
+        ? `◀ ${tf.id}${etaSec ? "~" + etaSec + "s" : ""}`
+        : `${tf.id}${etaSec ? "~" + etaSec + "s" : ""} ▶`;
+      const wpW = wpLabel.length * charW + 10;
+      const wpH = lineH + 2;
+      const followTag = tf.followRequested ? "[✓FLW]" : "[+FLW]";
+      const folW = followTag.length * charW + 8;
+      const wx = isLeft ? 6 : Math.max(6, devW - wpW - 6);
+      const folX = isLeft ? wx + wpW + 3 : wx - folW - 3;
 
       ctx.save();
-      ctx.globalAlpha = 0.92;
-      R.drawHairlineRect(ctx, wx, wy, wpW, wpH, tf.accentHex || "#78ead4", "rgba(6, 18, 24, 0.90)");
-      R.drawCanvasText(ctx, wpLabel, wx + 6, wy + 2, tf.accentHex || "#78ead4", fontKey, 1, 0);
+      ctx.globalAlpha = isArrowHov ? 0.96 : 0.72;
+      R.drawHairlineRect(ctx, wx, wy, wpW, wpH, tf.accentHex || "#78ead4", "rgba(6, 18, 24, 0.84)");
+      R.drawCanvasText(ctx, wpLabel, wx + 5, wy + 1, tf.accentHex || "#78ead4", fontKey, 1, 0);
       state.tabStripHitBoxes.push({
         id: tf.id,
         action: "nav-room",
@@ -8945,52 +8944,56 @@
         isDeviceCoords: true,
       });
 
-      R.drawHairlineRect(
-        ctx,
-        folX,
-        wy,
-        folW,
-        wpH,
-        tf.followRequested ? "#69db7c" : "#ffd43b",
-        tf.followRequested ? "rgba(8, 36, 22, 0.92)" : "rgba(32, 24, 6, 0.92)"
-      );
-      R.drawCanvasText(ctx, followTag, folX + 5, wy + 2, tf.followRequested ? "#69db7c" : "#ffd43b", fontKey, 1, 0);
-      state.tabStripHitBoxes.push({
-        id: tf.id,
-        action: "toggle-follow",
-        tabId: tf.id,
-        x: folX,
-        y: wy,
-        w: folW,
-        h: wpH,
-        isDeviceCoords: true,
-      });
+      if (isArrowHov || tf.followRequested) {
+        R.drawHairlineRect(
+          ctx,
+          folX,
+          wy,
+          folW,
+          wpH,
+          tf.followRequested ? "#69db7c" : "#ffd43b",
+          tf.followRequested ? "rgba(8, 36, 22, 0.90)" : "rgba(32, 24, 6, 0.90)"
+        );
+        R.drawCanvasText(ctx, followTag, folX + 4, wy + 1, tf.followRequested ? "#69db7c" : "#ffd43b", fontKey, 1, 0);
+        state.tabStripHitBoxes.push({
+          id: tf.id,
+          action: "toggle-follow",
+          tabId: tf.id,
+          x: folX,
+          y: wy,
+          w: folW,
+          h: wpH,
+          isDeviceCoords: true,
+        });
+      }
       ctx.restore();
     }
 
-    // 1a-2. Render 1:1 Device-Pixel Labels, Code-Drift Hashes, & Chat Bubbles for Other Monoliths in the Shared World!
+    // 1a-2. Render Compact 1:1 Device-Pixel Labels & Chat Bubbles for Other Monoliths in the Shared World!
     const mesh = ensureSharedMonolithMesh(state.lastWorldContext);
     if (mesh && Array.isArray(mesh.peers)) {
       for (let pi = 0; pi < mesh.peers.length; pi++) {
         const peer = mesh.peers[pi];
         if (peer.roomX !== curSx0 || !peer._nativeRect) continue;
+        const isPeerHov = state.hoveredTabId === peer.id;
+        if (!isPeerHov && (!peer.chatTimer || peer.chatTimer <= 0)) continue;
         const pnr = peer._nativeRect;
         const pcx = Math.round((pnr.cx / NATIVE_W) * devW);
         const pmy = Math.round((pnr.my / NATIVE_H) * devH);
-        const tagTxt = `◈ ${peer.id} (${peer.handle} · ${peer.driftBranch})`;
-        const tw = tagTxt.length * charW + 12;
+        const tagTxt = isPeerHov ? `◈ ${peer.id} (${peer.handle} · ${peer.driftBranch})` : `◈ ${peer.id}`;
+        const tw = tagTxt.length * charW + 10;
         const tx = Math.max(6, Math.min(devW - tw - 6, Math.round(pcx - tw / 2)));
         const ty = Math.max(42, pmy - lineH - 6);
-        R.drawHairlineRect(ctx, tx, ty, tw, lineH + 2, peer.highlightHex, "rgba(248, 251, 255, 0.94)");
-        R.drawCanvasText(ctx, tagTxt, tx + 6, ty + 1, "#0b1720", fontKey, 1, 0);
+        R.drawHairlineRect(ctx, tx, ty, tw, lineH + 2, peer.highlightHex, "rgba(248, 251, 255, 0.92)");
+        R.drawCanvasText(ctx, tagTxt, tx + 5, ty + 1, "#0b1720", fontKey, 1, 0);
 
         if (peer.chatTimer > 0 && peer.chatBubble) {
-          const chatStr = `"${String(peer.chatBubble).slice(0, 44)}"`;
-          const cw = chatStr.length * charW + 12;
+          const chatStr = `"${String(peer.chatBubble).slice(0, 34)}"`;
+          const cw = chatStr.length * charW + 10;
           const cx0 = Math.max(6, Math.min(devW - cw - 6, Math.round(pcx - cw / 2)));
           const cy0 = Math.max(38, ty - lineH - 4);
-          R.drawHairlineRect(ctx, cx0, cy0, cw, lineH + 2, peer.highlightHex, "rgba(8, 20, 28, 0.94)");
-          R.drawCanvasText(ctx, chatStr, cx0 + 6, cy0 + 1, peer.highlightHex, fontKey, 1, 0);
+          R.drawHairlineRect(ctx, cx0, cy0, cw, lineH + 2, peer.highlightHex, "rgba(8, 20, 28, 0.92)");
+          R.drawCanvasText(ctx, chatStr, cx0 + 5, cy0 + 1, peer.highlightHex, fontKey, 1, 0);
         }
       }
     }

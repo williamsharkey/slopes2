@@ -972,16 +972,20 @@
     "3/5 QUANTUM PRIME & ANTIKYTHERA GEARS (9.2x)",
     "4/5 HOLONOMIC SEED (NEXT ZOOM -> 0/5 ORIGIN!)",
   ];
+  const WIDE_ZOOM_NAMES = {
+    "-1": "-1 WIDE PANORAMA (0.72x)",
+    "-2": "-2 MULTI-SECTOR HORIZON (0.50x)",
+  };
 
   const zoomState = {
-    depth: 0,           // 0..4 (modulo 5: 5th zoom returns to 0!)
+    depth: 0,           // -2..4 (positive depths 1..4 wrap on 5th zoom to 0; negative depths -1..-2 zoom out wide!)
     totalZoomClicks: 0, // Cumulative zoom steps
-    continuousZoom: 0,  // Smoothly interpolated float 0..5
+    continuousZoom: 0,  // Smoothly interpolated float (-2..5)
     targetZoom: 0,      // Target float
-    focusX: 420,        // Target native X (0..840)
-    focusY: 310,        // Target native Y (0..525)
-    lastHoverX: 420,
-    lastHoverY: 310,
+    focusX: 504,        // Target native X (0..1008)
+    focusY: 315,        // Target native Y (0..630)
+    lastHoverX: 504,
+    lastHoverY: 315,
     snapCanvas: null,
     snapCtx: null,
   };
@@ -1005,12 +1009,19 @@
       zoomState.focusY = Math.max(48, Math.min(NATIVE_H - 48, Math.round(nativeY)));
     }
     zoomState.totalZoomClicks++;
-    const nextDepth = ((zoomState.depth + 1) % 5 + 5) % 5;
-    zoomState.targetZoom = nextDepth;
-    if (nextDepth === 0) {
-      zoomState.continuousZoom = 0;
+    if (zoomState.depth < 0) {
+      zoomState.depth = zoomState.depth + 1;
+      zoomState.targetZoom = zoomState.depth;
+    } else {
+      const nextDepth = (zoomState.depth + 1) % 5;
+      if (nextDepth === 0 && zoomState.depth === 4) {
+        // Animate smoothly through 5.0 (the 5-zoom holonomic loop!) back to 0.0
+        zoomState.targetZoom = 5.0;
+      } else {
+        zoomState.targetZoom = nextDepth;
+      }
+      zoomState.depth = nextDepth;
     }
-    zoomState.depth = nextDepth;
 
     if (global.SlopesAudio && typeof global.SlopesAudio.playPortalShift === "function") {
       global.SlopesAudio.playPortalShift(zoomState.depth !== 0);
@@ -1026,16 +1037,16 @@
     if (typeof nativeY === "number" && !isNaN(nativeY)) {
       zoomState.focusY = Math.max(48, Math.min(NATIVE_H - 48, Math.round(nativeY)));
     }
-    const nextDepth = ((zoomState.depth - 1) % 5 + 5) % 5;
-    zoomState.targetZoom = nextDepth;
-    if (nextDepth === 4 && zoomState.depth === 0) {
-      zoomState.continuousZoom = 4.6;
-    } else if (nextDepth === 0) {
-      zoomState.continuousZoom = 0;
+    if (zoomState.depth > 0) {
+      zoomState.depth = zoomState.depth - 1;
+      zoomState.targetZoom = zoomState.depth;
+    } else {
+      // Zoom out from 0 -> -1 (0.72x Wide Panorama) -> -2 (0.50x Multi-Sector Horizon) -> 0 (1.0x Origin)
+      zoomState.depth = zoomState.depth <= -2 ? 0 : zoomState.depth - 1;
+      zoomState.targetZoom = zoomState.depth;
     }
-    zoomState.depth = nextDepth;
     if (global.SlopesAudio && typeof global.SlopesAudio.playPortalShift === "function") {
-      global.SlopesAudio.playPortalShift( false);
+      global.SlopesAudio.playPortalShift(false);
     }
     updateChronosDomUI();
     return zoomState.depth;
@@ -1052,24 +1063,21 @@
     // Smoothly interpolate continuousZoom toward targetZoom
     const diff = zoomState.targetZoom - zoomState.continuousZoom;
     if (Math.abs(diff) > 0.002) {
-      zoomState.continuousZoom += diff * 0.18;
+      zoomState.continuousZoom += diff * 0.22;
     } else {
       zoomState.continuousZoom = zoomState.targetZoom;
     }
 
     // Wrap modulo 5 so that completing the 5th zoom (continuousZoom reaching 5.0)
     // lands seamlessly back at 0.0 (where you began)!
-    if (zoomState.continuousZoom >= 4.992 && zoomState.targetZoom >= 5) {
-      zoomState.continuousZoom -= 5.0;
-      zoomState.targetZoom -= 5.0;
-      if (zoomState.continuousZoom < 0.01) zoomState.continuousZoom = 0;
-      if (zoomState.targetZoom < 0.01) zoomState.targetZoom = 0;
-      zoomState.depth = ((Math.round(zoomState.targetZoom) % 5) + 5) % 5;
+    if (zoomState.continuousZoom >= 4.985 && zoomState.targetZoom >= 5) {
+      zoomState.continuousZoom = 0;
+      zoomState.targetZoom = 0;
+      zoomState.depth = 0;
       updateChronosDomUI();
     }
 
-    const zMod = ((zoomState.continuousZoom % 5) + 5) % 5;
-    if (zMod < 0.008) return; // At exact 1x macro origin (0/5), no zoom warp needed!
+    if (Math.abs(zoomState.continuousZoom) < 0.008) return; // At exact 1x macro origin (0/5), no zoom warp needed!
 
     const mainCanvas = typeof document !== "undefined" ? document.getElementById("pi-shift") : null;
     const mainCtx = mainCanvas ? mainCanvas.getContext("2d") : null;
@@ -1083,6 +1091,40 @@
     // Copy the unzoomed macro frame into scratchCanvas
     scratchCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
     scratchCtx.drawImage(mainCanvas, 0, 0);
+
+    // WIDE PANORAMIC ZOOM-OUT MODE (continuousZoom < 0: -1 = 0.72x, -2 = 0.50x)
+    if (zoomState.continuousZoom < 0) {
+      const wideScale = Math.pow(0.71, Math.abs(zoomState.continuousZoom)); // ~0.71x at -1, ~0.50x at -2
+      const dstW = Math.round(NATIVE_W * wideScale);
+      const dstH = Math.round(NATIVE_H * wideScale);
+      const dstX = Math.round((NATIVE_W - dstW) * 0.5);
+      const dstY = Math.round((NATIVE_H - dstH) * 0.55);
+
+      mainCtx.save();
+      mainCtx.imageSmoothingEnabled = false;
+      // Fill panoramic sky & sea horizon around the zoomed-out frame
+      mainCtx.fillStyle = "#164e56";
+      mainCtx.fillRect(0, 0, NATIVE_W, NATIVE_H);
+      const seaY = dstY + Math.round(dstH * 0.82);
+      mainCtx.fillStyle = "#0c2b33";
+      mainCtx.fillRect(0, seaY, NATIVE_W, NATIVE_H - seaY);
+
+      // Draw ghosted neighboring West & East sector silhouettes on the left and right!
+      mainCtx.globalAlpha = 0.52;
+      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX - dstW - 6, dstY, dstW, dstH);
+      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX + dstW + 6, dstY, dstW, dstH);
+      mainCtx.globalAlpha = 1.0;
+
+      // Draw current sector centered at wide scale with a crisp 1px brass-cyan frame
+      mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, dstX, dstY, dstW, dstH);
+      mainCtx.strokeStyle = "#78ead4";
+      mainCtx.lineWidth = 1;
+      mainCtx.strokeRect(dstX - 0.5, dstY - 0.5, dstW + 1, dstH + 1);
+      mainCtx.restore();
+      return;
+    }
+
+    const zMod = ((zoomState.continuousZoom % 5) + 5) % 5;
 
     // Compute magnification factor:
     // From zMod = 0 -> 4, magnification grows exponentially 2^(zMod * 0.85) (up to ~10.5x).
@@ -1197,14 +1239,12 @@
     };
 
     // Hook into `SlopesTabForms.render` so our Megastructures, Glass Biodomes, Factories,
-    // Landfills, Recycling Centers, Lava Incinerators, and 5-Deep Recursive Holonomic Zoom render every frame!
+    // Landfills, Recycling Centers, and Lava Incinerators render every frame!
     if (global.SlopesTabForms && typeof global.SlopesTabForms.render === "function") {
       const origTabRender = global.SlopesTabForms.render.bind(global.SlopesTabForms);
       global.SlopesTabForms.render = function (primeRenderer, world, eco, cosmic) {
         renderMegastructuresAndEconomy(primeRenderer, world);
-        const res = origTabRender(primeRenderer, world, eco, cosmic);
-        stepAndRenderRecursiveZoom(primeRenderer, world);
-        return res;
+        return origTabRender(primeRenderer, world, eco, cosmic);
       };
     }
 
@@ -3143,14 +3183,6 @@
         triggerSmileCrowSwarm();
         return;
       }
-
-      if ((ev.key === "=" || ev.key === "+") && !ev.metaKey && !ev.ctrlKey) {
-        ev.preventDefault();
-        zoomInAt(zoomState.lastHoverX || 420, zoomState.lastHoverY || 310);
-      } else if ((ev.key === "-" || ev.key === "_") && !ev.metaKey && !ev.ctrlKey) {
-        ev.preventDefault();
-        zoomOutAt(zoomState.lastHoverX || 420, zoomState.lastHoverY || 310);
-      }
     });
 
     function datLoop() {
@@ -3190,6 +3222,7 @@
     zoomInAt,
     zoomOutAt,
     resetZoom,
+    stepAndRenderRecursiveZoom,
     getZoomDepth: () => zoomState.depth,
     dumpTrashIntoLava,
     recycleWasteBatch,
@@ -3225,6 +3258,7 @@
     zoomInAt,
     zoomOutAt,
     resetZoom,
+    stepAndRenderRecursiveZoom,
     getZoomDepth: () => zoomState.depth,
     ZOOM_LAYER_NAMES,
   };

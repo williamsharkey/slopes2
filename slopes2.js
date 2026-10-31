@@ -2984,6 +2984,11 @@
 
     ctx.putImageData(screen, 0, 0);
 
+    // 24C. Apply 5-Deep Recursive Holonomic Zoom & Wide Panoramic Zoom-Out AFTER `ctx.putImageData`!
+    if (window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom === "function") {
+      window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom(primeRenderer, getWorldBundle());
+    }
+
     // Update bottom Hairline Terminus pixel HUD with Layer, 5-Fold Facet, Civilization Pop, Vats, Tab-Forms & Integrity
     if (window.SlopesHUD && frameCount % 4 === 0) {
       const layerTag =
@@ -3150,16 +3155,24 @@
           break;
         case "zoomIn":
           if (window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.zoomInAt === "function") {
-            const d = window.SlopesChronosAndCiv.zoomInAt();
+            const zs = window.SlopesChronosAndCiv.zoomState;
+            const fx = zs && zs.lastHoverX ? zs.lastHoverX : Math.round(P.x * 7);
+            const fy = zs && zs.lastHoverY ? zs.lastHoverY : Math.round((H - P.y) * 7);
+            const d = window.SlopesChronosAndCiv.zoomInAt(fx, fy);
             if (window.SlopesAudio && window.SlopesAudio.playClick) window.SlopesAudio.playClick(true);
-            announceSky("PRIME ZOOM", `DEPTH ${d}/5`, 90);
+            const lbl = d < 0 ? `WIDE ${d === -1 ? "0.7X" : "0.5X"}` : d === 0 ? "ORIGIN 1.0X" : `DEPTH ${d}/5`;
+            announceSky("PRIME ZOOM IN", lbl, 90);
           }
           break;
         case "zoomOut":
           if (window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.zoomOutAt === "function") {
-            const d = window.SlopesChronosAndCiv.zoomOutAt();
+            const zs = window.SlopesChronosAndCiv.zoomState;
+            const fx = zs && zs.lastHoverX ? zs.lastHoverX : Math.round(P.x * 7);
+            const fy = zs && zs.lastHoverY ? zs.lastHoverY : Math.round((H - P.y) * 7);
+            const d = window.SlopesChronosAndCiv.zoomOutAt(fx, fy);
             if (window.SlopesAudio && window.SlopesAudio.playClick) window.SlopesAudio.playClick(false);
-            announceSky("PRIME ZOOM", `DEPTH ${d}/5`, 90);
+            const lbl = d < 0 ? `WIDE ${d === -1 ? "0.7X" : "0.5X"}` : d === 0 ? "ORIGIN 1.0X" : `DEPTH ${d}/5`;
+            announceSky("PRIME ZOOM OUT", lbl, 90);
           }
           break;
         case "tabform":
