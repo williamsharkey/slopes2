@@ -1274,7 +1274,12 @@
   ];
 
   const WEBCAM_SAMPLE_PERIOD_MS = 60000; // 60-second mandatory sample/calibration period & timeout window
-  const WEBCAM_MAX_OVER_SENSE_RATE = 0.06; // If >6% of frames in 60s window register, lock out as over-sensing
+  const WEBCAM_MAX_OVER_SENSE_RATE = 0.48; // Only lock out if >48% of a 60s window continuously false-triggers
+
+  const MEDIAPIPE_VISION_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+  const MEDIAPIPE_WASM_DIR = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+  const MEDIAPIPE_FACE_MODEL_URL =
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
   const webcamState = {
     active: false,
@@ -1283,10 +1288,16 @@
     videoEl: null,
     procCanvas: null,
     procCtx: null,
+    faceLandmarker: null,
+    landmarkerLoading: false,
+    landmarkerFailed: false,
+    lastVideoTime: -1,
     eyesClosed: false,
     manualEyesClosed: false,
     rawEyeDetected: false, // Debug indicator: turns 'A' in CAM -> "CaM"
     rawSmileDetected: false, // Debug indicator: turns 'M' in CAM -> "CAm"
+    eyeDebugHoldUntil: 0, // Short visual hold on "CaM" so user can see it right as they open their eyes
+    smileDebugHoldUntil: 0,
     eyeConsecutiveClosed: 0,
     smileConsecutiveFrames: 0,
     eyeCloseConfidence: 0,
@@ -1295,8 +1306,12 @@
     lastSmileActivationMs: 0,
     eyeOverSensingLocked: false,
     smileOverSensingLocked: false,
-    sampleHistory: [], // Rolling 60-second window of { t, eyeScore, smileScore, rawEye, rawSmile }
+    sampleHistory: [], // Rolling 60-second window of { t, earScore, blinkScore, smileScore, rawEye, rawSmile }
     prevLumaFrame: null,
+    baselineEar: 0.28,
+    baselineBlink: 0.08,
+    baselineSmile: 0.06,
+    baselineMouthW: 0.38,
     baselineEyeLuma: null,
     baselineMouthRatio: null,
     smiling: false,
@@ -1305,6 +1320,47 @@
     heartParticles: [],
     lastTrackMs: 0,
   };
+
+  async function ensureMediaPipeFaceLandmarker() {
+    if (webcamState.faceLandmarker || webcamState.landmarkerLoading || webcamState.landmarkerFailed) {
+      return webcamState.faceLandmarker;
+    }
+    webcamState.landmarkerLoading = true;
+    try {
+      const vision = await import(MEDIAPIPE_VISION_CDN);
+      const { FaceLandmarker, FilesetResolver } = vision;
+      const filesetResolver = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_DIR);
+      let landmarker = null;
+      try {
+        landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_FACE_MODEL_URL,
+            delegate: "GPU",
+          },
+          outputFaceBlendshapes: true,
+          runningMode: "VIDEO",
+          numFaces: 1,
+        });
+      } catch (_) {
+        landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_FACE_MODEL_URL,
+            delegate: "CPU",
+          },
+          outputFaceBlendshapes: true,
+          runningMode: "VIDEO",
+          numFaces: 1,
+        });
+      }
+      webcamState.faceLandmarker = landmarker;
+      return landmarker;
+    } catch (_) {
+      webcamState.landmarkerFailed = true;
+      return null;
+    } finally {
+      webcamState.landmarkerLoading = false;
+    }
+  }
 
   function computeMedianAndMad(values) {
     if (!values || values.length === 0) return { median: 0, std: 1 };
@@ -1384,8 +1440,10 @@
     }
     try {
       webcamState.prompting = true;
+      // Start loading MediaPipe FaceLandmarker in parallel with getUserMedia
+      void ensureMediaPipeFaceLandmarker();
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 160 }, height: { ideal: 120 }, facingMode: "user" },
+        video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: "user" },
         audio: false,
       });
       if (!webcamState.videoEl) {
@@ -1399,8 +1457,8 @@
       }
       if (!webcamState.procCanvas) {
         const c = document.createElement("canvas");
-        c.width = 64;
-        c.height = 48;
+        c.width = 96;
+        c.height = 72;
         webcamState.procCanvas = c;
         webcamState.procCtx = c.getContext("2d", { willReadFrequently: true });
       }
@@ -1416,10 +1474,14 @@
       webcamState.prevLumaFrame = null;
       webcamState.rawEyeDetected = false;
       webcamState.rawSmileDetected = false;
+      webcamState.eyeDebugHoldUntil = 0;
+      webcamState.smileDebugHoldUntil = 0;
       webcamState.eyeConsecutiveClosed = 0;
       webcamState.smileConsecutiveFrames = 0;
-      webcamState.baselineEyeLuma = null;
-      webcamState.baselineMouthRatio = null;
+      webcamState.baselineEar = 0.28;
+      webcamState.baselineBlink = 0.08;
+      webcamState.baselineSmile = 0.06;
+      webcamState.baselineMouthW = 0.38;
       webcamState.errorMsg = null;
     } catch (err) {
       webcamState.errorMsg = "CAM DENIED (KEY O=EYES, M=SMILE)";
@@ -1489,99 +1551,190 @@
       now - webcamState.lastTrackMs > 45
     ) {
       webcamState.lastTrackMs = now;
-      const w = 64;
-      const h = 48;
-      webcamState.procCtx.drawImage(webcamState.videoEl, 0, 0, w, h);
-      const img = webcamState.procCtx.getImageData(0, 0, w, h).data;
-
-      const curLuma = new Float32Array(w * h);
-      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-        curLuma[i] = img[p] * 0.299 + img[p + 1] * 0.587 + img[p + 2] * 0.114;
+      if (!webcamState.faceLandmarker && !webcamState.landmarkerLoading && !webcamState.landmarkerFailed) {
+        void ensureMediaPipeFaceLandmarker();
       }
 
-      // 1. Global face motion check (forehead + nose bridge + cheeks) to reject head movement / exposure shifts
-      let faceMotionSum = 0;
-      let faceMotionCount = 0;
-      if (webcamState.prevLumaFrame) {
-        for (let y = 10; y <= 38; y++) {
-          for (let x = 16; x <= 47; x++) {
-            // Exclude the immediate eyelid strip (y: 15..22) from global head-motion rejection
-            if (y >= 15 && y <= 22) continue;
-            faceMotionSum += Math.abs(curLuma[y * w + x] - webcamState.prevLumaFrame[y * w + x]);
-            faceMotionCount++;
+      let rawEye = false;
+      let rawSmile = false;
+      let earMean = webcamState.baselineEar || 0.28;
+      let blinkMean = 0;
+      let smileScore = 0;
+      let usedMediaPipe = false;
+
+      // ----------------------------------------------------------------------
+      // A. PRIMARY DETECTOR: MediaPipe FaceLandmarker (478 3D Landmarks + ARKit Blendshapes)
+      // ----------------------------------------------------------------------
+      if (webcamState.faceLandmarker && webcamState.videoEl.videoWidth > 0) {
+        try {
+          const ts = Math.max(webcamState.lastVideoTime + 1, Math.round(performance.now()));
+          webcamState.lastVideoTime = ts;
+          const res = webcamState.faceLandmarker.detectForVideo(webcamState.videoEl, ts);
+          if (res && res.faceLandmarks && res.faceLandmarks.length > 0) {
+            usedMediaPipe = true;
+            const lm = res.faceLandmarks[0];
+            const dist2d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+
+            // 1. 3D Landmark Eye Aspect Ratio (EAR) for Left & Right Eyes
+            const leftEar =
+              (dist2d(159, 145) + dist2d(158, 153)) / (2 * Math.max(0.001, dist2d(33, 133)));
+            const rightEar =
+              (dist2d(386, 374) + dist2d(385, 380)) / (2 * Math.max(0.001, dist2d(362, 263)));
+            earMean = (leftEar + rightEar) * 0.5;
+
+            // 2. 3D Landmark Mouth Width & Corner Lift for Smile
+            const faceW = Math.max(0.02, dist2d(234, 454));
+            const mouthW = dist2d(61, 291) / faceW;
+            const lipCenterY = (lm[13].y + lm[14].y) * 0.5;
+            const cornerMeanY = (lm[61].y + lm[291].y) * 0.5;
+            const cornerLift = (lipCenterY - cornerMeanY) / faceW;
+
+            // 3. ARKit Blendshapes (`eyeBlinkLeft`, `eyeBlinkRight`, `mouthSmileLeft`, `mouthSmileRight`)
+            let blinkL = 0,
+              blinkR = 0,
+              smileL = 0,
+              smileR = 0;
+            if (res.faceBlendshapes && res.faceBlendshapes.length > 0 && res.faceBlendshapes[0].categories) {
+              const cats = res.faceBlendshapes[0].categories;
+              for (let c = 0; c < cats.length; c++) {
+                const name = cats[c].categoryName;
+                const sc = cats[c].score || 0;
+                if (name === "eyeBlinkLeft") blinkL = sc;
+                else if (name === "eyeBlinkRight") blinkR = sc;
+                else if (name === "mouthSmileLeft") smileL = sc;
+                else if (name === "mouthSmileRight") smileR = sc;
+              }
+            }
+            blinkMean = (blinkL + blinkR) * 0.5;
+            const smileBlend = (smileL + smileR) * 0.5;
+            smileScore = Math.max(smileBlend, (mouthW - 0.34) * 2.2 + Math.max(0, cornerLift) * 4.5);
+
+            // Update adaptive per-user open-eye & neutral-mouth baselines from rolling history
+            const baseEar = webcamState.baselineEar || 0.28;
+            const baseBlink = webcamState.baselineBlink || 0.08;
+            const baseSmile = webcamState.baselineSmile || 0.06;
+            const baseMouthW = webcamState.baselineMouthW || 0.38;
+
+            // Detect Smile: either ARKit blendshapes or landmark mouth corner widening + lift
+            rawSmile =
+              (smileL > 0.28 && smileR > 0.28) ||
+              smileBlend > Math.max(0.28, baseSmile + 0.16) ||
+              (mouthW > baseMouthW * 1.075 && cornerLift > 0.008);
+
+            // Detect Eyes Closed: bilateral blink blendshapes OR bilateral EAR drop below user baseline
+            const blinkTriggered =
+              blinkL > Math.max(0.36, baseBlink + 0.22) &&
+              blinkR > Math.max(0.36, baseBlink + 0.22);
+            const earTriggered =
+              earMean < Math.min(0.215, baseEar * 0.75) &&
+              leftEar < baseEar * 0.80 &&
+              rightEar < baseEar * 0.80;
+
+            rawEye = (blinkTriggered || earTriggered) && !(smileBlend > 0.58 && blinkMean < 0.55);
+
+            // Gently adapt baselines when in neutral open-eye state
+            if (!rawEye && earMean > 0.18 && earMean < 0.42) {
+              webcamState.baselineEar = baseEar * 0.94 + earMean * 0.06;
+              webcamState.baselineBlink = baseBlink * 0.94 + blinkMean * 0.06;
+            }
+            if (!rawSmile && mouthW > 0.25 && mouthW < 0.55) {
+              webcamState.baselineSmile = baseSmile * 0.94 + smileBlend * 0.06;
+              webcamState.baselineMouthW = baseMouthW * 0.94 + mouthW * 0.06;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // ----------------------------------------------------------------------
+      // B. FALLBACK DETECTOR (while MediaPipe WASM is downloading or if offline):
+      //    Dynamic Skin-Tone Face Bounding Box + Dark Pupil/Iris Disappearance & Mouth Width
+      // ----------------------------------------------------------------------
+      if (!usedMediaPipe) {
+        const w = 96;
+        const h = 72;
+        webcamState.procCtx.drawImage(webcamState.videoEl, 0, 0, w, h);
+        const img = webcamState.procCtx.getImageData(0, 0, w, h).data;
+        const curLuma = new Float32Array(w * h);
+        let skinXSum = 0,
+          skinYSum = 0,
+          skinCnt = 0;
+
+        for (let y = 6; y < h - 6; y++) {
+          for (let x = 12; x < w - 12; x++) {
+            const idx = y * w + x;
+            const p = idx * 4;
+            const r = img[p],
+              g = img[p + 1],
+              b = img[p + 2];
+            curLuma[idx] = r * 0.299 + g * 0.587 + b * 0.114;
+            if (r > 60 && g > 40 && b > 25 && r > g && r > b && r - Math.min(g, b) > 12) {
+              skinXSum += x;
+              skinYSum += y;
+              skinCnt++;
+            }
           }
         }
-      }
-      webcamState.prevLumaFrame = curLuma;
-      const meanFaceMotion = faceMotionCount > 0 ? faceMotionSum / faceMotionCount : 0;
-      const isLowHeadMotion = meanFaceMotion < 3.6;
 
-      // 2. Bilateral Left & Right Eye Boxes vs Cheek Reference
-      // Left eye: x: 19..28, y: 15..22; Right eye: x: 35..44, y: 15..22
-      let cheekLumaSum = 0;
-      let cheekCount = 0;
-      for (let y = 25; y <= 30; y++) {
-        for (let x = 20; x <= 43; x++) {
-          cheekLumaSum += curLuma[y * w + x];
-          cheekCount++;
-        }
-      }
-      const cheekMean = Math.max(12, cheekLumaSum / Math.max(1, cheekCount));
+        const fcx = skinCnt > 80 ? Math.round(skinXSum / skinCnt) : 48;
+        const fcy = skinCnt > 80 ? Math.round(skinYSum / skinCnt) : 36;
+        const eyeY0 = Math.max(6, fcy - 10);
+        const eyeY1 = Math.min(h - 6, fcy - 2);
+        const lEyeX0 = Math.max(6, fcx - 16);
+        const lEyeX1 = Math.max(lEyeX0 + 4, fcx - 4);
+        const rEyeX0 = Math.min(w - 12, fcx + 4);
+        const rEyeX1 = Math.min(w - 6, fcx + 16);
 
-      let leftEdge = 0,
-        rightEdge = 0;
-      let leftMin = 255,
-        rightMin = 255;
-      for (let y = 15; y <= 22; y++) {
-        for (let x = 19; x <= 28; x++) {
-          const v = curLuma[y * w + x];
-          const vBelow = curLuma[(y + 1) * w + x];
-          leftEdge += Math.abs(v - vBelow);
-          if (v < leftMin) leftMin = v;
+        let cheekSum = 0,
+          cheekCnt = 0;
+        for (let y = Math.min(h - 4, fcy); y <= Math.min(h - 3, fcy + 5); y++) {
+          for (let x = lEyeX0; x <= rEyeX1; x++) {
+            cheekSum += curLuma[y * w + x];
+            cheekCnt++;
+          }
         }
-        for (let x = 35; x <= 44; x++) {
-          const v = curLuma[y * w + x];
-          const vBelow = curLuma[(y + 1) * w + x];
-          rightEdge += Math.abs(v - vBelow);
-          if (v < rightMin) rightMin = v;
-        }
-      }
-      const leftDarkDip = Math.max(0, cheekMean - leftMin);
-      const rightDarkDip = Math.max(0, cheekMean - rightMin);
-      const leftEyeScore = (leftEdge * 0.018 + leftDarkDip * 0.65) / cheekMean;
-      const rightEyeScore = (rightEdge * 0.018 + rightDarkDip * 0.65) / cheekMean;
-      const eyeScore = (leftEyeScore + rightEyeScore) * 0.5;
-      const eyeAsym =
-        Math.abs(leftEyeScore - rightEyeScore) / Math.max(0.01, leftEyeScore + rightEyeScore);
+        const cheekMean = Math.max(20, cheekSum / Math.max(1, cheekCnt));
 
-      // 3. Bilateral Mouth Corner Lift & Crease Score for Smile Detection
-      let leftCornerScore = 0,
-        rightCornerScore = 0,
-        mouthCenterEdge = 0;
-      for (let y = 32; y <= 39; y++) {
-        for (let x = 20; x <= 26; x++) {
-          const v = curLuma[y * w + x];
-          const vR = curLuma[y * w + (x + 1)];
-          const vB = curLuma[(y + 1) * w + x];
-          leftCornerScore += Math.abs(v - vR) + Math.abs(v - vB) * 0.5;
+        // Measure dark pupil/iris dip + sclera contrast in left & right eye boxes
+        let lMin = 255,
+          rMin = 255,
+          lMax = 0,
+          rMax = 0;
+        for (let y = eyeY0; y <= eyeY1; y++) {
+          for (let x = lEyeX0; x <= lEyeX1; x++) {
+            const v = curLuma[y * w + x];
+            if (v < lMin) lMin = v;
+            if (v > lMax) lMax = v;
+          }
+          for (let x = rEyeX0; x <= rEyeX1; x++) {
+            const v = curLuma[y * w + x];
+            if (v < rMin) rMin = v;
+            if (v > rMax) rMax = v;
+          }
         }
-        for (let x = 37; x <= 43; x++) {
-          const v = curLuma[y * w + x];
-          const vR = curLuma[y * w + (x + 1)];
-          const vB = curLuma[(y + 1) * w + x];
-          rightCornerScore += Math.abs(v - vR) + Math.abs(v - vB) * 0.5;
+        const lContrast = (lMax - lMin + (cheekMean - lMin)) / cheekMean;
+        const rContrast = (rMax - rMin + (cheekMean - rMin)) / cheekMean;
+        earMean = (lContrast + rContrast) * 0.25;
+
+        // Mouth corner gradient & teeth brightness in lower face box
+        let mouthContrast = 0;
+        const mY0 = Math.min(h - 8, fcy + 6);
+        const mY1 = Math.min(h - 3, fcy + 15);
+        for (let y = mY0; y <= mY1; y++) {
+          for (let x = lEyeX0; x <= rEyeX1; x++) {
+            mouthContrast += Math.abs(curLuma[y * w + x] - curLuma[y * w + (x + 1)]);
+          }
         }
-        for (let x = 27; x <= 36; x++) {
-          const v = curLuma[y * w + x];
-          const vB = curLuma[(y + 1) * w + x];
-          mouthCenterEdge += Math.abs(v - vB);
+        smileScore = mouthContrast / (cheekMean * 18);
+
+        if (webcamState.sampleHistory.length >= 8) {
+          const earVals = webcamState.sampleHistory.map((s) => s.earScore);
+          const smVals = webcamState.sampleHistory.map((s) => s.smileScore);
+          const earStats = computeMedianAndMad(earVals);
+          const smStats = computeMedianAndMad(smVals);
+          rawEye = earMean < earStats.median - Math.max(0.025, earStats.std * 1.8);
+          rawSmile = !rawEye && smileScore > smStats.median + Math.max(0.03, smStats.std * 1.8);
         }
       }
-      const smileScore =
-        (leftCornerScore + rightCornerScore + mouthCenterEdge * 0.35) / (cheekMean * 18);
-      const smileAsym =
-        Math.abs(leftCornerScore - rightCornerScore) /
-        Math.max(1, leftCornerScore + rightCornerScore);
 
       // Prune rolling 60-second sample history
       const history = webcamState.sampleHistory;
@@ -1589,50 +1742,10 @@
       while (history.length > 0 && history[0].t < cutoff) {
         history.shift();
       }
-
-      // Compute robust median & MAD from the 60-second calibration sample window
-      let rawEye = false;
-      let rawSmile = false;
-      if (history.length >= 20) {
-        const eyeVals = new Array(history.length);
-        const smileVals = new Array(history.length);
-        for (let i = 0; i < history.length; i++) {
-          eyeVals[i] = history[i].eyeScore;
-          smileVals[i] = history[i].smileScore;
-        }
-        const eyeStats = computeMedianAndMad(eyeVals);
-        const smileStats = computeMedianAndMad(smileVals);
-        webcamState.baselineEyeLuma = eyeStats.median;
-        webcamState.baselineMouthRatio = smileStats.median;
-
-        // Require a rare, simultaneous bilateral drop (>3.2 robust std below median AND >26% relative drop) with low head motion
-        const eyeThresh = Math.min(
-          eyeStats.median * 0.73,
-          eyeStats.median - eyeStats.std * 3.2
-        );
-        const bothEyesDipped =
-          leftEyeScore < eyeStats.median * 0.76 && rightEyeScore < eyeStats.median * 0.76;
-        rawEye =
-          isLowHeadMotion &&
-          eyeAsym < 0.25 &&
-          bothEyesDipped &&
-          eyeScore < eyeThresh;
-
-        // Require a rare, symmetric bilateral mouth corner increase (>3.3 robust std above median AND >25% relative rise)
-        const smileThresh = Math.max(
-          smileStats.median * 1.25,
-          smileStats.median + smileStats.std * 3.3
-        );
-        rawSmile =
-          isLowHeadMotion &&
-          !rawEye &&
-          smileAsym < 0.25 &&
-          smileScore > smileThresh;
-      }
-
       history.push({
         t: now,
-        eyeScore,
+        earScore: earMean,
+        blinkScore: blinkMean,
         smileScore,
         rawEye,
         rawSmile,
@@ -1647,27 +1760,28 @@
         if (history[i].rawEye) eyeSenseCount++;
         if (history[i].rawSmile) smileSenseCount++;
       }
-      const eyeSenseRate = history.length >= 25 ? eyeSenseCount / history.length : 0;
-      const smileSenseRate = history.length >= 25 ? smileSenseCount / history.length : 0;
+      const eyeSenseRate = history.length >= 40 ? eyeSenseCount / history.length : 0;
+      const smileSenseRate = history.length >= 40 ? smileSenseCount / history.length : 0;
 
-      // If over-sensing during the 1-minute sample period (or any rolling 60s window), lock out the feature!
-      if (history.length >= 30 && eyeSenseRate > WEBCAM_MAX_OVER_SENSE_RATE) {
+      if (history.length >= 60 && eyeSenseRate > WEBCAM_MAX_OVER_SENSE_RATE) {
         webcamState.eyeOverSensingLocked = true;
-      } else if (!inInitialSamplePeriod && history.length >= 120 && eyeSenseRate <= 0.025) {
+      } else if (eyeSenseRate <= 0.35) {
         webcamState.eyeOverSensingLocked = false;
       }
 
-      if (history.length >= 30 && smileSenseRate > WEBCAM_MAX_OVER_SENSE_RATE) {
+      if (history.length >= 60 && smileSenseRate > WEBCAM_MAX_OVER_SENSE_RATE) {
         webcamState.smileOverSensingLocked = true;
-      } else if (!inInitialSamplePeriod && history.length >= 120 && smileSenseRate <= 0.025) {
+      } else if (smileSenseRate <= 0.35) {
         webcamState.smileOverSensingLocked = false;
       }
 
-      // Expose raw detection flags so the top-right CAM button shows "CaM" (eyes) or "CAm" (smile) for debugging
-      webcamState.rawEyeDetected = rawEye;
-      webcamState.rawSmileDetected = rawSmile;
+      // Expose raw detection flags (with short 320ms visual hold on "CaM"/"CAm" so user can see "CaM" right as they open their eyes!)
+      if (rawEye) webcamState.eyeDebugHoldUntil = now + 320;
+      if (rawSmile) webcamState.smileDebugHoldUntil = now + 320;
+      webcamState.rawEyeDetected = rawEye || now < webcamState.eyeDebugHoldUntil;
+      webcamState.rawSmileDetected = rawSmile || now < webcamState.smileDebugHoldUntil;
 
-      // Consecutive-frame hysteresis with INSTANT open-eye reset:
+      // Consecutive-frame hysteresis with INSTANT open-eye reset for the actual Sylvia Plath overlay:
       if (rawEye) {
         webcamState.eyeConsecutiveClosed = Math.min(30, webcamState.eyeConsecutiveClosed + 1);
       } else {
@@ -1684,7 +1798,7 @@
       const allowEyeActivation =
         !inInitialSamplePeriod &&
         !webcamState.eyeOverSensingLocked &&
-        webcamState.eyeConsecutiveClosed >= 7; // ~320ms sustained closure (ignores normal blinks)
+        webcamState.eyeConsecutiveClosed >= 5; // ~225ms sustained closure (ignores normal rapid blinks)
 
       setEyesClosedInternal(webcamState.manualEyesClosed || allowEyeActivation);
 
@@ -1692,7 +1806,7 @@
         !inInitialSamplePeriod &&
         !webcamState.smileOverSensingLocked &&
         now - webcamState.lastSmileActivationMs >= WEBCAM_SAMPLE_PERIOD_MS &&
-        webcamState.smileConsecutiveFrames >= 4 &&
+        webcamState.smileConsecutiveFrames >= 3 &&
         !webcamState.eyesClosed;
 
       if (allowSmileActivation) {

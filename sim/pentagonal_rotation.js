@@ -428,7 +428,22 @@
     }
 
     if (tabForms && Array.isArray(snapshot.tabForms)) {
-      replaceArrayContents(tabForms, snapshot.tabForms);
+      if (tabForms.length === snapshot.tabForms.length && tabForms.length > 0 && tabForms[0].shell) {
+        for (let i = 0; i < tabForms.length; i++) {
+          const liveTf = tabForms[i];
+          const snapTf = snapshot.tabForms[i];
+          if (snapTf && typeof snapTf.x === "number") {
+            liveTf.targetX = snapTf.x;
+          }
+          liveTf.dimDepth = Math.min(1.0, 0.92 + i * 0.08);
+          liveTf.dimTravelTimer = 110 + i * 24;
+        }
+      } else {
+        replaceArrayContents(tabForms, snapshot.tabForms);
+      }
+      if (global.SlopesTabForms && typeof global.SlopesTabForms.onDimensionRotate === "function") {
+        global.SlopesTabForms.onDimensionRotate(state.rotFacet);
+      }
     }
   }
 

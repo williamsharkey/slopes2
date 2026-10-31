@@ -1,0 +1,1 @@
+const e=""+new URL("DejaVuSans-CHjR2eXl.ttf",import.meta.url).href;export{e as default};

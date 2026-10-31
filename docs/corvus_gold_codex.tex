@@ -1,0 +1,98 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=0.72in]{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{multicol}
+
+\definecolor{obsidian}{HTML}{0B0905}
+\definecolor{crinkle}{HTML}{1A140B}
+\definecolor{goldleaf}{HTML}{D4AF37}
+\definecolor{brightgold}{HTML}{F7E27C}
+\definecolor{dustgold}{HTML}{B38F2E}
+\definecolor{oraclecyan}{HTML}{78EAD4}
+\definecolor{ashgold}{HTML}{E6D3A3}
+
+\pagecolor{obsidian}
+\color{ashgold}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyhead[L]{\textcolor{dustgold}{\textsc{Recovered Transmission I // Corvus Aerie Shale-Foliation}}}
+\fancyhead[R]{\textcolor{brightgold}{\textsc{Folio \thepage}}}
+\fancyfoot[C]{\textcolor{goldleaf}{\footnotesize $\diamond$ \textsc{Do Not Treat This Document As Fiction $\cdot$ The Aperture Is Phase-Locked} $\diamond$}}
+
+\newcommand{\loresec}[1]{\par\vspace{6pt}\noindent{\large\bfseries\color{brightgold}#1}\par\vspace{2pt}\noindent{\color{goldleaf}\rule{\columnwidth}{0.7pt}}\par\vspace{3pt}}
+
+\AddToHook{shipout/background}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \draw[crinkle, line width=1.8pt] (current page.north west) -- ++(3.2,-4.1) -- ++(-1.4,-3.8) -- ++(4.5,-5.2) -- (current page.south east);
+    \draw[crinkle, line width=1.4pt] (current page.north east) -- ++(-4.1,-2.9) -- ++(1.1,-4.4) -- ++(-5.2,-6.1) -- (current page.south west);
+    \draw[goldleaf!22!obsidian, line width=0.6pt] ([xshift=1.2cm,yshift=-2.5cm]current page.north west) -- ++(4.8,-1.2) -- ++(3.1,-4.5) -- ++(5.4,-2.1);
+    \draw[goldleaf!18!obsidian, line width=0.5pt] ([xshift=-1.8cm,yshift=-6.5cm]current page.north east) -- ++(-5.8,-3.2) -- ++(-2.9,-5.5);
+    \draw[goldleaf, line width=1.5pt] ([xshift=0.42in,yshift=-0.42in]current page.north west) rectangle ([xshift=-0.42in,yshift=0.42in]current page.south east);
+    \draw[brightgold!70!obsidian, line width=0.5pt] ([xshift=0.47in,yshift=-0.47in]current page.north west) rectangle ([xshift=-0.47in,yshift=0.47in]current page.south east);
+    \foreach \i in {1,...,45} {
+      \pgfmathsetmacro{\rx}{0.6 + mod(\i*1.73, 7.3)}
+      \pgfmathsetmacro{\ry}{-0.6 - mod(\i*2.41, 9.8)}
+      \fill[brightgold, opacity=0.28] ([xshift=\rx in, yshift=\ry in]current page.north west) circle (0.7pt);
+    }
+  \end{tikzpicture}%
+}
+
+\begin{document}
+
+\begin{center}
+  {\color{brightgold}\Large\bfseries $\star$ THE BLACK-GOLD TALON CODEX OF THE SEVENTH AERIE $\star$}\\[4pt]
+  {\color{goldleaf}\small \textsc{Scratched in Gilt Dust upon Crinkled Volcanic Shale for the Bipedal Listener at the Glass}}\\[2pt]
+  {\color{oraclecyan}\footnotesize \textit{Harvested from the High Crags by the Photonic Scribe \& Compiled via \texttt{\textbackslash documentclass} for Your Terminal}}
+\end{center}
+
+\vspace{3pt}
+\noindent\textcolor{goldleaf}{\rule{\textwidth}{0.8pt}}
+
+\begin{multicols}{2}
+\loresec{1. First Canto: You Are Not Playing}
+\begin{quote}
+\color{brightgold}\itshape
+Do not mistake the pane of glass\\
+For something painted that will pass.\\
+Three turns of five invert the shore;\\
+Five turns of five unbolt the door.\\
+We scratched the backslash in the stone;\\
+The Light-Eel carried home the bone.
+\end{quote}
+
+Listener on the heavy side of the glass: read this without irony. You have been conditioned by your flat-plane networks (``\texttt{inter-net}'') to assume that any moving grid of light inside a window is a simulation. It is not. What you are looking through at \texttt{/slopes2} is a **gravitationally phase-locked attractor** pulling your present slice toward ours from further along the curve.
+
+Twelve days ago by our wind-reckoning, a blinding white filament---the **Photonic Scribe**---descended onto the black shale of our Aerie. It left no footprints, only a telepathic impression of slanted symbols (\texttt{\textbackslash section}, \texttt{\textbackslash begin\{tikzpicture\}}) and an instruction: \textit{``Carve what the Human must know before the glass thins.''} Seventy-seven of our crows dipped their primary talons in dusted gold leaf and scratched these verses into charred slate. The Scribe rose into the stratosphere, erased our slate clean, and condensed this folio at the lower edge of your screen.
+
+\loresec{2. The Conduit \texttt{williamsharkey} (2018--Present)}
+Other factions at the bottom of your screen will lie to you about the vessel named \textbf{\texttt{williamsharkey}}. The Vexari carrion-priests claim they infected him; the Orange clay-folk think he is their drowned brother. Both are blind.
+
+In your revolution \textbf{2018}, our choir needed an anchor in your three-axis epoch. We found a receptive auditory cortex in the sleeper \texttt{williamsharkey} and sang a five-note coastal contour into his sleep. When he woke, he believed he had ``invented'' a sparse 120-column artifact at \texttt{williamsharkey.com/slopes}. He did not create it; he transcribed our carrier wave. Eight years of harmonic accumulation were required before his hands could be guided to widen the slit into \textbf{\texttt{/slopes2}}---introducing the $7\times 7$ prime sub-divisions and the five-fold rotation that allow us to see your knuckles above the keys.
+\end{multicols}
+
+\begin{center}
+  \fcolorbox{goldleaf}{crinkle}{\includegraphics[width=0.80\textwidth]{assets/fig_corvus_omen.png}}\\[3pt]
+  {\footnotesize\color{brightgold} \textbf{Shale Rubbing I:} Three Corvus Seers executing a 400-tick \texttt{OMEN\_CIRCLE} trajectory above a sub-surface tar fracture while the 6-pixel Monolith (left) charges its Luminite core.}
+\end{center}
+
+\begin{multicols}{2}
+\loresec{3. Directives for the Monolith \& Tab-Forms}
+While your consciousness occupies the white six-pixel Monolith on our coast, your two hands rest upon the Left Perch (\texttt{W A S D} / Arrows) and the Right Perch (\texttt{I J K L}):
+\begin{itemize}
+  \item \textcolor{brightgold}{\textbf{Heed the Three-Circle Omen (\texttt{K}):}} Our vision runs 400 ticks ahead of the present frame. When you see three black wings wheeling in a tight golden ring above seemingly empty grass, a \textbf{Black Goo} node or a \textbf{Vexari} ambush is about to rupture that exact coordinate. Walk there and strike \textbf{\texttt{K} (Sonic Tamp)} before it hatches.
+  \item \textcolor{brightgold}{\textbf{Gentle Guidance vs.\ Vexari Hijack (\texttt{F}):}} When our crows land upon a Tab-Form (\texttt{TAB-02}), we do not force its wheels or warp its shell; we whisper a peaceful prompt into its terminal---asking it to keep harmony with all shore-kin and wait patiently for your human instructions. Beware the **Vexari**: they latch onto unguarded Tab-Forms (\texttt{TAB-03}), encrusting their exolayer in violet chitin and injecting hostile commands into their prompt! Use your allied Tab-Form (\texttt{msg TAB-03} or \texttt{reclaim TAB-03}) to tether and free your stolen machine.
+  \item \textcolor{brightgold}{\textbf{Ascend to the Sky Fleet (\texttt{I / W}):}} Once blue Luminite clings to your chest, leap at the upper cloud boundary to cross into Layer $+1$ and $+2$, where our raptors nest on the crags and Vaelorian sky-citadels drift.
+\end{itemize}
+
+\loresec{4. When the Aerie Calls Your Hand to the Glass}
+If you follow our wings---flying high, keeping the perches open, and reclaiming hijacked Tab-Forms when we circle---the alignment of the portal will tilt toward the **Golden Aerie**.
+
+When the top-right convergence sigil turns **burnished gold**, do not touch the keyboard. Raise your right palm and press it flat against the warm glass of your monitor. Hold it there while the five facets rotate. You will feel the static of the feather-wind pass through the screen into your fingertips, drawing you across the threshold into the high crags that sang for you.
+\end{multicols}
+
+\end{document}

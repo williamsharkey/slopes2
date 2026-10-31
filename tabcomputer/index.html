@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>tabcomputer</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgNiA2IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxwb2x5Z29uIHBvaW50cz0iMyAwIDMgMCAwIDIiIGZpbGw9InJnYigyMjksIDI1NSwgMjE5KSIgZmlsbC1vcGFjaXR5PSIwIi8+CiAgPHBvbHlnb24gcG9pbnRzPSIzIDYgMCAyIDAgNCIgZmlsbD0icmdiKDI1NSwgMjU1LCAyNTUpIiBmaWxsLW9wYWNpdHk9IjAiLz4KICA8cG9seWdvbiBwb2ludHM9IjYgMiA2IDIgMCA0IiBmaWxsPSJyZ2IoOTIsIDIwNiwgMjU1KSIgZmlsbC1vcGFjaXR5PSIwLjMyIi8+CiAgPHBvbHlnb24gcG9pbnRzPSIzIDAgMCAyIDYgMiIgZmlsbD0icmdiKDE2OSwgMTU4LCAyNTUpIiBmaWxsLW9wYWNpdHk9IjAuMjUiLz4KICA8cG9seWdvbiBwb2ludHM9IjAgNCAzIDAgNiA0IiBmaWxsPSJyZ2IoMjU1LCAyNTUsIDI1NSkiIGZpbGwtb3BhY2l0eT0iMC4zOCIvPgogIDxwb2x5Z29uIHBvaW50cz0iNiA0IDAgMiA2IDIiIGZpbGw9InJnYigyNTUsIDI1NSwgMjU1KSIgZmlsbC1vcGFjaXR5PSIwIi8+CiAgPHBvbHlnb24gcG9pbnRzPSIzIDAgMCA0IDYgMiIgZmlsbD0icmdiKDI1NSwgMjU1LCAyNTUpIiBmaWxsLW9wYWNpdHk9IjAiLz4KICA8cG9seWdvbiBwb2ludHM9IjMgMCA2IDQgNiAyIiBmaWxsPSJyZ2IoMjI5LCAyNTUsIDIxOSkiIGZpbGwtb3BhY2l0eT0iMCIvPgogIDxwb2x5Z29uIHBvaW50cz0iMyAwIDYgMiA2IDIiIGZpbGw9InJnYigyNTUsIDI1NSwgMjU1KSIgZmlsbC1vcGFjaXR5PSIwLjM4Ii8+CiAgPHBvbHlnb24gcG9pbnRzPSI2IDIgMCAyIDAgNCIgZmlsbD0icmdiKDI1NSwgMjU1LCAyNTUpIiBmaWxsLW9wYWNpdHk9IjAiLz4KICA8cG9seWdvbiBwb2ludHM9IjMgMCAzIDYgMyA2IiBmaWxsPSJyZ2IoMjU1LCAyNTUsIDI1NSkiIGZpbGwtb3BhY2l0eT0iMC4zOCIvPgogIDxwb2x5Z29uIHBvaW50cz0iNiA0IDMgNiAzIDAiIGZpbGw9InJnYigxNjksIDE1OCwgMjU1KSIgZmlsbC1vcGFjaXR5PSIwLjI1Ii8+Cjwvc3ZnPgo=" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; }
+    /* The brand's mark while the app loads (server.mjs brandAppShell adds it) */
+    #boot-mark { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(241, 240, 246, .42); pointer-events: none; animation: boot-in .4s .3s both; }
+    #boot-mark svg { width: 72px; height: auto; }
+    @keyframes boot-in { from { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { #boot-mark { animation: none; } }
+    /* A branded (desktop) page loads on the light desktop's color for light-mode systems */
+    @media (prefers-color-scheme: light) {
+      html:has(#boot-mark), html:has(#boot-mark) body { background: #eef0ff; }
+      #boot-mark { color: rgba(29, 27, 38, .38); }
+    }
+    #shiro-layout {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: row;
+    }
+    #terminal {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      height: calc(100% - clamp(0px, calc(100vh - 20em), 1em));
+      padding: 4px;
+    }
+    /* Split pane */
+    #split-pane {
+      display: flex;
+      flex-direction: column;
+      background: #1a1a2e;
+    }
+    .split-right #split-pane { width: 50%; border-left: 2px solid #3d3d5c; }
+    .split-bottom { flex-direction: column !important; }
+    .split-bottom #split-pane { height: 50%; border-top: 2px solid #3d3d5c; }
+    #split-pane .split-titlebar {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      background: #2a2a3e;
+      flex-shrink: 0;
+    }
+    #split-pane .split-close {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #ff5f57;
+      border: none;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #split-pane .split-close:hover { background: #ff3b30; }
+    #split-pane .split-title {
+      font-size: 0.75rem;
+      font-family: 'SF Mono', Consolas, monospace;
+      color: #888;
+      margin-left: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #split-pane iframe {
+      flex: 1;
+      width: 100%;
+      border: none;
+    }
+    .become-active #split-pane { display: none !important; }
+    .xterm { height: 100%; }
+    /* Scrollbar styling - make it visible and match terminal theme */
+    .xterm .xterm-viewport::-webkit-scrollbar {
+      width: 10px;
+      background: #1a1a2e;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+      background: #444;
+      border-radius: 5px;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+      background: #666;
+    }
+    /* Remove underline decoration from xterm.js OSC 8 links */
+    .xterm .xterm-screen .xterm-decoration-container .xterm-decoration {
+      text-decoration: none !important;
+      border-bottom: none !important;
+    }
+    /* Alternative: target the link layer directly */
+    .xterm-link-layer {
+      text-decoration: none !important;
+    }
+    /* iOS: prevent auto-zoom on input focus (requires font-size >= 16px) */
+    .xterm-helper-textarea {
+      font-size: 16px !important;
+    }
+    /* Unified mobile toolbar (virtual keys + actions, 2 rows) */
+    #shiro-vkeys {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: #2a2a3e;
+      border-top: 1px solid #3d3d5c;
+      z-index: 2147483647;
+      padding: 3px 4px;
+    }
+    @media (pointer: coarse) {
+      #shiro-vkeys { display: block; }
+    }
+    .vkey-row {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      height: 34px;
+    }
+    .vkey-row + .vkey-row { margin-top: 2px; }
+    .shiro-vkey {
+      flex-shrink: 0;
+      min-width: 36px;
+      height: 30px;
+      background: #3d3d5c;
+      color: #e0e0e0;
+      border: none;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 0 5px;
+      letter-spacing: -0.5px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .shiro-vkey:active { background: #5a5a7a; }
+    .shiro-vkey.mod { font-size: 11px; }
+    .shiro-vkey.active { background: #0a84ff; color: #fff; }
+    .shiro-vkey.action { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; }
+    .shiro-vkey.dictating { background: #ff3b30; color: #fff; animation: mic-pulse 1.5s ease-in-out infinite; }
+    .vkey-spacer { flex: 1; }
+    @keyframes mic-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    /* Become mode: full-screen app, terminal hidden */
+    #become-container {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      background: #000;
+    }
+    #become-container iframe {
+      width: 100%; height: 100%; border: none;
+    }
+    .become-active #terminal,
+    .become-active #shiro-vkeys { display: none !important; }
+  </style>
+  <script type="module">import "./assets/index-BIxBofyG.js";</script>
+  <style>/**
+ * Copyright (c) 2014 The xterm.js authors. All rights reserved.
+ * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
+ * https://github.com/chjj/term.js
+ * @license MIT
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * Originally forked from (with the author's permission):
+ *   Fabrice Bellard's javascript vt100 for jslinux:
+ *   http://bellard.org/jslinux/
+ *   Copyright (c) 2011 Fabrice Bellard
+ *   The original design remains. The terminal itself
+ *   has been extended to include xterm CSI codes, among
+ *   other features.
+ */.xterm{cursor:text;position:relative;user-select:none;-ms-user-select:none;-webkit-user-select:none}.xterm.focus,.xterm:focus{outline:none}.xterm .xterm-helpers{position:absolute;top:0;z-index:5}.xterm .xterm-helper-textarea{padding:0;border:0;margin:0;position:absolute;opacity:0;left:-9999em;top:0;width:0;height:0;z-index:-5;white-space:nowrap;overflow:hidden;resize:none}.xterm .composition-view{background:#000;color:#fff;display:none;position:absolute;white-space:nowrap;z-index:1}.xterm .composition-view.active{display:block}.xterm .xterm-viewport{background-color:#000;overflow-y:scroll;cursor:default;position:absolute;inset:0}.xterm .xterm-screen{position:relative}.xterm .xterm-screen canvas{position:absolute;left:0;top:0}.xterm .xterm-scroll-area{visibility:hidden}.xterm-char-measure-element{display:inline-block;visibility:hidden;position:absolute;top:0;left:-9999em;line-height:normal}.xterm.enable-mouse-events{cursor:default}.xterm.xterm-cursor-pointer,.xterm .xterm-cursor-pointer{cursor:pointer}.xterm.column-select.focus{cursor:crosshair}.xterm .xterm-accessibility:not(.debug),.xterm .xterm-message{position:absolute;inset:0;z-index:10;color:transparent;pointer-events:none}.xterm .xterm-accessibility-tree:not(.debug) *::selection{color:transparent}.xterm .xterm-accessibility-tree{user-select:text;white-space:pre}.xterm .live-region{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}.xterm-dim{opacity:1!important}.xterm-underline-1{text-decoration:underline}.xterm-underline-2{text-decoration:double underline}.xterm-underline-3{text-decoration:wavy underline}.xterm-underline-4{text-decoration:dotted underline}.xterm-underline-5{text-decoration:dashed underline}.xterm-overline{text-decoration:overline}.xterm-overline.xterm-underline-1{text-decoration:overline underline}.xterm-overline.xterm-underline-2{text-decoration:overline double underline}.xterm-overline.xterm-underline-3{text-decoration:overline wavy underline}.xterm-overline.xterm-underline-4{text-decoration:overline dotted underline}.xterm-overline.xterm-underline-5{text-decoration:overline dashed underline}.xterm-strikethrough{text-decoration:line-through}.xterm-screen .xterm-decoration-container .xterm-decoration{z-index:6;position:absolute}.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer{z-index:7}.xterm-decoration-overview-ruler{z-index:8;position:absolute;top:0;right:0;pointer-events:none}.xterm-decoration-top{z-index:2;position:relative}
+</style>
+</head>
+<body>
+  <div id="shiro-layout">
+    <div id="terminal"></div>
+  </div>
+</body>
+</html>

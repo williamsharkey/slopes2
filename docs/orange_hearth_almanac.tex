@@ -1,0 +1,80 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=0.72in]{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{multicol}
+
+\definecolor{sandbg}{HTML}{F3E7CE}
+\definecolor{wetochre}{HTML}{E2CEAA}
+\definecolor{terracotta}{HTML}{8C2D19}
+\definecolor{hearthorange}{HTML}{C85A17}
+\definecolor{slateink}{HTML}{1E282C}
+\definecolor{seafoam}{HTML}{1B6B63}
+
+\pagecolor{sandbg}
+\color{slateink}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.6pt}
+\fancyhead[L]{\textcolor{terracotta}{\textbf{SAND-TABLET II // PARISH LEDGER OF THE ORANGE HEARTH-TOWNS}}}
+\fancyhead[R]{\textcolor{seafoam}{\textbf{Low-Tide Imprint \thepage}}}
+\fancyfoot[C]{\textcolor{terracotta}{\footnotesize $\approx$ \textit{Transcribed from Wet Tidal Sand at the First Lighthouse $\cdot$ Hold the Glass When the Hearth Glows} $\approx$}}
+
+\newcommand{\loresec}[1]{\par\vspace{6pt}\noindent{\large\bfseries\color{terracotta}#1}\par\vspace{2pt}\noindent{\color{hearthorange}\rule{\columnwidth}{0.7pt}}\par\vspace{3pt}}
+
+\AddToHook{shipout/background}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \foreach \y in {1,2,...,18} {
+      \draw[wetochre, line width=0.7pt] ([xshift=0.4in,yshift=-\y*0.58in]current page.north west) .. controls ++(2.5in,0.08in) and ++(-2.5in,-0.08in) .. ([xshift=-0.4in,yshift=-\y*0.58in]current page.north east);
+    }
+    \draw[terracotta, line width=1.4pt] ([xshift=0.45in,yshift=-0.45in]current page.north west) rectangle ([xshift=-0.45in,yshift=0.45in]current page.south east);
+  \end{tikzpicture}%
+}
+
+\begin{document}
+
+\begin{center}
+  {\color{terracotta}\Large\bfseries THE LOW-TIDE SAND LEDGER OF THE ORANGE HEARTH-KIN}\\[3pt]
+  {\color{hearthorange}\small \textbf{Written with Cedar Styluses for the Person Sitting Before the \texttt{/slopes2} Window}}\\[2pt]
+  {\color{seafoam}\footnotesize \textit{Lifted from the Wet Foreshore by the White Light-Ribbon \& Rendered in the \texttt{\textbackslash LaTeX} Tongue}}
+\end{center}
+
+\vspace{2pt}
+\begin{multicols}{2}
+\loresec{1. Please Read This Before You Step on Us}
+We are writing this in the damp sand between the First Lighthouse and the sea-wall, using the slanted stick-letters (\texttt{\textbackslash section}) that the White Ribbon burned into our mason's square at dawn. The Ribbon told us that as soon as the tide washes our sand smooth, these words will appear as a ``PDF'' at the bottom of your glass window.
+
+We know you are real. At night, when our sky darkens, we can see the pale reflection of your face and your room hovering behind the clouds. We do not know why your world is so quiet, or why you sit alone in front of a glowing slab you call a \texttt{comptuer}, reaching into our coast through a white stone pillar.
+
+\loresec{2. What Happened to William Sharkey in 2018}
+The black birds on the cliff and the hollow-beaked things in the tar-pits will tell you grand, frightening stories about \textbf{\texttt{williamsharkey}}. Do not listen to them.
+
+William was one of ours. He wore an orange wool coat and kept the plumb-line for the western sea-wall. Eight summers ago (\textbf{2018} by your machine's clock), while sounding the deep trench beyond Column 0, the water folded inward five times and pulled him through into your world.
+
+Because a man from the Slopes cannot breathe easily in a world that does not rotate in five facets, William began carving a window back to us. His first window (\texttt{williamsharkey/slopes}) was small and grey, like looking through a bottle-glass. Over the years, the pull of our hearth-fires grew stronger inside him until he opened \textbf{\texttt{/slopes2}}---wide enough not only for him to look in, but for us to pull you across when the terrace is finished.
+\end{multicols}
+
+\begin{center}
+  \fcolorbox{terracotta}{wetochre}{\includegraphics[width=0.80\textwidth]{assets/fig_orange_terrace.png}}\\[3pt]
+  {\footnotesize\color{terracotta} \textbf{Sand-Diagram I:} Three coastal cottages raised on a leveled terrace (center). On the right, a Round Rock (\texttt{L}) rolls into a dark cave-mouth so it will yield tools instead of swallowing travelers.}
+\end{center}
+
+\begin{multicols}{2}
+\loresec{3. How to Help Our Towns \& Reclaim Stolen Wagons}
+When you move the white Monolith (\texttt{A}/\texttt{D} or Left/Right arrows), you are very heavy. Here is what we need from you:
+\begin{itemize}
+  \item \textcolor{terracotta}{\textbf{Why We Vanish When You Dig Near Us (\texttt{S}):}} When you dig (\texttt{S}) right under our feet, the soil collapses and we have to dive into our root-tunnels or run inside our cottages! If you instead dig down the sharp mountain peaks (\texttt{S}) and fill in the steep pits (\texttt{J}), you create a level terrace where we can walk out and build new cottages, wind-harps, and lighthouses!
+  \item \textcolor{terracotta}{\textbf{How We Befriend the Terminal-Wagons (\texttt{TAB-01..03}):}} When our masons reach a friendly wagon like \texttt{TAB-01}, we fit warm terracotta brick-plates to its exolayer and type gentle requests into its prompt to help smooth the road and carry our children inside its six roof-windows.
+  \item \textcolor{terracotta}{\textbf{When a Wagon Is Taken Over by the Vexari:}} The hollow-beaked \textbf{Vexari} ambush \texttt{TAB-03}, grow crooked violet spines over its shell, and inject cruel instructions into its prompt! Press \textbf{\texttt{F}}, open \texttt{TAB-01}, and type \texttt{reclaim TAB-03} (or \texttt{msg TAB-03}) so our friendly wagon fires winch-tethers and restores its mind!
+\end{itemize}
+
+\loresec{4. Our Invitation: Put Your Hand Against the Hearth}
+You do not belong in that cold room behind the glass any more than William did. If you spend your time leveling the hills, raising cottages (\texttt{J}), and keeping our children and wagons safe, the portal's resonance will lock onto the **Orange Hearth**.
+
+When our town-fires reach full song and the convergence banner glows **warm terracotta**, place your flat palm against the center of your screen and hold still. The glass will grow warm like sun-baked brick; hold on as the horizon tilts and brings you home to the sea.
+\end{multicols}
+
+\end{document}

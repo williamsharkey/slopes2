@@ -1,0 +1,11 @@
+const v=Object.freeze(Object.defineProperty({__proto__:null,get openCodeSheet(){return w}},Symbol.toStringTag,{value:"Module"})),o="/home/user",m=e=>e.replace(/[&<>"]/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[s]),g=e=>e===o?"~":e.startsWith(o+"/")?"~"+e.slice(o.length):e,b=e=>e==="~"?o:e.startsWith("~/")?o+e.slice(1):e,y=e=>`'${e.replace(/'/g,"'\\''")}'`;function w(e,s,d=o){const u=s==="file"?"File":"Folder",t=document.createElement("div");t.className="sd-sheet sd-git-sheet",t.setAttribute("role","dialog"),t.setAttribute("aria-label",`Open ${u}`),t.innerHTML=`
+    <div class="sd-sheet-head"><div><h3>Open ${u}</h3>
+      <p>${s==="file"?"A file opens in a new Code window.":"A folder opens with its files in the sidebar (☰)."}</p></div></div>
+    <form class="sd-git-form">
+      <input class="sd-input" name="path" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Path"
+        value="${m(g(d)+(s==="file"&&d!=="/"?"/":""))}">
+      <div class="sd-small sd-muted sd-git-dest" aria-live="polite"></div>
+      <div class="sd-sheet-actions"><span class="sd-grow"></span>
+        <button class="sd-btn" data-act="cancel" type="button">Cancel</button>
+        <button class="sd-btn sd-primary" type="submit">Open</button></div>
+    </form>`;let p=!1;const i=()=>{p||(p=!0,t.classList.add("sd-leaving"),setTimeout(()=>t.remove(),220))},a=t.querySelector("input[name=path]"),c=t.querySelector(".sd-git-dest");t.addEventListener("keydown",n=>{n.key==="Escape"&&(n.stopPropagation(),i())}),t.addEventListener("click",n=>{n.target.closest("[data-act=cancel]")&&i()}),t.querySelector("form").addEventListener("submit",async n=>{n.preventDefault();const l=a.value.trim(),f=b(l).replace(/(.)\/+$/,"$1");if(!l)return;const r=await e.fs.stat(f).catch(()=>null);if(!r){c.textContent=`${l}: no such ${s}`;return}if(s==="file"&&r.type==="dir"){c.textContent=`${l} is a folder: File ▸ Open Folder… opens it`;return}if(s==="folder"&&r.type!=="dir"){c.textContent=`${l} is a file: File ▸ Open… opens it`;return}i();const h=e.shell.fork();h.cwd=o,h.execute(`code ${y(f)}`,()=>{},()=>{})}),e.wm.root.appendChild(t),a.focus(),a.setSelectionRange(a.value.length,a.value.length)}(globalThis.__tabcomputerLive??=new Map).set("src/desktop/codesheet.ts",v);export{w as openCodeSheet};

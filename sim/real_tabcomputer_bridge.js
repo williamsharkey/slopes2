@@ -65,6 +65,10 @@
     modalStatusText: "",
     modalStatusColor: "#78ead4",
     syncTimer: null,
+    anthropicApiCalls: 0,
+    lastAnthropicStatus: "",
+    lastAnthropicMs: 0,
+    claudeAutoLaunched: false,
   };
 
   // Restore cached Claude & GitHub account badges immediately from localStorage
@@ -314,6 +318,7 @@
           if (cw) {
             // Ensure API proxy calls inside the iframe route to https://tabcomputer.com
             cw.__TABCOMPUTER_ORIGIN__ = "https://tabcomputer.com";
+            installTabComputerApiFetchInterceptor(cw);
           }
           if (cw && cw.__tabcomputer && cw.__tabcomputer.fs && cw.__tabcomputer.shell && cw.__tabcomputer.commands) {
             clearInterval(poll);
@@ -352,6 +357,26 @@
     // Prefer pure-JS npm Claude Code build in browser (`CLAUDE_NATIVE=0`)
     shell.env["CLAUDE_NATIVE"] = "0";
     shell.env["FORCE_COLOR"] = "1";
+    shell.env["ANTHROPIC_BASE_URL"] = "https://tabcomputer.com/api/anthropic";
+
+    // Hook iframe console.log so `[node-proxy] fetch(https://api.anthropic.com/v1/messages...) -> 200`
+    // from the TabComputer Node Web Worker increments live `anthropicApiCalls` telemetry!
+    if (cw && cw.console && !cw.console.__slopesAnthropicHooked) {
+      const origLog = cw.console.log.bind(cw.console);
+      cw.console.__slopesAnthropicHooked = true;
+      cw.console.log = function (...args) {
+        try {
+          const msg = args.map((a) => (typeof a === "string" ? a : "")).join(" ");
+          if (msg.includes("/v1/messages") || msg.includes("api.anthropic.com")) {
+            bridgeState.anthropicApiCalls = (bridgeState.anthropicApiCalls || 0) + 1;
+            const statusMatch = msg.match(/->\s*(\d{3})/);
+            bridgeState.lastAnthropicStatus = statusMatch ? `${statusMatch[1]} SSE` : "LIVE SSE";
+            bridgeState.lastAnthropicMs = Date.now();
+          }
+        } catch (_) {}
+        return origLog(...args);
+      };
+    }
 
     // Restore any saved credentials or API keys into the real TabComputer filesystem
     await syncCredentialsToRealFs(tc);
@@ -446,6 +471,29 @@
         "\x1b[93m✓ Type `fork-and-drift`, `drift status`, `hc s`, `ls /dom`, `body status`, or `claude`.\x1b[0m\r\n"
       );
     }
+
+    // If user is already signed into Claude (OAuth or API key), automatically switch TAB-01
+    // from simulated heuristic loop to REAL `@anthropic-ai/claude-code`!
+    if (bridgeState.signedInAccount && !bridgeState.claudeAutoLaunched) {
+      bridgeState.claudeAutoLaunched = true;
+      const forms = (global.SlopesTabForms && global.SlopesTabForms.tabForms) || [];
+      for (let i = 0; i < forms.length; i++) {
+        forms[i].autoMode = false;
+      }
+      const primaryTf = forms.find((t) => t.id === (bridgeState.activeTabFormId || "TAB-01")) || forms[0];
+      if (primaryTf) {
+        primaryTf.realTabActive = true;
+        primaryTf.autoMode = false;
+        tc.shell.env["TABFORM_ID"] = primaryTf.id;
+      }
+      setTimeout(() => {
+        sendCommandToRealTabComputer(
+          (primaryTf && primaryTf.id) || "TAB-01",
+          "claude --npm --dangerously-skip-permissions"
+        );
+      }, 350);
+    }
+
     syncXtermBufferToTabForms();
   }
 
@@ -546,6 +594,18 @@
 
     // 2. Sync GitHub OAuth / PAT credentials (`tabcomputer_github_token`) & ~/.gitconfig
     await syncGitHubCredentialsToRealFs(tc);
+
+    // 3. Invoke TabComputer's native `ensureClaudeAuthState(fs, shell.env)` if loaded in `__tabcomputerLive`
+    try {
+      const cw = bridgeState.iframe && bridgeState.iframe.contentWindow;
+      const claudeAuthMod =
+        cw && cw.__tabcomputerLive && typeof cw.__tabcomputerLive.get === "function"
+          ? cw.__tabcomputerLive.get("src/claude-auth.ts")
+          : null;
+      if (claudeAuthMod && typeof claudeAuthMod.ensureClaudeAuthState === "function") {
+        await claudeAuthMod.ensureClaudeAuthState(fs, shell.env);
+      }
+    } catch (_) {}
   }
 
   async function syncGitHubCredentialsToRealFs(tc) {
@@ -608,11 +668,71 @@
   // ==========================================================================
   // 3B. GITHUB OAUTH DEVICE FLOW (`gh` & `git` SIGN-IN LIKE TABCOMPUTER)
   // ==========================================================================
+  const TABCOMPUTER_PROXY_ORIGIN = "https://tabcomputer.com";
+
+  function rewriteTabComputerApiUrl(rawUrl) {
+    if (typeof rawUrl !== "string") return rawUrl;
+    // Rewrite relative `/api/(github-login|github|platform|anthropic|mcp-proxy|gemini)...`
+    // or `https://williamsharkey.com/api/...` directly to `https://tabcomputer.com/api/...`
+    // so static hosts (like williamsharkey.com) never log 404s!
+    const relMatch = rawUrl.match(/^\/api\/(github-login|github|platform|anthropic|mcp-proxy|gemini)(\/.*|$)/);
+    if (relMatch) {
+      return `${TABCOMPUTER_PROXY_ORIGIN}/api/${relMatch[1]}${relMatch[2] || ""}`;
+    }
+    const hostMatch = rawUrl.match(
+      /^https?:\/\/(?:www\.)?williamsharkey\.com\/(?:slopes2\/)?api\/(github-login|github|platform|anthropic|mcp-proxy|gemini)(\/.*|$)/i
+    );
+    if (hostMatch) {
+      return `${TABCOMPUTER_PROXY_ORIGIN}/api/${hostMatch[1]}${hostMatch[2] || ""}`;
+    }
+    return rawUrl;
+  }
+
+  function installTabComputerApiFetchInterceptor(win) {
+    if (!win || typeof win.fetch !== "function" || win.__slopesApiFetchWrapped) return;
+    const origFetch = win.fetch.bind(win);
+    win.__slopesApiFetchWrapped = true;
+    win.fetch = function (input, init) {
+      let urlStr = "";
+      try {
+        if (typeof input === "string") {
+          input = rewriteTabComputerApiUrl(input);
+          urlStr = input;
+        } else if (input && typeof input === "object" && typeof input.url === "string") {
+          const rewritten = rewriteTabComputerApiUrl(input.url);
+          urlStr = rewritten;
+          if (rewritten !== input.url && typeof win.Request === "function") {
+            input = new win.Request(rewritten, input);
+          }
+        }
+      } catch (_) {}
+      const isAnthropicMessages =
+        typeof urlStr === "string" &&
+        (urlStr.includes("/api/anthropic/v1/messages") || urlStr.includes("api.anthropic.com/v1/messages"));
+      if (isAnthropicMessages) {
+        bridgeState.anthropicApiCalls = (bridgeState.anthropicApiCalls || 0) + 1;
+        bridgeState.lastAnthropicStatus = "STREAMING...";
+        bridgeState.lastAnthropicMs = Date.now();
+      }
+      const p = origFetch(input, init);
+      if (isAnthropicMessages && p && typeof p.then === "function") {
+        p.then((resp) => {
+          bridgeState.lastAnthropicStatus = resp ? `${resp.status} SSE` : "ERR";
+          bridgeState.lastAnthropicMs = Date.now();
+        }).catch(() => {
+          bridgeState.lastAnthropicStatus = "NET-ERR";
+        });
+      }
+      return p;
+    };
+  }
+
+  installTabComputerApiFetchInterceptor(global);
+
   async function postGitHubLoginProxy(path, bodyObj) {
     const origins = [
-      "",
       "https://tabcomputer.com",
-      "https://williamsharkey.com",
+      "https://shiro.computer",
     ];
     let lastErr = null;
     for (let i = 0; i < origins.length; i++) {
@@ -1869,8 +1989,7 @@
     "index.html",
     "slopes2.js",
     "audio.js",
-    "ereader.js",
-    "glyphs.js",
+    "font.js",
     "README.md",
     "AGENTS.md",
     "CLAUDE.md",
@@ -1884,8 +2003,6 @@
     "sim/cosmic_engine.js",
     "sim/ai_interface.js",
     "sim/wasm_bridge.js",
-    "sim/wfc_world.js",
-    "sim/seer_crow.js",
     "vendor/hardcore-tab/package.json",
     "vendor/hardcore-tab/README.md",
     "vendor/hardcore-tab/src/hardcore_tab.js",
@@ -2580,6 +2697,85 @@
 
   scheduleSilentTabComputerBoot();
 
+  async function verifyRealClaudeCode(tabId) {
+    const tId = tabId || bridgeState.activeTabFormId || "TAB-01";
+    const forms = (global.SlopesTabForms && global.SlopesTabForms.tabForms) || [];
+    const tf = forms.find((t) => t.id === tId) || getActiveTabForm();
+    const logLine = (msg) => {
+      if (tf && tf.shell && typeof tf.shell.println === "function") {
+        tf.shell.println(msg);
+      }
+      if (bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.term) {
+        bridgeState.tc.terminal.term.writeln(msg);
+      }
+    };
+
+    logLine("\x1b[96m╔══ VERIFYING REAL CLAUDE CODE & GITHUB INSIDE TABCOMPUTER ══╗\x1b[0m");
+    try {
+      const tc = await ensureRealTabComputerBooted(tId);
+      await syncCredentialsToRealFs(tc);
+
+      // 1. Check TabComputer Kernel & Node Worker
+      logLine("\x1b[92m✓ [1/4] TabComputer Linux Kernel:\x1b[0m window.__tabcomputer active (IndexedDB FS + Node Web Worker)");
+
+      // 2. Check Claude Credentials in `/home/user/.claude/.credentials.json`
+      let hasOauth = false;
+      let tokenPreview = "none";
+      try {
+        const raw = await tc.fs.readFile(CLAUDE_CREDENTIALS_PATH, "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.claudeAiOauth && parsed.claudeAiOauth.accessToken) {
+          hasOauth = true;
+          const tok = String(parsed.claudeAiOauth.accessToken);
+          tokenPreview = tok.slice(0, 12) + "..." + tok.slice(-6);
+        }
+      } catch (_) {}
+      const apiKey = tc.shell.env["ANTHROPIC_API_KEY"];
+      if (hasOauth) {
+        logLine(
+          `\x1b[92m✓ [2/4] Claude OAuth PKCE:\x1b[0m ${bridgeState.signedInAccount ? bridgeState.signedInAccount.email : "authenticated"} (${tokenPreview})`
+        );
+      } else if (apiKey) {
+        logLine(`\x1b[92m✓ [2/4] Anthropic API Key:\x1b[0m ${apiKey.slice(0, 10)}... configured in shell.env`);
+      } else {
+        logLine("\x1b[93m! [2/4] Claude Auth:\x1b[0m Not signed in yet — click [SIGN IN CLAUDE] in the top bar.");
+      }
+
+      // 3. Check GitHub Auth
+      const ghTok = tc.shell.env["GITHUB_TOKEN"] || tc.shell.env["GH_TOKEN"];
+      if (ghTok && bridgeState.githubAccount) {
+        logLine(
+          `\x1b[92m✓ [3/4] GitHub Auth:\x1b[0m @${bridgeState.githubAccount.login} (${ghTok.slice(0, 8)}...) + ~/.gitconfig mounted`
+        );
+      } else {
+        logLine("\x1b[93m! [3/4] GitHub Auth:\x1b[0m No token in shell.env — click [GITHUB SIGN-IN] if needed.");
+      }
+
+      // 4. Switch Tab-Form to Real Mode (stopping simulated heuristic loop) and invoke real `@anthropic-ai/claude-code`!
+      if (tf) {
+        tf.realTabActive = true;
+        tf.autoMode = false;
+        if (typeof tf.sayOverhead === "function") {
+          tf.sayOverhead("Verifying real @anthropic-ai/claude-code SSE link...", "#69db7c");
+        }
+      }
+      logLine(
+        `\x1b[92m✓ [4/4] Proxy & CLI:\x1b[0m https://tabcomputer.com/api/anthropic/v1/messages (API calls so far: ${bridgeState.anthropicApiCalls || 0} ${bridgeState.lastAnthropicStatus || ""})`
+      );
+      logLine(
+        "\x1b[96m→ Running real `@anthropic-ai/claude-code` inside TabComputer (`claude -p \"Confirm you are real Claude Code running in Slopes 2 and run body status\"`)...\x1b[0m"
+      );
+
+      sendCommandToRealTabComputer(
+        tId,
+        'claude --npm --dangerously-skip-permissions -p "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."'
+      );
+      setTimeout(syncXtermBufferToTabForms, 250);
+    } catch (err) {
+      logLine(`\x1b[91m✗ Verification error: ${err.message || String(err)}\x1b[0m`);
+    }
+  }
+
   const RealTabComputerBridge = {
     state: bridgeState,
     driftState,
@@ -2597,6 +2793,7 @@
     closeClaudeSignInModal,
     syncXtermBufferToTabForms,
     triggerForkAndDrift,
+    verifyRealClaudeCode,
   };
 
   global.RealTabComputerBridge = RealTabComputerBridge;

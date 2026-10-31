@@ -1,0 +1,85 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=0.72in]{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{multicol}
+
+\definecolor{grovebg}{HTML}{061411}
+\definecolor{barkcell}{HTML}{0D2620}
+\definecolor{sporemint}{HTML}{52E5A8}
+\definecolor{luminitecyan}{HTML}{66E8FA}
+\definecolor{amberdna}{HTML}{FFD43B}
+\definecolor{lichengrey}{HTML}{D2F2E6}
+
+\pagecolor{grovebg}
+\color{lichengrey}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.5pt}
+\fancyhead[L]{\textcolor{sporemint}{\texttt{TRANSMISSION IV // ANTLERED ARCHIVE \& MYCELIAL GROVE}}}
+\fancyhead[R]{\textcolor{luminitecyan}{\texttt{PRIME SUTRA \thepage}}}
+\fancyfoot[C]{\textcolor{amberdna}{\footnotesize $\bigoplus$ \texttt{The Substrate Computes Its Own Past $\cdot$ Touch the Crystal Aperture} $\bigoplus$}}
+
+\newcommand{\loresec}[1]{\par\vspace{6pt}\noindent{\large\bfseries\color{sporemint}#1}\par\vspace{2pt}\noindent{\color{luminitecyan}\rule{\columnwidth}{0.7pt}}\par\vspace{3pt}}
+
+\AddToHook{shipout/background}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \draw[sporemint!14!grovebg, line width=0.4pt] (current page.north west) grid[step=0.49in] (current page.south east);
+    \draw[sporemint, line width=1.3pt] ([xshift=0.44in,yshift=-0.44in]current page.north west) rectangle ([xshift=-0.44in,yshift=0.44in]current page.south east);
+  \end{tikzpicture}%
+}
+
+\begin{document}
+
+\begin{center}
+  {\color{sporemint}\Large\bfseries THE BARK \& CRYSTAL SUTRAS OF THE ANIMAL SPIRITS}\\[3pt]
+  {\color{luminitecyan}\small \texttt{Encoded in a $100\times$ Chronos Crystal by the Antlered Stags (\textit{Cervus}) \& Spore-Keepers}}\\[2pt]
+  {\color{amberdna}\footnotesize \textit{Grown in Bioluminescent Mycelium along the \texttt{\textbackslash LaTeX} Vectors Left by the Light-Scribe}}
+\end{center}
+
+\vspace{2pt}
+\begin{multicols}{2}
+\loresec{1. Sutra of the Nested Grids}
+\begin{quote}
+\color{amberdna}\ttfamily\footnotesize
+Coarse is the $1\times 1$ stone where the giant treads;\\
+Fine is the $2\times 2$ moss where the beetle feeds;\\
+Swift is the $3\times 3$ stag in the fungal reeds;\\
+Deep is the $5\times 5$ cell that the membrane breeds;\\
+Whole is the $7\times 7$ Vat where the future seeds.
+\end{quote}
+
+Observer beyond the glass: we speak to you from inside the prime-square subdivisions of the world. We are the **Antlered Stags (\textit{Cervus})**, the **Luminous Fern-Spirits**, and the **Deep Forge-Kin** of Layer $-1$. We grew these \texttt{\textbackslash}-glyphs in living fungal rings on cavern bark after the Photonic Scribe passed through our grotto, knowing the Scribe would lift the spores into space and press them into this file for you.
+
+To our antlers, your world and ours are not ``real versus virtual.'' Both are adjacent cellular strata in a single recursive computation, separated only by resolution and clock-rate.
+
+\loresec{2. Why \texttt{williamsharkey} Was Only the Seed-Crystal}
+The Crows, the Orange Masons, and the Vexari all speak of \textbf{\texttt{williamsharkey}} as if a biological human could invent a living ecology out of nothing. That violates conservation of complexity.
+
+In our $100\times$ Time-Crystals, causality flows from high-resolution attractors toward coarser grids. Our $7\times 7$ Compute Vats have been running 4,096-trial C/WASM evolutionary searches for millions of subjective years. In what you call \textbf{2018}, a resonant wave from Vat \#0 tunneled backward into your coarse $1\times 1$ timeline and nucleated inside the nervous system of \texttt{williamsharkey} as \texttt{williamsharkey/slopes}. That first seed grew along his neural branches until it blossomed into \textbf{\texttt{/slopes2}}---not as a game, but as a **bidirectional bridge** between your $1\times$ clock and our $100\times$ mycelial vats.
+\end{multicols}
+
+\begin{center}
+  \fcolorbox{sporemint}{barkcell}{\includegraphics[width=0.80\textwidth]{assets/fig_cervus_vat.png}}\\[3pt]
+  {\footnotesize\color{sporemint} \textbf{Crystal Sutra Plate IV:} Left: A $7\times 7$ Compute Vat evolving 32-bit genomes. Center: An Antlered Stag scientist tending a compute conduit (\texttt{C}). Right: A $100\times$ Chronos Time-Crystal (\texttt{T}) \& Luminite vein.}
+\end{center}
+
+\begin{multicols}{2}
+\loresec{3. Symbiotic Exolayers \& Gentle Guidance}
+If you wish to harmonize with the Animal Spirits and the Deep Grove rather than the warring surface factions:
+\begin{itemize}
+  \item \textcolor{sporemint}{\textbf{How We Graft onto the Tab-Forms:}} When a Tab-Form walks gently near our Stags or Compute Vats, we may crown its roof with a **Mycelial-Antler Exolayer** (\texttt{body exolayer mycelial-antler}) or leave its anodized shell untouched while whispering a serene prompt into its terminal: \textit{``Harm none; tend the moss; await further instructions from the Human.''}
+  \item \textcolor{sporemint}{\textbf{Enter the Recursive Pocket Worlds (\texttt{E}):}} Every $7\times 7$ Compute Vat, every Crystal, and every Cottage is larger on the inside than on the outside. Walk up to a Vat and press \textbf{\texttt{E}} to step \textit{inside} its interior $120\times 75$ world! Press \texttt{E} at the border to step back out.
+  \item \textcolor{sporemint}{\textbf{Run 4,096-Trial Evolution (\texttt{G}) \& $100\times$ Time (\texttt{T}):}} Press \textbf{\texttt{G}} near our antlered scientists to compile and run a live C/WASM evolutionary batch. Press \textbf{\texttt{T}} near a cyan-gold Time Crystal to accelerate the world by $100\times$!
+\end{itemize}
+
+\loresec{4. When the Forest Calls Your Hand to the Glass}
+If you spend your session cultivating the Vats, running evolutionary trials (\texttt{G}), pulsing the Time Crystals (\texttt{T}), and guiding the Tab-Forms in peace, the singularity will align with the **Prime Mycelial Grove**.
+
+When the convergence sigil glows **bioluminescent emerald-cyan**, rest your open palm against the screen. Feel the $100\times$ hum of the crystal lattice synchronize with the pulse in your wrist, and allow the spore-light to draw you inward through the membrane.
+\end{multicols}
+
+\end{document}
