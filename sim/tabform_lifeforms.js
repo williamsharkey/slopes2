@@ -254,6 +254,22 @@
     return segRgb;
   }
 
+  function xterm256ToRgb(n) {
+    const idx = Math.max(0, Math.min(255, n | 0));
+    if (idx < 8) return (HARDCORE_ANSI_COLORS[30 + idx] || HARDCORE_ANSI_COLORS[37]).rgb;
+    if (idx < 16) return (HARDCORE_ANSI_COLORS[90 + (idx - 8)] || HARDCORE_ANSI_COLORS[97]).rgb;
+    if (idx >= 232) {
+      const v = 8 + (idx - 232) * 10;
+      return [v, v, v];
+    }
+    const cube = idx - 16;
+    const r = Math.floor(cube / 36);
+    const g = Math.floor((cube % 36) / 6);
+    const b = cube % 6;
+    const step = (c) => (c === 0 ? 0 : 55 + c * 40);
+    return [step(r), step(g), step(b)];
+  }
+
   function stripAnsi(str) {
     if (!str) return "";
     return String(str).replace(/\x1b\[[0-9;]*m/g, "");
@@ -297,6 +313,14 @@
         } else if (c === 22) {
           bold = false;
           dim = false;
+        } else if (c === 38 && codes[i + 1] === 2 && i + 4 < codes.length) {
+          rgb = [codes[i + 2], codes[i + 3], codes[i + 4]];
+          fg = rgbToHex(rgb);
+          i += 4;
+        } else if (c === 38 && codes[i + 1] === 5 && i + 2 < codes.length) {
+          rgb = xterm256ToRgb(codes[i + 2]);
+          fg = rgbToHex(rgb);
+          i += 2;
         } else if (HARDCORE_ANSI_COLORS[c]) {
           fg = HARDCORE_ANSI_COLORS[c].hex;
           rgb = HARDCORE_ANSI_COLORS[c].rgb;
@@ -394,18 +418,119 @@
       const mx = gx + Math.floor(cw * 0.5);
       const my = gy + Math.floor(ch * 0.5);
 
-      // Middle dot / bullet (`·`, `•`, `●`, `◉`)
+      // Non-breaking space & zero-width spaces -> blank
+      if (code === 0x00a0 || (code >= 0x2000 && code <= 0x200f) || code === 0xfeff) {
+        return;
+      }
+
+      // Middle dot / bullet (`·`, `•`, `●`, `◉`, `⏺`)
       if (code === 0x00b7 || code === 0x2022 || code === 0x2219) {
         ctx.fillRect(mx - s, my - s, s * 2, s * 2);
         return;
       }
-      if (code === 0x25cf || code === 0x25c9 || code === 0x25cb) {
+      if (code === 0x25cf || code === 0x25c9 || code === 0x25cb || code === 0x23fa) {
         const r = Math.max(2, Math.floor(Math.min(cw, ch) * 0.25));
         ctx.fillRect(mx - r, my - r, r * 2, s);
         ctx.fillRect(mx - r, my + r - s, r * 2, s);
         ctx.fillRect(mx - r, my - r, s, r * 2);
         ctx.fillRect(mx + r - s, my - r, s, r * 2);
         if (code !== 0x25cb) ctx.fillRect(mx - s, my - s, s * 2, s * 2);
+        return;
+      }
+
+      // Claude Code prompt chevrons (`❯`, `›`, `»`, `⟩`)
+      if (code === 0x276f || code === 0x276d || code === 0x203a || code === 0x00bb || code === 0x27e9) {
+        for (let step = 0; step < 5; step++) {
+          ctx.fillRect(gx + (3 + step) * s, my - (4 - step) * s, s * 2, s);
+          ctx.fillRect(gx + (3 + step) * s, my + (4 - step) * s, s * 2, s);
+        }
+        return;
+      }
+
+      // Claude Code status / thinking stars & sparkles (`✻`, `✳`, `✶`, `✢`, `✦`, `✧`, `✱`, `★`, `☆`)
+      if ((code >= 0x2720 && code <= 0x274b) || code === 0x2605 || code === 0x2606) {
+        ctx.fillRect(mx, my - 4 * s, s, 9 * s);
+        ctx.fillRect(mx - 3 * s, my, 7 * s, s);
+        ctx.fillRect(mx - 2 * s, my - 2 * s, s, s);
+        ctx.fillRect(mx + 2 * s, my - 2 * s, s, s);
+        ctx.fillRect(mx - 2 * s, my + 2 * s, s, s);
+        ctx.fillRect(mx + 2 * s, my + 2 * s, s, s);
+        return;
+      }
+
+      // Claude Code tool-output tree connector (`⎿`)
+      if (code === 0x23bf) {
+        ctx.fillRect(mx - 2 * s, gy + 3 * s, s, my - gy - s);
+        ctx.fillRect(mx - 2 * s, my + 2 * s, gx + cw - (mx - 2 * s) - s, s);
+        return;
+      }
+
+      // Braille spinner & plot patterns (`U+2800..U+28FF`, e.g. `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`)
+      if (code >= 0x2800 && code <= 0x28ff) {
+        const mask = code - 0x2800;
+        const dx0 = mx - 2 * s;
+        const dx1 = mx + s;
+        const dyBase = my - 4 * s;
+        const dotMap = [
+          [dx0, dyBase],
+          [dx0, dyBase + 2 * s],
+          [dx0, dyBase + 4 * s],
+          [dx1, dyBase],
+          [dx1, dyBase + 2 * s],
+          [dx1, dyBase + 4 * s],
+          [dx0, dyBase + 6 * s],
+          [dx1, dyBase + 6 * s],
+        ];
+        for (let b = 0; b < 8; b++) {
+          if ((mask >> b) & 1) {
+            ctx.fillRect(dotMap[b][0], dotMap[b][1], s * 2, s);
+          }
+        }
+        return;
+      }
+
+      // Checkmarks (`✓`, `✔`) & Crosses (`✗`, `✘`, `×`)
+      if (code === 0x2713 || code === 0x2714) {
+        ctx.fillRect(gx + 2 * s, my + s, s, s);
+        ctx.fillRect(gx + 3 * s, my + 2 * s, s, s);
+        for (let k = 0; k < 5; k++) {
+          ctx.fillRect(gx + (4 + k) * s, my + (2 - k) * s, s, s * 2);
+        }
+        return;
+      }
+      if (code === 0x2717 || code === 0x2718 || code === 0x00d7) {
+        for (let k = -3; k <= 3; k++) {
+          ctx.fillRect(mx + k * s, my + k * s, s, s);
+          ctx.fillRect(mx + k * s, my - k * s, s, s);
+        }
+        return;
+      }
+
+      // Arrows (`←`, `↑`, `→`, `↓`, `↵`) & Dashes (`–`, `—`, `−`, `…`)
+      if (code === 0x2013 || code === 0x2014 || code === 0x2212) {
+        ctx.fillRect(gx + s, my, cw - 2 * s, s);
+        return;
+      }
+      if (code === 0x2026) {
+        ctx.fillRect(gx + 2 * s, gy + ch - 5 * s, s, s);
+        ctx.fillRect(mx, gy + ch - 5 * s, s, s);
+        ctx.fillRect(gx + cw - 3 * s, gy + ch - 5 * s, s, s);
+        return;
+      }
+      if (code >= 0x2190 && code <= 0x2193) {
+        if (code === 0x2190 || code === 0x2192) {
+          ctx.fillRect(gx + 2 * s, my, cw - 4 * s, s);
+          const tipX = code === 0x2190 ? gx + 2 * s : gx + cw - 3 * s;
+          const dir = code === 0x2190 ? 1 : -1;
+          ctx.fillRect(tipX + dir * s, my - s, s, s * 3);
+          ctx.fillRect(tipX + dir * 2 * s, my - 2 * s, s, s * 5);
+        } else {
+          ctx.fillRect(mx, gy + 4 * s, s, ch - 8 * s);
+          const tipY = code === 0x2191 ? gy + 4 * s : gy + ch - 5 * s;
+          const dir = code === 0x2191 ? 1 : -1;
+          ctx.fillRect(mx - s, tipY + dir * s, s * 3, s);
+          ctx.fillRect(mx - 2 * s, tipY + dir * 2 * s, s * 5, s);
+        }
         return;
       }
 
@@ -560,7 +685,14 @@
       const str = String(text);
 
       for (let i = 0; i < str.length; i++) {
-        const code = str.charCodeAt(i);
+        let code = str.charCodeAt(i);
+        if (code === 0x00a0 || (code >= 0x2000 && code <= 0x200b) || code === 0xfeff) {
+          code = 32;
+        } else if (code === 0x2018 || code === 0x2019) {
+          code = 39; // '
+        } else if (code === 0x201c || code === 0x201d) {
+          code = 34; // "
+        }
         const rows = code >= 32 && code <= 126 ? glyphs[code - 32] : null;
         if (rows) {
           for (let r = 0; r < h; r++) {
@@ -10866,6 +10998,31 @@
     const paneAreaH = dockH - 6;
     const maxVisibleRows = Math.max(4, Math.floor(paneAreaH / lineH));
 
+    // Automatically dock the live interactive xterm.js TUI inside the terminal pane whenever a Tab-Form
+    // (`previewTf.id !== "TE-307"`) is selected and Real TabComputer is booted, unless the user toggled [PIXEL VIEW]!
+    const shouldShowLiveXterm = Boolean(
+      tcBooted &&
+        previewTf.id !== "TE-307" &&
+        !state.preferPixelTerminalView &&
+        !(bridge && bridge.state && bridge.state.signInModalOpen)
+    );
+    if (bridge && typeof bridge.setLiveXtermVisible === "function") {
+      if (shouldShowLiveXterm) {
+        previewTf.realTabActive = true;
+        previewTf.autoMode = false;
+        bridge.setLiveXtermVisible(true, {
+          x: textStartX - 6,
+          y: textStartY - 2,
+          w: paneAreaW + 4,
+          h: paneAreaH + 4,
+          canvasW,
+          canvasH,
+        });
+      } else if (bridge.state && bridge.state.liveXtermVisible) {
+        bridge.setLiveXtermVisible(false);
+      }
+    }
+
     const allLines = (previewTf.shell && previewTf.shell.lines) || [];
     const visibleLines = allLines.slice(Math.max(0, allLines.length - maxVisibleRows));
 
@@ -11561,21 +11718,9 @@
                 global.RealTabComputerBridge.verifyRealClaudeCode(activeTf && activeTf.id !== "TE-307" ? activeTf.id : "TAB-01");
               }
             } else if (hb.action === "toggle-xterm-tui") {
-              if (global.RealTabComputerBridge) {
-                const nextVis = !global.RealTabComputerBridge.state.liveXtermVisible;
-                const winW = Math.min(760, NATIVE_W - 24);
-                const winH = Math.min(430, NATIVE_H - 36);
-                const winX = Math.round((NATIVE_W - winW) / 2);
-                const winY = Math.round((NATIVE_H - winH) / 2);
-                const dockW = 168;
-                const termX = state.dockSide === "left" ? winX + dockW + 4 : winX + 4;
-                const termW = winW - dockW - 8;
-                global.RealTabComputerBridge.setLiveXtermVisible(nextVis, {
-                  x: termX,
-                  y: winY + 24,
-                  w: termW,
-                  h: winH - 54,
-                });
+              state.preferPixelTerminalView = !state.preferPixelTerminalView;
+              if (global.RealTabComputerBridge && state.preferPixelTerminalView) {
+                global.RealTabComputerBridge.setLiveXtermVisible(false);
               }
             } else if (hb.action === "move-dock") {
               state.dockSide = state.dockSide === "right" ? "left" : "right";
@@ -11786,6 +11931,44 @@
         }
         return;
       }
+
+      // Forward Ctrl+C / Ctrl+D / Ctrl+L directly to the running interactive TTY (`claude`) when active
+      if (
+        ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        sel &&
+        sel.id !== "TE-307" &&
+        global.RealTabComputerBridge &&
+        typeof global.RealTabComputerBridge.sendKeyEventToRealTabComputer === "function"
+      ) {
+        const k = (ev.key || "").toLowerCase();
+        if (k === "c" || k === "d" || k === "l") {
+          ev.preventDefault();
+          state.inputBuffer = "";
+          global.RealTabComputerBridge.sendKeyEventToRealTabComputer(ev);
+          return;
+        }
+      }
+
+      // If the live interactive xterm TUI is visible and the user starts typing while the outer window has focus,
+      // forward keystrokes directly into the live xterm TTY (and focus xterm) unless they are typing in the bottom bar!
+      if (
+        sel &&
+        sel.id !== "TE-307" &&
+        global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.liveXtermVisible &&
+        state.inputBuffer.length === 0 &&
+        ev.key !== "Tab" &&
+        typeof global.RealTabComputerBridge.sendKeyEventToRealTabComputer === "function"
+      ) {
+        if (global.RealTabComputerBridge.sendKeyEventToRealTabComputer(ev)) {
+          ev.preventDefault();
+          return;
+        }
+      }
+
       if (ev.key === "Tab") {
         ev.preventDefault();
         const cycleList = state.tabForms.concat(state.worldMainframe ? [state.worldMainframe] : []);
@@ -11800,7 +11983,21 @@
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        const cmd = state.inputBuffer.trim() || (sel && sel.id === "TE-307" ? "status" : "body status");
+        const rawTrimmed = state.inputBuffer.trim();
+        const isInteractiveRealTty = Boolean(
+          sel &&
+            sel.id !== "TE-307" &&
+            global.RealTabComputerBridge &&
+            typeof global.RealTabComputerBridge.isForegroundTtyJobActive === "function" &&
+            global.RealTabComputerBridge.isForegroundTtyJobActive()
+        );
+        if (!rawTrimmed && isInteractiveRealTty) {
+          state.inputBuffer = "";
+          state.historyIdx = -1;
+          global.RealTabComputerBridge.sendRawInputToRealTabComputer("\r");
+          return;
+        }
+        const cmd = rawTrimmed || (sel && sel.id === "TE-307" ? "status" : "body status");
         state.inputBuffer = "";
         state.historyIdx = -1;
         if (sel) {
@@ -11902,6 +12099,12 @@
       renderDevicePixelTabFormMonitors(overlayCtx, devW, devH);
       if (state.terminalOpen) {
         renderInteractiveTerminalWindow(overlayCtx, devW, devH);
+      } else if (
+        global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.liveXtermVisible
+      ) {
+        global.RealTabComputerBridge.setLiveXtermVisible(false);
       }
     }
     requestAnimationFrame(overlayLoop);

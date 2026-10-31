@@ -304,7 +304,7 @@
           "opacity:0",
           "pointer-events:none",
         ].join(";");
-        iframe.src = "./tabcomputer/index.html?profile=shiro&ui=terminal&demo=1";
+        iframe.src = "./tabcomputer/index.html?profile=shiro&ui=terminal";
         screenDiv.appendChild(iframe);
       }
       bridgeState.iframe = iframe;
@@ -357,7 +357,20 @@
     // Prefer pure-JS npm Claude Code build in browser (`CLAUDE_NATIVE=0`)
     shell.env["CLAUDE_NATIVE"] = "0";
     shell.env["FORCE_COLOR"] = "1";
+    shell.env["TERM"] = "xterm-256color";
     shell.env["ANTHROPIC_BASE_URL"] = "https://tabcomputer.com/api/anthropic";
+
+    // Ensure xterm & kernel PTY have a full 92x28 window size even before docking onscreen
+    if (terminal && terminal.term) {
+      try {
+        if (terminal.term.cols < 60 || terminal.term.rows < 20) {
+          terminal.term.resize(92, 28);
+        }
+        if (terminal.tty && typeof terminal.tty.resize === "function") {
+          terminal.tty.resize(terminal.term.rows || 28, terminal.term.cols || 92);
+        }
+      } catch (_) {}
+    }
 
     // Hook iframe console.log so `[node-proxy] fetch(https://api.anthropic.com/v1/messages...) -> 200`
     // from the TabComputer Node Web Worker increments live `anthropicApiCalls` telemetry!
@@ -899,6 +912,70 @@
     } catch (_) {}
   }
 
+  function extractAnsiLineFromXterm(lineObj, maxCols) {
+    if (!lineObj) return "";
+    const rawPlain = lineObj.translateToString(true).replace(/\u00a0/g, " ");
+    if (!rawPlain || rawPlain.trim().length === 0) return "";
+    if (typeof lineObj.getCell !== "function") return rawPlain;
+
+    const cols = Math.min(maxCols || 120, lineObj.length || rawPlain.length);
+    let out = "";
+    let lastSgr = "";
+    let trailingSpaces = "";
+
+    for (let c = 0; c < cols; c++) {
+      const cell = lineObj.getCell(c);
+      if (!cell) break;
+      const width = typeof cell.getWidth === "function" ? cell.getWidth() : 1;
+      if (width === 0) continue; // Wide character continuation cell
+      let ch = (typeof cell.getChars === "function" ? cell.getChars() : "") || " ";
+      if (ch === "\u00a0") ch = " ";
+
+      let sgr = "";
+      try {
+        const fgColor = typeof cell.getFgColor === "function" ? cell.getFgColor() : -1;
+        const isRgb = typeof cell.isFgRGB === "function" && cell.isFgRGB();
+        const isPal = typeof cell.isFgPalette === "function" && cell.isFgPalette();
+        const isBold = typeof cell.isBold === "function" && cell.isBold();
+        const isDim = typeof cell.isDim === "function" && cell.isDim();
+
+        const parts = [];
+        if (isBold) parts.push("1");
+        if (isDim) parts.push("2");
+        if (isRgb && fgColor >= 0) {
+          const r = (fgColor >> 16) & 255;
+          const g = (fgColor >> 8) & 255;
+          const b = fgColor & 255;
+          parts.push(`38;2;${r};${g};${b}`);
+        } else if (isPal && fgColor >= 0) {
+          if (fgColor < 8) parts.push(String(30 + fgColor));
+          else if (fgColor < 16) parts.push(String(90 + (fgColor - 8)));
+          else parts.push(`38;5;${fgColor}`);
+        }
+        if (parts.length > 0) {
+          sgr = `\x1b[${parts.join(";")}m`;
+        }
+      } catch (_) {}
+
+      if (ch === " ") {
+        trailingSpaces += " ";
+        continue;
+      }
+      if (trailingSpaces) {
+        out += trailingSpaces;
+        trailingSpaces = "";
+      }
+      if (sgr !== lastSgr) {
+        out += sgr ? `\x1b[0m${sgr}` : "\x1b[0m";
+        lastSgr = sgr;
+      }
+      out += ch;
+    }
+
+    if (lastSgr) out += "\x1b[0m";
+    return out;
+  }
+
   function syncXtermBufferToTabForms() {
     if (!bridgeState.booted || !bridgeState.tc || !bridgeState.tc.terminal) return;
     const term = bridgeState.tc.terminal.term;
@@ -908,13 +985,14 @@
     const extracted = [];
     const totalRows = buf.length || 0;
     const startRow = Math.max(0, totalRows - 60);
+    const cols = term.cols || 92;
 
     for (let i = startRow; i < totalRows; i++) {
       const lineObj = buf.getLine(i);
       if (!lineObj) continue;
-      const str = lineObj.translateToString(true);
-      if (str && str.trim().length > 0) {
-        extracted.push(str);
+      const ansiStr = extractAnsiLineFromXterm(lineObj, cols);
+      if (ansiStr && ansiStr.length > 0) {
+        extracted.push(ansiStr);
       }
     }
 
@@ -931,6 +1009,75 @@
         }
       }
     }
+  }
+
+  function isForegroundTtyJobActive(tcInstance) {
+    const tc = tcInstance || bridgeState.tc;
+    if (!tc || !tc.terminal) return false;
+    const term = tc.terminal;
+    return Boolean(
+      (term.tty && term.tty.jobInForeground) ||
+      term.stdinPassthrough ||
+      term.rawModeCallback ||
+      term.userInputCallback ||
+      (typeof term.onAltScreen === "function" && term.onAltScreen()) ||
+      term.running ||
+      (tc.shell && tc.shell.inCommand > 0)
+    );
+  }
+
+  function sendRawInputToRealTabComputer(data) {
+    if (!data) return false;
+    const tc = bridgeState.tc;
+    if (!tc || !tc.terminal || typeof tc.terminal.injectInput !== "function") return false;
+    try {
+      tc.terminal.injectInput(data);
+      setTimeout(syncXtermBufferToTabForms, 45);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function sendKeyEventToRealTabComputer(ev) {
+    if (!ev) return false;
+    let seq = null;
+    if (ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key && ev.key.length === 1) {
+      const code = ev.key.toUpperCase().charCodeAt(0);
+      if (code >= 65 && code <= 90) {
+        seq = String.fromCharCode(code - 64);
+      }
+    } else if (ev.key === "Enter") {
+      seq = "\r";
+    } else if (ev.key === "Backspace") {
+      seq = "\x7f";
+    } else if (ev.key === "Tab") {
+      seq = "\t";
+    } else if (ev.key === "ArrowUp") {
+      seq = "\x1b[A";
+    } else if (ev.key === "ArrowDown") {
+      seq = "\x1b[B";
+    } else if (ev.key === "ArrowRight") {
+      seq = "\x1b[C";
+    } else if (ev.key === "ArrowLeft") {
+      seq = "\x1b[D";
+    } else if (ev.key === "Home") {
+      seq = "\x1b[H";
+    } else if (ev.key === "End") {
+      seq = "\x1b[F";
+    } else if (ev.key === "Delete") {
+      seq = "\x1b[3~";
+    } else if (ev.key && ev.key.length === 1 && !ev.metaKey && !ev.ctrlKey) {
+      seq = ev.key;
+    }
+    if (!seq) return false;
+    const ok = sendRawInputToRealTabComputer(seq);
+    try {
+      if (bridgeState.liveXtermVisible && bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.term) {
+        bridgeState.tc.terminal.term.focus();
+      }
+    } catch (_) {}
+    return ok;
   }
 
   // ==========================================================================
@@ -981,8 +1128,9 @@
   }
 
   function sendCommandToRealTabComputer(tabId, cmdStr) {
-    const cmd = String(cmdStr || "").trim();
-    if (!cmd) return;
+    const rawStr = String(cmdStr === undefined || cmdStr === null ? "" : cmdStr);
+    const cmd = rawStr.trim();
+    if (!cmd && rawStr !== "\r" && rawStr !== "\n") return;
     bridgeState.activeTabFormId = tabId || bridgeState.activeTabFormId;
 
     ensureRealTabComputerBooted(bridgeState.activeTabFormId)
@@ -994,21 +1142,92 @@
           await syncWorldContextToRealFs(tc, tf);
         }
 
-        // If the terminal has an active stdin passthrough (e.g. interactive `claude` session),
-        // feed the line + CR directly into the PTY/passthrough; otherwise execute via terminal/shell!
-        if (tc.terminal && typeof tc.terminal.isPassthroughActive === "function" && tc.terminal.isPassthroughActive()) {
-          tc.terminal.term.paste(cmd + "\r");
-        } else if (tc.terminal && typeof tc.terminal.enterLine === "function") {
-          tc.terminal.enterLine(cmd);
+        const interactiveBusy = isForegroundTtyJobActive(tc);
+
+        // If the user just pressed Enter with an empty line while an interactive TTY job is running:
+        if (!cmd && interactiveBusy && tc.terminal && typeof tc.terminal.injectInput === "function") {
+          tc.terminal.injectInput("\r");
+          setTimeout(syncXtermBufferToTabForms, 60);
+          return;
+        }
+
+        // If an interactive TTY job (such as `claude`) is ALREADY running in the foreground:
+        if (interactiveBusy && tc.terminal && typeof tc.terminal.injectInput === "function") {
+          // 1. If the user typed `claude` (without `-p`/`--print`), Claude Code is already active!
+          //    Switch to the live interactive xterm TUI and focus it instead of spawning a non-TTY duplicate.
+          if (/^claude(\s+--npm|\s+--dangerously-skip-permissions)*$/i.test(cmd)) {
+            if (global.SlopesTabForms && global.SlopesTabForms.state) {
+              global.SlopesTabForms.state.preferPixelTerminalView = false;
+            }
+            try {
+              if (tc.terminal.fitAddon) tc.terminal.fitAddon.fit();
+              if (tc.terminal.term) tc.terminal.term.focus();
+            } catch (_) {}
+            setTimeout(syncXtermBufferToTabForms, 60);
+            return;
+          }
+
+          // 2. If the user clicked a Slopes 2 chassis actuator button (`body ...`, `tabctl ...`, `tentacle ...`)
+          //    while Claude Code is in the foreground, execute it directly on the Tab-Form chassis!
+          if (/^(body|tabctl|tentacle)\b/.test(cmd) && tf && tf.shell && typeof tf.shell.execute === "function") {
+            tf.shell.execute(cmd);
+            return;
+          }
+
+          // 3. Otherwise, stream the user's prompt/input directly into the foreground interactive TTY (`claude`)!
+          //    Send text first, then `\r` on the next tick so Ink / Claude Code submits it as Enter rather than multiline paste.
+          tc.terminal.injectInput(cmd);
+          setTimeout(() => {
+            try {
+              tc.terminal.injectInput("\r");
+            } catch (_) {}
+            setTimeout(syncXtermBufferToTabForms, 60);
+          }, 30);
+          return;
+        }
+
+        // Shell is idle at the prompt: normalize bare `claude` to use `--npm --dangerously-skip-permissions`
+        tc.shell.env["CLAUDE_NATIVE"] = "0";
+        let runCmd = cmd;
+        if (runCmd === "claude") {
+          runCmd = "claude --npm --dangerously-skip-permissions";
+        } else if (/^claude\s+/.test(runCmd) && !runCmd.includes("--npm") && !runCmd.includes("--native") && !runCmd.includes("--vm")) {
+          runCmd = "claude --npm --dangerously-skip-permissions " + runCmd.slice(7);
+        }
+
+        if (/^claude\b/.test(runCmd) && global.SlopesTabForms && global.SlopesTabForms.state) {
+          global.SlopesTabForms.state.preferPixelTerminalView = false;
+        }
+
+        if (tc.terminal && tc.terminal.term) {
+          try {
+            if (tc.terminal.term.cols < 60 || tc.terminal.term.rows < 20) {
+              tc.terminal.term.resize(92, 28);
+            }
+            if (tc.terminal.tty && typeof tc.terminal.tty.resize === "function") {
+              tc.terminal.tty.resize(tc.terminal.term.rows || 28, tc.terminal.term.cols || 92);
+            }
+          } catch (_) {}
+        }
+
+        // Execute through ShiroTerminal (`injectInput`) so `handleInput -> runLine -> shell.execute`
+        // runs with `this.terminal = tc.terminal` and `tc.terminal.tty` attached (`stdinIsTTY=true, stdoutIsTTY=true`)!
+        if (tc.terminal && typeof tc.terminal.injectInput === "function") {
+          tc.terminal.lineBuffer = "";
+          tc.terminal.cursorPos = 0;
+          tc.terminal.injectInput(runCmd + "\r");
         } else if (tc.shell) {
           await tc.shell.execute(
-            cmd,
+            runCmd,
             (out) => {
               if (tc.terminal) tc.terminal.writeOutput(out.replace(/\n/g, "\r\n"));
             },
             (err) => {
               if (tc.terminal) tc.terminal.writeOutput(err.replace(/\n/g, "\r\n"));
-            }
+            },
+            false,
+            tc.terminal,
+            false
           );
         }
         setTimeout(syncXtermBufferToTabForms, 60);
@@ -1017,46 +1236,75 @@
   }
 
   function setLiveXtermVisible(visible, rectPx) {
-    bridgeState.liveXtermVisible = Boolean(visible);
+    const nextVis = Boolean(visible);
+    const wasVis = Boolean(bridgeState.liveXtermVisible);
+    bridgeState.liveXtermVisible = nextVis;
     const iframe = bridgeState.iframe;
     if (!iframe) return;
 
-    if (!bridgeState.liveXtermVisible) {
-      iframe.style.left = "-9999px";
-      iframe.style.top = "-9999px";
-      iframe.style.opacity = "0";
-      iframe.style.pointerEvents = "none";
+    if (!nextVis) {
+      if (wasVis || iframe.style.opacity !== "0") {
+        iframe.style.left = "-9999px";
+        iframe.style.top = "-9999px";
+        iframe.style.opacity = "0";
+        iframe.style.pointerEvents = "none";
+      }
       return;
     }
 
     // Position the real xterm.js iframe directly inside the Hardcore-Tab terminal viewport!
     const screenDiv = document.getElementById("screen");
+    let nextLeft = "6%";
+    let nextTop = "14%";
+    let nextWidth = "68%";
+    let nextHeight = "68%";
     if (screenDiv && rectPx) {
       const sRect = screenDiv.getBoundingClientRect();
-      const scaleX = sRect.width / 1008;
-      const scaleY = sRect.height / 630;
-      iframe.style.left = Math.round(rectPx.x * scaleX) + "px";
-      iframe.style.top = Math.round(rectPx.y * scaleY) + "px";
-      iframe.style.width = Math.round(rectPx.w * scaleX) + "px";
-      iframe.style.height = Math.round(rectPx.h * scaleY) + "px";
-    } else {
-      iframe.style.left = "6%";
-      iframe.style.top = "14%";
-      iframe.style.width = "68%";
-      iframe.style.height = "68%";
+      const cssW = screenDiv.clientWidth || sRect.width || 1008;
+      const cssH = screenDiv.clientHeight || sRect.height || 630;
+      const refW = rectPx.canvasW || 1008;
+      const refH = rectPx.canvasH || 630;
+      const scaleX = cssW / refW;
+      const scaleY = cssH / refH;
+      nextLeft = Math.round(rectPx.x * scaleX) + "px";
+      nextTop = Math.round(rectPx.y * scaleY) + "px";
+      nextWidth = Math.max(240, Math.round(rectPx.w * scaleX)) + "px";
+      nextHeight = Math.max(140, Math.round(rectPx.h * scaleY)) + "px";
     }
-    iframe.style.opacity = "1";
-    iframe.style.pointerEvents = "auto";
-    try {
-      iframe.focus();
-      if (iframe.contentWindow) {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.postMessage({ type: "shiro-focus-terminal" }, "*");
+
+    const geomChanged =
+      iframe.style.left !== nextLeft ||
+      iframe.style.top !== nextTop ||
+      iframe.style.width !== nextWidth ||
+      iframe.style.height !== nextHeight ||
+      !wasVis;
+
+    if (geomChanged) {
+      iframe.style.left = nextLeft;
+      iframe.style.top = nextTop;
+      iframe.style.width = nextWidth;
+      iframe.style.height = nextHeight;
+      iframe.style.opacity = "1";
+      iframe.style.pointerEvents = "auto";
+      try {
         if (bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.fitAddon) {
           bridgeState.tc.terminal.fitAddon.fit();
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
+
+    if (!wasVis) {
+      try {
+        iframe.focus();
+        if (iframe.contentWindow) {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.postMessage({ type: "shiro-focus-terminal" }, "*");
+          if (bridgeState.tc && bridgeState.tc.terminal && bridgeState.tc.terminal.term) {
+            bridgeState.tc.terminal.term.focus();
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   // ==========================================================================
@@ -2799,10 +3047,17 @@
         "\x1b[96m→ Running real `@anthropic-ai/claude-code` inside TabComputer (`claude -p \"Confirm you are real Claude Code running in Slopes 2 and run body status\"`)...\x1b[0m"
       );
 
-      sendCommandToRealTabComputer(
-        tId,
-        'claude --npm --dangerously-skip-permissions -p "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."'
-      );
+      if (isForegroundTtyJobActive(tc)) {
+        sendCommandToRealTabComputer(
+          tId,
+          "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."
+        );
+      } else {
+        sendCommandToRealTabComputer(
+          tId,
+          'claude --npm --dangerously-skip-permissions -p "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."'
+        );
+      }
       setTimeout(syncXtermBufferToTabForms, 250);
     } catch (err) {
       logLine(`\x1b[91m✗ Verification error: ${err.message || String(err)}\x1b[0m`);
@@ -2820,6 +3075,9 @@
     activateRealModeForTabForm,
     deactivateRealModeForTabForm,
     sendCommandToRealTabComputer,
+    isForegroundTtyJobActive,
+    sendRawInputToRealTabComputer,
+    sendKeyEventToRealTabComputer,
     setLiveXtermVisible,
     openClaudeSignInModal,
     openGitHubSignInModal,
