@@ -3949,30 +3949,40 @@
 
     // ----------------------------------------------------------------------
     // C. TOP-RIGHT HARDWARE PIXEL CONTROLS (`[◉ CAM]` & `[DAT-307 CODEX]`)
+    // Hide when Tab-Form Terminal Window or Claude Sign-In Modal is open so
+    // they NEVER obscure or steal clicks from the top-bar [SIGN IN CLAUDE] button!
     // ----------------------------------------------------------------------
     datPuterState.topHudHitBoxes = [];
-    const topY = 6;
-    const btnH = lineH + 4; // 30 device pixels tall (matches top-left Hardcore hairline bar!)
+    const termOrModalOpen = Boolean(
+      (global.SlopesTabForms && global.SlopesTabForms.state && global.SlopesTabForms.state.terminalOpen) ||
+        (global.RealTabComputerBridge &&
+          global.RealTabComputerBridge.state &&
+          global.RealTabComputerBridge.state.modalOpen)
+    );
+    if (!termOrModalOpen || datPuterState.open) {
+      const topY = 6;
+      const btnH = lineH + 4; // 30 device pixels tall (matches top-left Hardcore hairline bar!)
 
-    const datLabel = datPuterState.open ? "*DAT-307 [B]" : "DAT-307 [B]";
-    const datW = datLabel.length * charW + 14;
-    const datX = devW - datW - 6;
-    const datBrd = datPuterState.open ? "#f4d03f" : "#2f5f72";
-    const datFg = datPuterState.open ? "#ffe066" : "#a9dde8";
-    R.drawHairlineRect(ctx, datX, topY, datW, btnH, datBrd, null);
-    R.drawCanvasText(ctx, datLabel, datX + 7, topY + 2, datFg, fontKey, 1, 0);
-    datPuterState.topHudHitBoxes.push({ action: "toggle-dat", x: datX, y: topY, w: datW, h: btnH });
+      const datLabel = datPuterState.open ? "*DAT-307 [B]" : "DAT-307 [B]";
+      const datW = datLabel.length * charW + 14;
+      const datX = devW - datW - 6;
+      const datBrd = datPuterState.open ? "#f4d03f" : "#2f5f72";
+      const datFg = datPuterState.open ? "#ffe066" : "#a9dde8";
+      R.drawHairlineRect(ctx, datX, topY, datW, btnH, datBrd, null);
+      R.drawCanvasText(ctx, datLabel, datX + 7, topY + 2, datFg, fontKey, 1, 0);
+      datPuterState.topHudHitBoxes.push({ action: "toggle-dat", x: datX, y: topY, w: datW, h: btnH });
 
-    const eyeDbg = webcamState.rawEyeDetected || webcamState.manualEyesClosed || webcamState.eyesClosed;
-    const smileDbg = webcamState.rawSmileDetected || webcamState.smiling;
-    const camWord = "C" + (eyeDbg ? "a" : "A") + (smileDbg ? "m" : "M");
-    const camLabel = "◉ " + camWord;
-    const camW = camLabel.length * charW + 14;
-    const camX = datX - camW - 6;
-    const camBrd = webcamState.active ? "#69db7c" : "#2f5f72";
-    R.drawHairlineRect(ctx, camX, topY, camW, btnH, camBrd, null);
-    R.drawCanvasText(ctx, camLabel, camX + 7, topY + 2, camBrd, fontKey, 1, 0);
-    datPuterState.topHudHitBoxes.push({ action: "toggle-cam", x: camX, y: topY, w: camW, h: btnH });
+      const eyeDbg = webcamState.rawEyeDetected || webcamState.manualEyesClosed || webcamState.eyesClosed;
+      const smileDbg = webcamState.rawSmileDetected || webcamState.smiling;
+      const camWord = "C" + (eyeDbg ? "a" : "A") + (smileDbg ? "m" : "M");
+      const camLabel = "◉ " + camWord;
+      const camW = camLabel.length * charW + 14;
+      const camX = datX - camW - 6;
+      const camBrd = webcamState.active ? "#69db7c" : "#2f5f72";
+      R.drawHairlineRect(ctx, camX, topY, camW, btnH, camBrd, null);
+      R.drawCanvasText(ctx, camLabel, camX + 7, topY + 2, camBrd, fontKey, 1, 0);
+      datPuterState.topHudHitBoxes.push({ action: "toggle-cam", x: camX, y: topY, w: camW, h: btnH });
+    }
 
     // ----------------------------------------------------------------------
     // D. `DAT-307` LUNAR ARCHIVAL DATAPUTER E-READER MODAL (When Open)
@@ -4482,7 +4492,11 @@
           (ev.target && ev.target.id === "hardcore-claude-signin-canvas") ||
           (global.RealTabComputerBridge &&
             global.RealTabComputerBridge.state &&
-            global.RealTabComputerBridge.state.modalOpen)
+            global.RealTabComputerBridge.state.modalOpen) ||
+          (!datPuterState.open &&
+            global.SlopesTabForms &&
+            global.SlopesTabForms.state &&
+            global.SlopesTabForms.state.terminalOpen)
         ) {
           return;
         }

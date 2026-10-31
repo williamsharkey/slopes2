@@ -1380,6 +1380,63 @@
   let modalInputBuf = "";
   let modalHitBoxes = [];
   let modalHoverAction = null;
+  let modalOauthAnchor = null;
+
+  // Pre-warm a PKCE session immediately so Step 1 has a synchronous URL ready on iOS Safari
+  if (typeof window !== "undefined" && window.crypto && window.crypto.subtle) {
+    void createPkceSession().catch(() => {});
+  }
+
+  function syncModalOauthAnchor(step1Box, cssLeft, cssTop, dpr) {
+    if (typeof document === "undefined") return;
+    if (!bridgeState.modalOpen || !step1Box || !bridgeState.pkcePending || !bridgeState.pkcePending.url) {
+      if (modalOauthAnchor) modalOauthAnchor.style.display = "none";
+      return;
+    }
+    if (!modalOauthAnchor) {
+      modalOauthAnchor = document.createElement("a");
+      modalOauthAnchor.id = "slopes2-claude-oauth-anchor";
+      modalOauthAnchor.target = "_blank";
+      modalOauthAnchor.rel = "noopener noreferrer";
+      modalOauthAnchor.setAttribute("aria-label", "1. Open claude.com Sign-In Page");
+      modalOauthAnchor.style.cssText = [
+        "position:fixed",
+        "z-index:10000",
+        "display:block",
+        "background:rgba(255,212,59,0.001)",
+        "cursor:pointer",
+        "touch-action:manipulation",
+        "-webkit-tap-highlight-color:rgba(255,212,59,0.25)",
+        "text-decoration:none",
+      ].join(";");
+      modalOauthAnchor.addEventListener("pointerenter", () => {
+        if (modalHoverAction !== "oauth_open") {
+          modalHoverAction = "oauth_open";
+          renderClaudeSignInCanvas();
+        }
+      });
+      modalOauthAnchor.addEventListener("pointerleave", () => {
+        if (modalHoverAction === "oauth_open") {
+          modalHoverAction = null;
+          renderClaudeSignInCanvas();
+        }
+      });
+      modalOauthAnchor.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (global.SlopesAudio && global.SlopesAudio.playClick) {
+          global.SlopesAudio.playClick(true);
+        }
+        setModalStatus("Opened claude.com! Authorize, copy code#state, and tap [PASTE] below.", "#69db7c");
+      });
+      document.body.appendChild(modalOauthAnchor);
+    }
+    modalOauthAnchor.href = bridgeState.pkcePending.url;
+    modalOauthAnchor.style.display = "block";
+    modalOauthAnchor.style.left = Math.round(cssLeft + step1Box.x / dpr) + "px";
+    modalOauthAnchor.style.top = Math.round(cssTop + step1Box.y / dpr) + "px";
+    modalOauthAnchor.style.width = Math.max(48, Math.round(step1Box.w / dpr)) + "px";
+    modalOauthAnchor.style.height = Math.max(48, Math.round(step1Box.h / dpr)) + "px";
+  }
 
   function setModalStatus(msg, color) {
     bridgeState.modalStatusText = msg || "";
@@ -1388,13 +1445,34 @@
   }
 
   function renderClaudeSignInCanvas() {
-    if (!modalCanvas || !bridgeState.modalOpen) return;
+    if (!modalCanvas || !bridgeState.modalOpen) {
+      if (modalOauthAnchor) modalOauthAnchor.style.display = "none";
+      return;
+    }
     const HT = global.HardcoreTab;
     if (!HT || !HT.HardcoreTabRenderer) return;
     const dpr = Math.max(1, global.devicePixelRatio || 1);
-    const parent = modalCanvas.parentElement || document.body;
-    const cssW = Math.min(740, Math.max(320, (parent.clientWidth || 740) - 16));
-    const cssH = Math.min(520, Math.max(340, (parent.clientHeight || 520) - 16));
+    const vv = global.visualViewport;
+    const vw = Math.round(vv ? vv.width : global.innerWidth || 740);
+    const vh = Math.round(vv ? vv.height : global.innerHeight || 520);
+    const isMobileTouch =
+      vw < 768 ||
+      vh < 560 ||
+      Boolean(global.matchMedia && global.matchMedia("(pointer: coarse)").matches);
+
+    // Ensure modal fits cleanly below the top bar (`top >= 38px`) on mobile iOS Safari & desktop
+    const topSafeMargin = isMobileTouch ? 38 : 42;
+    const cssW = Math.min(740, Math.max(300, vw - 12));
+    const cssH = isMobileTouch
+      ? Math.min(440, Math.max(300, vh - topSafeMargin - 10))
+      : Math.min(520, Math.max(350, vh - topSafeMargin - 16));
+    const cssLeft = Math.max(6, Math.round((vw - cssW) * 0.5));
+    const cssTop = Math.max(topSafeMargin, Math.round(topSafeMargin + (vh - topSafeMargin - cssH) * 0.35));
+
+    modalCanvas.style.left = cssLeft + "px";
+    modalCanvas.style.top = cssTop + "px";
+    modalCanvas.style.transform = "none";
+
     const devW = Math.round(cssW * dpr);
     const devH = Math.round(cssH * dpr);
     if (modalCanvas.width !== devW || modalCanvas.height !== devH) {
@@ -1408,113 +1486,171 @@
     ctx.imageSmoothingEnabled = false;
 
     const font = HT.HardcoreTabRenderer.getFont("h12x26");
-    const cw = font.w || 12;
-    const ch = font.h || 26;
+    const baseCw = font.w || 12;
+    const baseCh = font.h || 26;
+    // Scale up bitmap font & buttons on high-DPR mobile iOS Safari so buttons are big & easy to tap!
+    const btnScale = isMobileTouch && dpr >= 2 ? 2 : 1;
+    const hdrScale = isMobileTouch && dpr >= 3 ? 2 : 1;
+    const cw = baseCw * hdrScale;
+    const ch = baseCh * hdrScale;
+    const btnCw = baseCw * btnScale;
+    const btnCh = baseCh * btnScale;
     modalHitBoxes = [];
 
     // Outer obsidian/amber TUI terminal frame
     ctx.fillStyle = "rgba(4, 9, 13, 0.98)";
     ctx.fillRect(0, 0, devW, devH);
     ctx.strokeStyle = "#ffd43b";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, devW - 1, devH - 1);
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
+    ctx.strokeRect(1, 1, devW - 2, devH - 2);
     ctx.strokeStyle = "#3b2c0a";
-    ctx.strokeRect(2.5, 2.5, devW - 5, devH - 5);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(4, 4, devW - 8, devH - 8);
 
     // Header bar
-    const hdrH = ch + 10;
+    const hdrH = Math.max(ch + 14, Math.round((isMobileTouch ? 42 : 34) * dpr));
     ctx.fillStyle = "#141005";
-    ctx.fillRect(3, 3, devW - 6, hdrH);
+    ctx.fillRect(4, 4, devW - 8, hdrH);
     ctx.fillStyle = "#ffd43b";
-    ctx.fillRect(3, 3 + hdrH, devW - 6, 1);
+    ctx.fillRect(4, 4 + hdrH, devW - 8, Math.max(1, Math.round(dpr * 0.75)));
 
-    const targetId = bridgeState.modalTargetTabId || "TAB-01";
-    const kernelBadge = bridgeState.booted ? "TABCOMPUTER ONLINE" : "TABCOMPUTER BOOTING...";
-    HT.HardcoreTabRenderer.drawCanvasText(
-      ctx,
-      `╔═ HARDCORE-TAB // CLAUDE & GITHUB SIGN-IN (${targetId} · ${kernelBadge}) ═╗`,
-      12,
-      8,
-      "#ffd43b",
-      "h12x26"
-    );
-
-    // Close [ESC X] button
-    const closeLabel = "[ESC X]";
-    const closeW = closeLabel.length * cw + 14;
+    // Close [ESC X] button in top-right (generous touch target on mobile)
+    const closeLabel = isMobileTouch ? "[ CLOSE X ]" : "[ESC X]";
+    const closeW = Math.max(closeLabel.length * btnCw + 20, Math.round(88 * dpr));
+    const closeH = Math.max(btnCh + 8, hdrH - 8);
     const closeX = devW - closeW - 10;
-    const closeY = 6;
-    const closeH = ch + 4;
-    ctx.fillStyle = modalHoverAction === "close" ? "#2d1014" : "#180b0e";
+    const closeY = 4 + Math.round((hdrH - closeH) * 0.5);
+    ctx.fillStyle = modalHoverAction === "close" ? "#3b1218" : "#220c10";
     ctx.fillRect(closeX, closeY, closeW, closeH);
     ctx.strokeStyle = "#ff8787";
+    ctx.lineWidth = Math.max(1, Math.round(dpr * 0.75));
     ctx.strokeRect(closeX + 0.5, closeY + 0.5, closeW - 1, closeH - 1);
-    HT.HardcoreTabRenderer.drawCanvasText(ctx, closeLabel, closeX + 7, closeY + 2, "#ff8787", "h12x26");
-    modalHitBoxes.push({ x: closeX, y: closeY, w: closeW, h: closeH, action: "close" });
+    const closeTxtX = closeX + Math.max(6, Math.round((closeW - closeLabel.length * btnCw) * 0.5));
+    const closeTxtY = closeY + Math.max(2, Math.round((closeH - btnCh) * 0.5));
+    HT.HardcoreTabRenderer.drawCanvasText(ctx, closeLabel, closeTxtX, closeTxtY, "#ff8787", "h12x26", btnScale, 0);
+    modalHitBoxes.push({ x: closeX - 6, y: 0, w: closeW + 16, h: hdrH + 8, action: "close" });
 
-    let curY = hdrH + 10;
-    const boxX = 12;
-    const boxW = devW - 24;
+    const targetId = bridgeState.modalTargetTabId || "TAB-01";
+    const kernelBadge = bridgeState.booted ? "CC 2.1.316 READY" : "BOOTING VM...";
+    const rawHdrTitle = isMobileTouch
+      ? `CLAUDE SIGN-IN (${targetId})`
+      : `╔═ HARDCORE-TAB // CLAUDE & GITHUB SIGN-IN (${targetId} · ${kernelBadge}) ═╗`;
+    const maxHdrChars = Math.max(10, Math.floor((closeX - 20) / cw));
+    HT.HardcoreTabRenderer.drawCanvasText(
+      ctx,
+      rawHdrTitle.slice(0, maxHdrChars),
+      12,
+      4 + Math.max(2, Math.round((hdrH - ch) * 0.5)),
+      "#ffd43b",
+      "h12x26",
+      hdrScale,
+      0
+    );
+
+    const padX = Math.max(10, Math.round(8 * dpr));
+    const gapY = Math.max(8, Math.round(6 * dpr));
+    let curY = hdrH + gapY + 4;
+    const boxX = padX;
+    const boxW = devW - padX * 2;
 
     // ------------------------------------------------------------------------
     // STEP 1: AUTHORIZE WITH CLAUDE ACCOUNT (OAUTH S256 PKCE)
+    // Extra-large, full-width, high-contrast button on mobile iOS Safari!
     // ------------------------------------------------------------------------
-    const step1H = ch * 2 + 20;
+    const btn1H = Math.max(btnCh + 16, Math.round((isMobileTouch ? 54 : 40) * dpr));
+    const step1H = ch + btn1H + Math.round(18 * dpr);
     ctx.fillStyle = "#081318";
     ctx.fillRect(boxX, curY, boxW, step1H);
-    ctx.strokeStyle = "#2b5260";
+    ctx.strokeStyle = "#ffd43b";
+    ctx.lineWidth = Math.max(1, Math.round(dpr * 0.8));
     ctx.strokeRect(boxX + 0.5, curY + 0.5, boxW - 1, step1H - 1);
+
     const claudeHdr = bridgeState.signedInAccount
-      ? `STEP 1: CLAUDE ACCOUNT CONNECTED (${bridgeState.signedInAccount.email})`
+      ? `STEP 1: CONNECTED (${bridgeState.signedInAccount.email})`
+      : isMobileTouch
+      ? "STEP 1: TAP BUTTON BELOW TO SIGN IN ON CLAUDE.COM"
       : "STEP 1: AUTHORIZE WITH CLAUDE ACCOUNT (OAUTH S256 PKCE)";
+    const maxStepCols = Math.max(14, Math.floor((boxW - 20) / cw));
     HT.HardcoreTabRenderer.drawCanvasText(
       ctx,
-      claudeHdr,
+      claudeHdr.slice(0, maxStepCols),
       boxX + 10,
-      curY + 4,
+      curY + Math.round(5 * dpr),
       bridgeState.signedInAccount ? "#69db7c" : "#ffd43b",
-      "h12x26"
+      "h12x26",
+      hdrScale,
+      0
     );
 
     const btn1Label = bridgeState.signedInAccount
-      ? "[ 1. RE-AUTHORIZE CLAUDE.COM SIGN-IN -> ]"
+      ? isMobileTouch
+        ? "[ 1. RE-OPEN CLAUDE.COM -> ]"
+        : "[ 1. RE-AUTHORIZE CLAUDE.COM SIGN-IN -> ]"
+      : isMobileTouch
+      ? "[ 1. OPEN CLAUDE.COM SIGN-IN -> ]"
       : "[ 1. OPEN CLAUDE.COM SIGN-IN PAGE -> ]";
-    const btn1W = Math.min(boxW - 20, btn1Label.length * cw + 20);
-    const btn1X = boxX + 10;
-    const btn1Y = curY + ch + 8;
-    const btn1H = ch + 6;
-    ctx.fillStyle = modalHoverAction === "oauth_open" ? "#2b2208" : "#1a1405";
+    const btn1X = boxX + Math.round(8 * dpr);
+    const btn1Y = curY + ch + Math.round(8 * dpr);
+    const btn1W = boxW - Math.round(16 * dpr);
+    const btn1FitScale =
+      btn1Label.length * btnCw > btn1W - 12 ? Math.max(1, btnScale - 1) : btnScale;
+    const btn1DrawCw = baseCw * btn1FitScale;
+    const btn1DrawCh = baseCh * btn1FitScale;
+
+    ctx.fillStyle = modalHoverAction === "oauth_open" ? "#3d2f09" : "#281e05";
     ctx.fillRect(btn1X, btn1Y, btn1W, btn1H);
     ctx.strokeStyle = "#ffd43b";
-    ctx.strokeRect(btn1X + 0.5, btn1Y + 0.5, btn1W - 1, btn1H - 1);
-    HT.HardcoreTabRenderer.drawCanvasText(ctx, btn1Label, btn1X + 10, btn1Y + 3, "#ffd43b", "h12x26");
-    modalHitBoxes.push({ x: btn1X, y: btn1Y, w: btn1W, h: btn1H, action: "oauth_open" });
+    ctx.lineWidth = Math.max(2, Math.round(dpr * 1.2));
+    ctx.strokeRect(btn1X + 1, btn1Y + 1, btn1W - 2, btn1H - 2);
 
-    curY += step1H + 8;
+    const btn1TxtX = btn1X + Math.max(8, Math.round((btn1W - btn1Label.length * btn1DrawCw) * 0.5));
+    const btn1TxtY = btn1Y + Math.max(2, Math.round((btn1H - btn1DrawCh) * 0.5));
+    HT.HardcoreTabRenderer.drawCanvasText(
+      ctx,
+      btn1Label,
+      btn1TxtX,
+      btn1TxtY,
+      "#ffd43b",
+      "h12x26",
+      btn1FitScale,
+      0
+    );
+    const step1HitBox = { x: boxX, y: curY, w: boxW, h: step1H, action: "oauth_open" };
+    modalHitBoxes.push(step1HitBox);
+    syncModalOauthAnchor(step1HitBox, cssLeft, cssTop, dpr);
+
+    curY += step1H + gapY;
 
     // ------------------------------------------------------------------------
     // STEP 2: PASTE CLAUDE CODE (code#state), API KEY (sk-ant-...), OR GH PAT
     // ------------------------------------------------------------------------
-    const step2H = ch * 3 + 32;
+    const inpH = Math.max(btnCh + 10, Math.round((isMobileTouch ? 42 : 34) * dpr));
+    const actH = Math.max(btnCh + 12, Math.round((isMobileTouch ? 46 : 36) * dpr));
+    const step2H = ch + inpH + actH + Math.round(24 * dpr);
     ctx.fillStyle = "#081318";
     ctx.fillRect(boxX, curY, boxW, step2H);
     ctx.strokeStyle = "#2b5260";
+    ctx.lineWidth = Math.max(1, Math.round(dpr * 0.75));
     ctx.strokeRect(boxX + 0.5, curY + 0.5, boxW - 1, step2H - 1);
+    const step2Hdr = isMobileTouch
+      ? "STEP 2: PASTE code#state FROM CLAUDE (OR sk-ant-...)"
+      : "STEP 2: PASTE CLAUDE CODE (code#state), API KEY (sk-ant-...), OR GH TOKEN";
     HT.HardcoreTabRenderer.drawCanvasText(
       ctx,
-      "STEP 2: PASTE CLAUDE CODE (code#state), API KEY (sk-ant-...), OR GH TOKEN",
+      step2Hdr.slice(0, maxStepCols),
       boxX + 10,
-      curY + 4,
+      curY + Math.round(4 * dpr),
       "#69db7c",
-      "h12x26"
+      "h12x26",
+      hdrScale,
+      0
     );
 
-    const pasteBtnLabel = "[PASTE]";
-    const pasteBtnW = pasteBtnLabel.length * cw + 16;
-    const inpX = boxX + 10;
-    const inpY = curY + ch + 8;
-    const inpW = boxW - 28 - pasteBtnW;
-    const inpH = ch + 6;
+    const pasteBtnLabel = isMobileTouch ? "[ PASTE ]" : "[PASTE]";
+    const pasteBtnW = Math.max(pasteBtnLabel.length * btnCw + 20, Math.round(96 * dpr));
+    const inpX = boxX + Math.round(8 * dpr);
+    const inpY = curY + ch + Math.round(6 * dpr);
+    const inpW = Math.max(Math.round(120 * dpr), boxW - Math.round(22 * dpr) - pasteBtnW);
     ctx.fillStyle = "#03070a";
     ctx.fillRect(inpX, inpY, inpW, inpH);
     ctx.strokeStyle = "#78ead4";
@@ -1522,94 +1658,126 @@
     const maxChars = Math.max(10, Math.floor((inpW - 16) / cw));
     const shownInput = modalInputBuf
       ? modalInputBuf.slice(-maxChars) + "█"
+      : isMobileTouch
+      ? "Tap here or [PASTE] to insert code#state..."
       : "Press Ctrl+V / Cmd+V or click [PASTE] to insert code#state or token...";
     HT.HardcoreTabRenderer.drawCanvasText(
       ctx,
-      shownInput,
+      shownInput.slice(0, maxChars),
       inpX + 8,
-      inpY + 3,
+      inpY + Math.max(2, Math.round((inpH - ch) * 0.5)),
       modalInputBuf ? "#ffffff" : "#527a84",
-      "h12x26"
+      "h12x26",
+      hdrScale,
+      0
     );
+    modalHitBoxes.push({ x: inpX, y: inpY, w: inpW, h: inpH, action: "paste_clip" });
 
-    const pasteX = inpX + inpW + 8;
+    const pasteX = inpX + inpW + Math.round(6 * dpr);
     ctx.fillStyle = modalHoverAction === "paste_clip" ? "#16343c" : "#0c2028";
     ctx.fillRect(pasteX, inpY, pasteBtnW, inpH);
     ctx.strokeStyle = "#78ead4";
     ctx.strokeRect(pasteX + 0.5, inpY + 0.5, pasteBtnW - 1, inpH - 1);
-    HT.HardcoreTabRenderer.drawCanvasText(ctx, pasteBtnLabel, pasteX + 8, inpY + 3, "#78ead4", "h12x26");
+    const pasteTxtX = pasteX + Math.max(6, Math.round((pasteBtnW - pasteBtnLabel.length * btnCw) * 0.5));
+    const pasteTxtY = inpY + Math.max(2, Math.round((inpH - btnCh) * 0.5));
+    HT.HardcoreTabRenderer.drawCanvasText(ctx, pasteBtnLabel, pasteTxtX, pasteTxtY, "#78ead4", "h12x26", btnScale, 0);
     modalHitBoxes.push({ x: pasteX, y: inpY, w: pasteBtnW, h: inpH, action: "paste_clip" });
 
-    const actY = inpY + inpH + 6;
-    const actH = ch + 6;
-    const completeLabel = "[ 2. SIGN IN & LAUNCH CLAUDE CODE ]";
-    const completeW = completeLabel.length * cw + 18;
+    const actY = inpY + inpH + Math.round(6 * dpr);
+    const completeLabel = isMobileTouch
+      ? "[ 2. SIGN IN & LAUNCH CLAUDE ]"
+      : "[ 2. SIGN IN & LAUNCH CLAUDE CODE ]";
+    const completeW = boxW - Math.round(16 * dpr);
+    const compFitScale =
+      completeLabel.length * btnCw > completeW - 12 ? Math.max(1, btnScale - 1) : btnScale;
+    const compCw = baseCw * compFitScale;
+    const compCh = baseCh * compFitScale;
     ctx.fillStyle = modalHoverAction === "complete_login" ? "#143c2c" : "#0b241a";
     ctx.fillRect(inpX, actY, completeW, actH);
     ctx.strokeStyle = "#69db7c";
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
     ctx.strokeRect(inpX + 0.5, actY + 0.5, completeW - 1, actH - 1);
-    HT.HardcoreTabRenderer.drawCanvasText(ctx, completeLabel, inpX + 9, actY + 3, "#69db7c", "h12x26");
+    const compTxtX = inpX + Math.max(8, Math.round((completeW - completeLabel.length * compCw) * 0.5));
+    const compTxtY = actY + Math.max(2, Math.round((actH - compCh) * 0.5));
+    HT.HardcoreTabRenderer.drawCanvasText(ctx, completeLabel, compTxtX, compTxtY, "#69db7c", "h12x26", compFitScale, 0);
     modalHitBoxes.push({ x: inpX, y: actY, w: completeW, h: actH, action: "complete_login" });
 
-    curY += step2H + 8;
+    curY += step2H + gapY;
 
     // ------------------------------------------------------------------------
     // STEP 3: CONNECT GITHUB ACCOUNT (OAUTH DEVICE FLOW FOR `gh` & `git`)
     // ------------------------------------------------------------------------
-    const step3H = ch * 2 + 22;
-    ctx.fillStyle = "#081318";
-    ctx.fillRect(boxX, curY, boxW, step3H);
-    ctx.strokeStyle = bridgeState.githubAccount ? "#69db7c" : "#78ead4";
-    ctx.strokeRect(boxX + 0.5, curY + 0.5, boxW - 1, step3H - 1);
+    const ghBtnH = Math.max(btnCh + 10, Math.round((isMobileTouch ? 42 : 34) * dpr));
+    const step3H = ch + ghBtnH + Math.round(16 * dpr);
+    if (curY + step3H < devH - ch - 4) {
+      ctx.fillStyle = "#081318";
+      ctx.fillRect(boxX, curY, boxW, step3H);
+      ctx.strokeStyle = bridgeState.githubAccount ? "#69db7c" : "#78ead4";
+      ctx.strokeRect(boxX + 0.5, curY + 0.5, boxW - 1, step3H - 1);
 
-    const ghPending = bridgeState.githubDevicePending;
-    const ghHeaderText = bridgeState.githubAccount
-      ? `STEP 3: GITHUB CONNECTED AS @${bridgeState.githubAccount.login} (gh & git READY)`
-      : ghPending && ghPending.user_code
-      ? `STEP 3: GITHUB CODE [ ${ghPending.user_code} ] — APPROVE AT github.com/login/device`
-      : "STEP 3: CONNECT GITHUB ACCOUNT (TABCOMPUTER gh & git CREDENTIAL)";
-    HT.HardcoreTabRenderer.drawCanvasText(
-      ctx,
-      ghHeaderText,
-      boxX + 10,
-      curY + 4,
-      bridgeState.githubAccount ? "#69db7c" : ghPending ? "#ffd43b" : "#78ead4",
-      "h12x26"
-    );
+      const ghPending = bridgeState.githubDevicePending;
+      const ghHeaderText = bridgeState.githubAccount
+        ? `STEP 3: GITHUB CONNECTED AS @${bridgeState.githubAccount.login} (gh & git READY)`
+        : ghPending && ghPending.user_code
+        ? `STEP 3: CODE [ ${ghPending.user_code} ] — APPROVE AT github.com/login/device`
+        : "STEP 3: CONNECT GITHUB ACCOUNT (TABCOMPUTER gh & git)";
+      HT.HardcoreTabRenderer.drawCanvasText(
+        ctx,
+        ghHeaderText.slice(0, maxStepCols),
+        boxX + 10,
+        curY + Math.round(4 * dpr),
+        bridgeState.githubAccount ? "#69db7c" : ghPending ? "#ffd43b" : "#78ead4",
+        "h12x26",
+        hdrScale,
+        0
+      );
 
-    const ghBtnLabel = bridgeState.githubAccount
-      ? `[ GITHUB SIGNED IN (@${bridgeState.githubAccount.login}) · RECONNECT ]`
-      : ghPending && ghPending.user_code
-      ? `[ COPY CODE (${ghPending.user_code}) & OPEN GITHUB.COM/LOGIN/DEVICE -> ]`
-      : "[ 3. SIGN IN W/ GITHUB (DEVICE FLOW FOR gh & git) -> ]";
-    const ghBtnW = Math.min(boxW - 20, ghBtnLabel.length * cw + 20);
-    const ghBtnX = boxX + 10;
-    const ghBtnY = curY + ch + 8;
-    const ghBtnH = ch + 6;
-    ctx.fillStyle = modalHoverAction === "github_device_login" ? "#16343c" : "#0c2028";
-    ctx.fillRect(ghBtnX, ghBtnY, ghBtnW, ghBtnH);
-    ctx.strokeStyle = bridgeState.githubAccount ? "#69db7c" : "#78ead4";
-    ctx.strokeRect(ghBtnX + 0.5, ghBtnY + 0.5, ghBtnW - 1, ghBtnH - 1);
-    HT.HardcoreTabRenderer.drawCanvasText(
-      ctx,
-      ghBtnLabel,
-      ghBtnX + 10,
-      ghBtnY + 3,
-      bridgeState.githubAccount ? "#69db7c" : "#78ead4",
-      "h12x26"
-    );
-    modalHitBoxes.push({ x: ghBtnX, y: ghBtnY, w: ghBtnW, h: ghBtnH, action: "github_device_login" });
+      const ghBtnLabel = bridgeState.githubAccount
+        ? `[ GITHUB SIGNED IN (@${bridgeState.githubAccount.login}) · RECONNECT ]`
+        : ghPending && ghPending.user_code
+        ? `[ COPY (${ghPending.user_code}) & OPEN GITHUB.COM -> ]`
+        : isMobileTouch
+        ? "[ 3. SIGN IN W/ GITHUB (gh & git) -> ]"
+        : "[ 3. SIGN IN W/ GITHUB (DEVICE FLOW FOR gh & git) -> ]";
+      const ghBtnX = boxX + Math.round(8 * dpr);
+      const ghBtnY = curY + ch + Math.round(6 * dpr);
+      const ghBtnW = boxW - Math.round(16 * dpr);
+      const ghFitScale =
+        ghBtnLabel.length * btnCw > ghBtnW - 12 ? Math.max(1, btnScale - 1) : btnScale;
+      const ghCw = baseCw * ghFitScale;
+      const ghCh = baseCh * ghFitScale;
+      ctx.fillStyle = modalHoverAction === "github_device_login" ? "#16343c" : "#0c2028";
+      ctx.fillRect(ghBtnX, ghBtnY, ghBtnW, ghBtnH);
+      ctx.strokeStyle = bridgeState.githubAccount ? "#69db7c" : "#78ead4";
+      ctx.strokeRect(ghBtnX + 0.5, ghBtnY + 0.5, ghBtnW - 1, ghBtnH - 1);
+      const ghTxtX = ghBtnX + Math.max(8, Math.round((ghBtnW - ghBtnLabel.length * ghCw) * 0.5));
+      const ghTxtY = ghBtnY + Math.max(2, Math.round((ghBtnH - ghCh) * 0.5));
+      HT.HardcoreTabRenderer.drawCanvasText(
+        ctx,
+        ghBtnLabel,
+        ghTxtX,
+        ghTxtY,
+        bridgeState.githubAccount ? "#69db7c" : "#78ead4",
+        "h12x26",
+        ghFitScale,
+        0
+      );
+      modalHitBoxes.push({ x: ghBtnX, y: ghBtnY, w: ghBtnW, h: ghBtnH, action: "github_device_login" });
 
-    curY += step3H + 8;
+      curY += step3H + Math.round(6 * dpr);
+    }
 
     // Status line
+    const statusStr = "╚═ STATUS: " + (bridgeState.modalStatusText || "Ready.");
     HT.HardcoreTabRenderer.drawCanvasText(
       ctx,
-      "╚═ STATUS: " + (bridgeState.modalStatusText || "Ready."),
+      statusStr.slice(0, maxStepCols + 2),
       14,
-      curY,
+      Math.min(curY, devH - ch - 4),
       bridgeState.modalStatusColor || "#78ead4",
-      "h12x26"
+      "h12x26",
+      hdrScale,
+      0
     );
   }
 
@@ -1623,23 +1791,39 @@
     bridgeState.modalOpen = true;
 
     void ensureRealTabComputerBooted(targetId).catch(() => {});
+    // Ensure a fresh PKCE session is ready immediately so Step 1 opens synchronously on iOS Safari
+    if (!bridgeState.pkcePending || !bridgeState.pkcePending.url || Date.now() - (bridgeState.pkcePending.startedAt || 0) > 600000) {
+      void createPkceSession()
+        .then(() => {
+          if (bridgeState.modalOpen) renderClaudeSignInCanvas();
+        })
+        .catch(() => {});
+    }
 
     if (typeof document === "undefined") return;
-    const screenDiv = document.getElementById("screen") || document.body;
 
     if (!modalCanvas) {
       modalCanvas = document.createElement("canvas");
       modalCanvas.id = "hardcore-claude-signin-canvas";
       modalCanvas.style.cssText = [
-        "position:absolute",
-        "left:50%",
-        "top:50%",
-        "transform:translate(-50%,-50%)",
-        "z-index:35",
+        "position:fixed",
+        "left:12px",
+        "top:42px",
+        "z-index:9999",
         "image-rendering:pixelated",
         "cursor:default",
+        "box-shadow:0 12px 38px rgba(0,0,0,0.82)",
+        "touch-action:manipulation",
       ].join(";");
-      screenDiv.appendChild(modalCanvas);
+      document.body.appendChild(modalCanvas);
+      window.addEventListener("resize", () => {
+        if (bridgeState.modalOpen) renderClaudeSignInCanvas();
+      });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => {
+          if (bridgeState.modalOpen) renderClaudeSignInCanvas();
+        });
+      }
 
       const getCanvasDevPos = (e) => {
         const rect = modalCanvas.getBoundingClientRect();
@@ -1685,27 +1869,48 @@
           closeClaudeSignInModal();
         } else if (hit === "oauth_open") {
           try {
-            setModalStatus("Generating S256 PKCE challenge & opening claude.com...", "#ffd43b");
-            const { url } = await createPkceSession();
-            window.open(url, "_blank", "noopener,noreferrer");
-            setModalStatus("Opened claude.com! Authorize and press Ctrl+V / [PASTE].", "#69db7c");
+            if (bridgeState.pkcePending && bridgeState.pkcePending.url) {
+              window.open(bridgeState.pkcePending.url, "_blank", "noopener,noreferrer");
+              setModalStatus("Opened claude.com! Authorize, copy code#state, and tap [PASTE].", "#69db7c");
+            } else {
+              setModalStatus("Generating S256 PKCE challenge & opening claude.com...", "#ffd43b");
+              const { url } = await createPkceSession();
+              window.open(url, "_blank", "noopener,noreferrer");
+              setModalStatus("Opened claude.com! Authorize and press Ctrl+V / [PASTE].", "#69db7c");
+            }
           } catch (err) {
             setModalStatus("Error starting PKCE: " + err.message, "#ff8787");
           }
         } else if (hit === "paste_clip") {
+          let pastedText = "";
           try {
             if (navigator.clipboard && navigator.clipboard.readText) {
               const clip = await navigator.clipboard.readText();
-              if (clip) {
-                modalInputBuf = clip.trim();
-                if (global.SlopesAudio && global.SlopesAudio.playDumbtermTypeClick) {
-                  global.SlopesAudio.playDumbtermTypeClick("V", 0);
-                }
-                renderClaudeSignInCanvas();
+              if (clip && clip.trim()) {
+                pastedText = clip.trim();
               }
             }
-          } catch (_) {
-            setModalStatus("Press Ctrl+V or Cmd+V on keyboard to paste code#state.", "#ffd43b");
+          } catch (_) {}
+          if (!pastedText && typeof window !== "undefined" && typeof window.prompt === "function") {
+            const entered = window.prompt(
+              "Paste the code#state from claude.com (or sk-ant-... API key / ghp_... token):",
+              modalInputBuf || ""
+            );
+            if (entered && entered.trim()) {
+              pastedText = entered.trim();
+            }
+          }
+          if (pastedText) {
+            modalInputBuf = pastedText;
+            if (global.SlopesAudio && global.SlopesAudio.playDumbtermTypeClick) {
+              global.SlopesAudio.playDumbtermTypeClick("V", 0);
+            }
+            renderClaudeSignInCanvas();
+            if (pastedText.includes("#") || pastedText.includes("code=") || pastedText.startsWith("sk-ant-")) {
+              void handleCompleteSignInClick();
+            }
+          } else {
+            setModalStatus("Paste code#state using [PASTE] or Cmd+V / Ctrl+V.", "#ffd43b");
           }
         } else if (hit === "complete_login") {
           void handleCompleteSignInClick();
@@ -1817,6 +2022,9 @@
     bridgeState.modalOpen = false;
     if (modalCanvas) {
       modalCanvas.style.display = "none";
+    }
+    if (modalOauthAnchor) {
+      modalOauthAnchor.style.display = "none";
     }
   }
 

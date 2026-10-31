@@ -148,20 +148,20 @@ body.fullscreen-mode #social-tui-canvas:hover{
   <canvas id="dlg-canvas"></canvas>
 </div>
 
-<script src="font.js?v=24"></script>
-<script src="audio.js?v=24"></script>
-<script src="sim/wasm_bridge.js?v=24"></script>
-<script src="sim/ecology_design.js?v=24"></script>
-<script src="sim/cosmic_engine.js?v=24"></script>
-<script src="sim/pentagonal_rotation.js?v=24"></script>
-<script src="sim/hardcore_tab.js?v=24"></script>
-<script src="sim/real_tabcomputer_bridge.js?v=24"></script>
-<script src="sim/tabform_lifeforms.js?v=24"></script>
-<script src="sim/genetic_flora_engine.js?v=24"></script>
-<script src="sim/parallax_dither_art.js?v=24"></script>
-<script src="slopes2.js?v=24"></script>
-<script src="sim/ai_interface.js?v=24"></script>
-<script src="sim/lore_portal_dock.js?v=24"></script>
+<script src="font.js?v=25"></script>
+<script src="audio.js?v=25"></script>
+<script src="sim/wasm_bridge.js?v=25"></script>
+<script src="sim/ecology_design.js?v=25"></script>
+<script src="sim/cosmic_engine.js?v=25"></script>
+<script src="sim/pentagonal_rotation.js?v=25"></script>
+<script src="sim/hardcore_tab.js?v=25"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=25"></script>
+<script src="sim/tabform_lifeforms.js?v=25"></script>
+<script src="sim/genetic_flora_engine.js?v=25"></script>
+<script src="sim/parallax_dither_art.js?v=25"></script>
+<script src="slopes2.js?v=25"></script>
+<script src="sim/ai_interface.js?v=25"></script>
+<script src="sim/lore_portal_dock.js?v=25"></script>
 <script>
 (() => {
   "use strict";
@@ -1273,18 +1273,33 @@ body.fullscreen-mode #social-tui-canvas:hover{
     socialState.hitBoxes.push({ id: "edit_name", x: curX, y: 0, w: nameBtnW, h: hdrH + 2 * p });
     curX += nameBtnW + 4 * p;
 
-    // 2. Tabs: [#GROUP] [@DM] [DRIFT]
+    // 2. Tabs: [#GROUP] [@DM] [DRIFT] + Direct [SIGN IN CLAUDE] button on right of header
+    const claudeSignedIn = Boolean(
+      window.RealTabComputerBridge &&
+        window.RealTabComputerBridge.state &&
+        window.RealTabComputerBridge.state.signedInAccount
+    );
+    const claudeBtnLbl = claudeSignedIn ? "CLAUDE OK" : "SIGN IN CLAUDE";
+    const claudeBtnW = measureBitmapText(claudeBtnLbl, fSmall, 1, 0) + 8 * p;
+    const claudeBtnX = W - claudeBtnW - 4 * p;
+    ctx.fillStyle = claudeSignedIn ? "rgba(12, 46, 30, 0.90)" : "rgba(48, 36, 8, 0.92)";
+    ctx.fillRect(claudeBtnX, 2 * p, claudeBtnW, hdrH - 2 * p);
+    ctx.strokeStyle = claudeSignedIn ? "#69db7c" : "#ffd43b";
+    ctx.strokeRect(claudeBtnX + 0.5, 2 * p + 0.5, claudeBtnW - 1, hdrH - 2 * p - 1);
+    drawBitmapText(ctx, claudeBtnLbl, claudeBtnX + 4 * p, hdrTextY, claudeSignedIn ? "#69db7c" : "#ffd43b", fSmall, 1, 0);
+    socialState.hitBoxes.push({ id: "open_claude_signin", x: claudeBtnX - 2 * p, y: 0, w: claudeBtnW + 6 * p, h: hdrH + 4 * p });
+
     const roster = getRosterEntries();
     const selPeer = roster.find((r) => r.id === socialState.selectedPeerId) || roster[0];
     const tabs = [
       { id: "group", label: "#GROUP" },
-      { id: "dm", label: selPeer ? `@DM:${selPeer.handle.slice(0, 13)}` : "@DM" },
-      { id: "drift", label: `DRIFT[${socialState.activeDriftFork.slice(0, 7)}]` },
+      { id: "dm", label: selPeer ? `@DM:${selPeer.handle.slice(0, 10)}` : "@DM" },
+      { id: "drift", label: `DRIFT[${socialState.activeDriftFork.slice(0, 6)}]` },
     ];
     tabs.forEach((tb) => {
       const active = socialState.activeTab === tb.id;
       const tw = measureBitmapText(tb.label, fSmall, 1, 0) + 8 * p;
-      if (curX + tw > W - 4 * p) return;
+      if (curX + tw > claudeBtnX - 4 * p) return;
       ctx.fillStyle = active ? "rgba(34, 82, 92, 0.85)" : "rgba(12, 28, 36, 0.65)";
       ctx.fillRect(curX, 2 * p, tw, hdrH - 2 * p);
       ctx.strokeStyle = active ? "#ffd43b" : "#284c56";
@@ -1451,6 +1466,15 @@ body.fullscreen-mode #social-tui-canvas:hover{
       for (let i = socialState.hitBoxes.length - 1; i >= 0; i--) {
         const hb = socialState.hitBoxes[i];
         if (px >= hb.x && px <= hb.x + hb.w && py >= hb.y && py <= hb.y + hb.h) {
+          if (hb.id === "open_claude_signin") {
+            if (
+              window.RealTabComputerBridge &&
+              typeof window.RealTabComputerBridge.openClaudeSignInModal === "function"
+            ) {
+              window.RealTabComputerBridge.openClaudeSignInModal("TAB-01");
+            }
+            return;
+          }
           if (hb.id === "edit_name") {
             if (isTouchMode) {
               const entered = window.prompt("Enter your handle (Claudes become <name>.cc.<selfname>):", socialState.username);

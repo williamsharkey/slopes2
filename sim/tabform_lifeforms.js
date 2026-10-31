@@ -10925,6 +10925,15 @@
     }
 
     // 2. Render Integrated Top 1:1 Device-Pixel Hairline Terminal Bar with Adaptive Transparency Breathing & Entity Dodging!
+    // When `state.terminalOpen` is true (or Claude Sign-In Modal is open), hide the background top-left tab strip
+    // so it NEVER overlaps or obscures the Terminal Window's top header bar (`[SIGN IN CLAUDE]`, `[ESC X]`)!
+    if (
+      state.terminalOpen ||
+      (global.RealTabComputerBridge && global.RealTabComputerBridge.state && global.RealTabComputerBridge.state.modalOpen)
+    ) {
+      state.tabStripHitBoxes = [];
+      return;
+    }
     state.hudBreathPhase = (state.hudBreathPhase || 0) + 0.022;
     const hudHovered = Boolean(state.hoveredTabId && state.tabStripHitBoxes.some((hb) => hb.id === state.hoveredTabId));
     // Breathe alpha between 0.24 and 0.88 from time to time so HUD works as a clean screensaver, snapping to 0.98 when hovered
@@ -11862,13 +11871,31 @@
     const charW = fontObj.w || 12;
     const lineH = fontObj.h || 26;
 
-    const winW = Math.max(480, Math.min(Math.round(canvasW * 0.94), canvasW - 16));
-    const winH = Math.max(320, Math.min(Math.round(canvasH * 0.90), canvasH - 16));
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    const cssW = canvasW / dpr;
+    const cssH = canvasH / dpr;
+    const isMobileTouch =
+      cssW < 760 ||
+      cssH < 360 ||
+      Boolean(typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+
+    const winW = isMobileTouch
+      ? Math.max(300, canvasW - Math.round(8 * dpr))
+      : Math.max(480, Math.min(Math.round(canvasW * 0.94), canvasW - 16));
+    const winH = isMobileTouch
+      ? Math.max(240, canvasH - Math.round(8 * dpr))
+      : Math.max(320, Math.min(Math.round(canvasH * 0.90), canvasH - 16));
     const winX = Math.round((canvasW - winW) / 2);
     const winY = Math.round((canvasH - winH) / 2);
 
-    const headerH = lineH + 8; // 34 device pixels
-    const btnH = lineH + 2;    // 28 device pixels
+    const topBtnScale = isMobileTouch && dpr >= 2 ? 2 : 1;
+    const topCharW = charW * topBtnScale;
+    const topLineH = lineH * topBtnScale;
+    const headerH = isMobileTouch
+      ? Math.max(topLineH + 14, Math.round(44 * dpr))
+      : lineH + 12;
+    const topBtnH = isMobileTouch ? headerH - 6 : lineH + 6;
+    const btnH = lineH + 2;    // 28 device pixels for dock rows
     const barH = lineH + 8;    // 34 device pixels
 
     // 1. Window Backdrop & 1-Device-Pixel Hairline Outer Frame
@@ -11879,8 +11906,8 @@
     const winBgRgba = `rgba(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]}, ${zoomAlpha.toFixed(2)})`;
     R.drawHairlineRect(ctx, winX, winY, winW, winH, previewTf.accentHex || "#78ead4", winBgRgba);
 
-    // 2. Top Window Title Band (`headerH` = 34 device pixels tall)
-    R.drawHairlineRect(ctx, winX, winY, winW, headerH, "#244854", "rgba(8, 22, 28, 0.60)");
+    // 2. Top Window Title Band (solid high-contrast background so nothing behind it ever obscures top-bar buttons!)
+    R.drawHairlineRect(ctx, winX, winY, winW, headerH, "#2b5868", "rgba(8, 22, 28, 0.96)");
     const isPreviewing = state.hoveredTabId && state.hoveredTabId !== state.selectedTabId;
     const bridge = global.RealTabComputerBridge;
     const tcBooted = Boolean(bridge && bridge.state && bridge.state.booted);
@@ -11893,111 +11920,158 @@
       previewTf.id === "TE-307"
         ? " [IN-WORLD MAINFRAME TUI]"
         : claudeAcct && tcBooted
-        ? ` [${socialHandle} · CLAUDE CODE v2.1.112 · API:${apiCalls}${lastApiStatus ? " " + lastApiStatus : ""}]`
+        ? ` [${socialHandle} · CLAUDE CODE v2.1.316 · API:${apiCalls}${lastApiStatus ? " " + lastApiStatus : ""}]`
         : tcBooted
         ? ` [${socialHandle} · TABCOMPUTER OS]`
         : ` [${socialHandle} · SIM-KERNEL]`;
-    const rawTitle = `HARDCORE-TAB // ${previewTf.id}: ${socialHandle}${modeTag}${isPreviewing ? " [PREVIEW]" : ""}`;
+    const rawTitle = isMobileTouch
+      ? `${previewTf.id}: ${socialHandle}`
+      : `HARDCORE-TAB // ${previewTf.id}: ${socialHandle}${modeTag}${isPreviewing ? " [PREVIEW]" : ""}`;
 
-    // Close `[ESC X]` button in top-right (proportioned for `h12x26`)
-    const closeLabel = "ESC X";
-    const closeBtnW = closeLabel.length * charW + 16;
+    // Close `[ESC X]` button in top-right (scaled up on mobile iOS Safari for easy tapping)
+    const closeLabel = isMobileTouch ? "CLOSE X" : "ESC X";
+    const closeBtnW = closeLabel.length * topCharW + (isMobileTouch ? 24 : 16);
     const closeBtnX = winX + winW - closeBtnW - 6;
-    const btnY = winY + 3;
-    R.drawHairlineRect(ctx, closeBtnX, btnY, closeBtnW, btnH, "#3a6874", "#10242c");
-    R.drawCanvasText(ctx, closeLabel, closeBtnX + 8, btnY + 1, "#ff8787", fontKey, 1, 0);
-    state.windowHitBoxes.push({ action: "close", x: closeBtnX, y: btnY, w: closeBtnW, h: btnH });
+    const btnY = winY + Math.max(2, Math.round((headerH - topBtnH) * 0.5));
+    R.drawHairlineRect(ctx, closeBtnX, btnY, closeBtnW, topBtnH, "#ff8787", "#1e0c10");
+    const closeTxtX = closeBtnX + Math.max(6, Math.round((closeBtnW - closeLabel.length * topCharW) * 0.5));
+    const closeTxtY = btnY + Math.max(1, Math.round((topBtnH - topLineH) * 0.5));
+    R.drawCanvasText(ctx, closeLabel, closeTxtX, closeTxtY, "#ff8787", fontKey, topBtnScale, 0);
+    // Extra-generous hit box for close
+    state.windowHitBoxes.push({ action: "close", x: closeBtnX - 4, y: winY, w: closeBtnW + 10, h: headerH + 4 });
 
     let leftMostBtnX = closeBtnX;
 
-    // Hardware `[SIGN IN CLAUDE]`, `[GITHUB SIGN-IN]`, and `[FORK & DRIFT]` buttons in top bar (`h12x26`)!
-    // Only the Hardcore-style `h12x26` device-pixel terminal view is ever shown (no xterm view!).
-    const loginLabel = claudeAcct ? "CLAUDE SIGNED IN" : "SIGN IN CLAUDE";
-    const loginW = loginLabel.length * charW + 16;
-    const loginX = leftMostBtnX - loginW - 6;
-    if (loginX > winX + 160) {
+    // Hardware `[SIGN IN CLAUDE]` button in top bar — ALWAYS visible, extra-large & unobstructed on mobile iOS Safari!
+    const loginLabel = claudeAcct
+      ? isMobileTouch
+        ? "CLAUDE OK"
+        : "CLAUDE SIGNED IN"
+      : isMobileTouch
+      ? "SIGN IN CLAUDE"
+      : "SIGN IN CLAUDE";
+    const loginW = Math.min(
+      Math.max(140, closeBtnX - winX - 24),
+      loginLabel.length * topCharW + (isMobileTouch ? 28 : 20)
+    );
+    const loginX = leftMostBtnX - loginW - (isMobileTouch ? 8 : 6);
+    if (loginX >= winX + 8) {
       R.drawHairlineRect(
         ctx,
         loginX,
         btnY,
         loginW,
-        btnH,
+        topBtnH,
         claudeAcct ? "#69db7c" : "#ffd43b",
-        claudeAcct ? "#092418" : "#261d06"
+        claudeAcct ? "#0b2e1e" : "#332607"
       );
-      R.drawCanvasText(ctx, loginLabel, loginX + 8, btnY + 1, claudeAcct ? "#69db7c" : "#ffd43b", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "login-claude", x: loginX, y: btnY, w: loginW, h: btnH });
+      const loginTxtX = loginX + Math.max(6, Math.round((loginW - loginLabel.length * topCharW) * 0.5));
+      const loginTxtY = btnY + Math.max(1, Math.round((topBtnH - topLineH) * 0.5));
+      R.drawCanvasText(
+        ctx,
+        loginLabel,
+        loginTxtX,
+        loginTxtY,
+        claudeAcct ? "#69db7c" : "#ffd43b",
+        fontKey,
+        topBtnScale,
+        0
+      );
+      // Generous full-height hit box for [SIGN IN CLAUDE] so mobile iOS Safari taps never miss
+      state.windowHitBoxes.push({
+        action: "login-claude",
+        x: loginX - 6,
+        y: winY,
+        w: loginW + 12,
+        h: headerH + 6,
+      });
       leftMostBtnX = loginX;
     }
 
-    const ghLabel = ghAcct ? `GH @${String(ghAcct.login || "git").slice(0, 8)}` : "GITHUB SIGN-IN";
-    const ghW = ghLabel.length * charW + 16;
-    const ghX = leftMostBtnX - ghW - 6;
-    if (ghX > winX + 160) {
-      R.drawHairlineRect(
-        ctx,
-        ghX,
-        btnY,
-        ghW,
-        btnH,
-        ghAcct ? "#69db7c" : "#78ead4",
-        ghAcct ? "#092418" : "#0a2228"
-      );
-      R.drawCanvasText(ctx, ghLabel, ghX + 8, btnY + 1, ghAcct ? "#69db7c" : "#78ead4", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "login-github", x: ghX, y: btnY, w: ghW, h: btnH });
-      leftMostBtnX = ghX;
-    }
-
-    const driftRepo = global.SlopesDrift && global.SlopesDrift.state && global.SlopesDrift.state.forkRepo;
-    const driftLabel = driftRepo ? `DRIFT: ${driftRepo.split("/")[0].slice(0, 7)}` : "FORK & DRIFT";
-    const driftW = driftLabel.length * charW + 16;
-    const driftX = leftMostBtnX - driftW - 6;
-    if (driftX > winX + 160) {
-      R.drawHairlineRect(
-        ctx,
-        driftX,
-        btnY,
-        driftW,
-        btnH,
-        driftRepo ? "#69db7c" : "#ffa94d",
-        driftRepo ? "#092418" : "#221608"
-      );
-      R.drawCanvasText(ctx, driftLabel, driftX + 8, btnY + 1, driftRepo ? "#69db7c" : "#ffa94d", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "fork-and-drift", x: driftX, y: btnY, w: driftW, h: btnH });
-      leftMostBtnX = driftX;
-    }
-
-    // Button in Terminal Header Bar to toggle between Embodied Terminal-Form Body ("monitor") and Compact Forms ("monolith"/"mecha"/"tree")!
-    if (previewTf && previewTf.id !== "TE-307") {
-      const isCompact = (previewTf.chassisForm || "monitor") !== "monitor";
-      const formBtnLbl = isCompact ? `TERM BODY (${(previewTf.chassisForm || "").toUpperCase()})` : "COMPACT FORM";
-      const formBtnW = formBtnLbl.length * charW + 14;
-      const formBtnX = leftMostBtnX - formBtnW - 6;
-      if (formBtnX > winX + 130) {
+    // Secondary top-bar buttons (`[GITHUB SIGN-IN]`, `[FORK & DRIFT]`, `[COMPACT FORM]`) only when wide enough (`!isMobileTouch`)
+    // so they never crowd or obscure `[SIGN IN CLAUDE]` on mobile iOS Safari!
+    if (!isMobileTouch) {
+      const ghLabel = ghAcct ? `GH @${String(ghAcct.login || "git").slice(0, 8)}` : "GITHUB SIGN-IN";
+      const ghW = ghLabel.length * charW + 16;
+      const ghX = leftMostBtnX - ghW - 6;
+      if (ghX > winX + 160) {
         R.drawHairlineRect(
           ctx,
-          formBtnX,
+          ghX,
           btnY,
-          formBtnW,
-          btnH,
-          isCompact ? "#ffd43b" : "#78ead4",
-          isCompact ? "#282008" : "#0a222a"
+          ghW,
+          topBtnH,
+          ghAcct ? "#69db7c" : "#78ead4",
+          ghAcct ? "#092418" : "#0a2228"
         );
-        R.drawCanvasText(ctx, formBtnLbl, formBtnX + 7, btnY + 1, isCompact ? "#ffd43b" : "#78ead4", fontKey, 1, 0);
-        state.windowHitBoxes.push({
-          action: "run-cmd",
-          cmd: "body form cycle",
-          x: formBtnX,
-          y: btnY,
-          w: formBtnW,
-          h: btnH,
-        });
-        leftMostBtnX = formBtnX;
+        R.drawCanvasText(ctx, ghLabel, ghX + 8, btnY + 3, ghAcct ? "#69db7c" : "#78ead4", fontKey, 1, 0);
+        state.windowHitBoxes.push({ action: "login-github", x: ghX, y: btnY, w: ghW, h: topBtnH });
+        leftMostBtnX = ghX;
+      }
+
+      const driftRepo = global.SlopesDrift && global.SlopesDrift.state && global.SlopesDrift.state.forkRepo;
+      const driftLabel = driftRepo ? `DRIFT: ${driftRepo.split("/")[0].slice(0, 7)}` : "FORK & DRIFT";
+      const driftW = driftLabel.length * charW + 16;
+      const driftX = leftMostBtnX - driftW - 6;
+      if (driftX > winX + 160) {
+        R.drawHairlineRect(
+          ctx,
+          driftX,
+          btnY,
+          driftW,
+          topBtnH,
+          driftRepo ? "#69db7c" : "#ffa94d",
+          driftRepo ? "#092418" : "#221608"
+        );
+        R.drawCanvasText(ctx, driftLabel, driftX + 8, btnY + 3, driftRepo ? "#69db7c" : "#ffa94d", fontKey, 1, 0);
+        state.windowHitBoxes.push({ action: "fork-and-drift", x: driftX, y: btnY, w: driftW, h: topBtnH });
+        leftMostBtnX = driftX;
+      }
+
+      if (previewTf && previewTf.id !== "TE-307") {
+        const isCompact = (previewTf.chassisForm || "monitor") !== "monitor";
+        const formBtnLbl = isCompact ? `TERM BODY (${(previewTf.chassisForm || "").toUpperCase()})` : "COMPACT FORM";
+        const formBtnW = formBtnLbl.length * charW + 14;
+        const formBtnX = leftMostBtnX - formBtnW - 6;
+        if (formBtnX > winX + 130) {
+          R.drawHairlineRect(
+            ctx,
+            formBtnX,
+            btnY,
+            formBtnW,
+            topBtnH,
+            isCompact ? "#ffd43b" : "#78ead4",
+            isCompact ? "#282008" : "#0a222a"
+          );
+          R.drawCanvasText(ctx, formBtnLbl, formBtnX + 7, btnY + 3, isCompact ? "#ffd43b" : "#78ead4", fontKey, 1, 0);
+          state.windowHitBoxes.push({
+            action: "run-cmd",
+            cmd: "body form cycle",
+            x: formBtnX,
+            y: btnY,
+            w: formBtnW,
+            h: topBtnH,
+          });
+          leftMostBtnX = formBtnX;
+        }
       }
     }
 
-    const maxTitleCols = Math.max(12, Math.floor((leftMostBtnX - (winX + 12)) / charW));
-    R.drawCanvasText(ctx, rawTitle.slice(0, maxTitleCols), winX + 10, winY + 4, previewTf.accentHex || "#78ead4", fontKey, 1, 0);
+    const availTitleW = leftMostBtnX - (winX + 12);
+    if (availTitleW >= charW * 6) {
+      const maxTitleCols = Math.max(6, Math.floor(availTitleW / charW));
+      const titleY = winY + Math.max(2, Math.round((headerH - lineH) * 0.5));
+      R.drawCanvasText(
+        ctx,
+        rawTitle.slice(0, maxTitleCols),
+        winX + 10,
+        titleY,
+        previewTf.accentHex || "#78ead4",
+        fontKey,
+        1,
+        0
+      );
+    }
 
     // 3. Hardcore Single-Row Tab Strip & Notch-Carving Right Menu Dock (proportioned for `h12x26`)
     const dockW = Math.min(252, Math.max(204, 18 * charW + 20));
