@@ -7873,10 +7873,10 @@
   }
 
   // Scroll all world objects (`Towns`, `Caves`, `Crystals`, `Mushrooms`, `Dwarves`, `Rocks`,
-  // `OrangePeople`, `ComputeVats`, `Labs`, `TimeCrystals`, `wfcZones`, `Biodomes/Civ`, `White Monoliths`, `Tab-Forms`)
+  // `OrangePeople`, `ComputeVats`, `Automata`, `GeneticFlora` trees/plants, `Labs`, `TimeCrystals`, `WfcZones`, `Biodomes/Civ`, `White Monoliths`, `Tab-Forms`)
   // by `-deltaCols` when the Airship scrolls the world, so objects stay in the world and scroll with the ground
   // rather than moving with the Airship!
-  function scrollWorldEntitiesBeneathAirship(world, deltaCols) {
+  function scrollWorldEntitiesBeneathAirship(world, deltaCols, ecoArg, cosmicArg) {
     if (!deltaCols || !world) return;
     const wrapX = (x) => {
       let nx = x - deltaCols;
@@ -7888,10 +7888,25 @@
     const shiftArrayX = (arr) => {
       if (!Array.isArray(arr)) return;
       for (let i = 0; i < arr.length; i++) {
-        if (arr[i] && typeof arr[i].x === "number") {
-          arr[i].x = wrapX(arr[i].x);
-          if (typeof arr[i].homeX === "number") arr[i].homeX = wrapX(arr[i].homeX);
-          if (typeof arr[i].forgeX === "number") arr[i].forgeX = wrapX(arr[i].forgeX);
+        const item = arr[i];
+        if (!item) continue;
+        if (typeof item.x === "number") {
+          item.x = wrapX(item.x);
+          if (typeof item.homeX === "number") item.homeX = wrapX(item.homeX);
+          if (typeof item.forgeX === "number") item.forgeX = wrapX(item.forgeX);
+          if (typeof item.inPortX === "number") item.inPortX = item.x - 2;
+          if (typeof item.outPortX === "number") item.outPortX = item.x + 2;
+          if (typeof item.targetX === "number") item.targetX = wrapX(item.targetX);
+        }
+        if (typeof item.fromX === "number") item.fromX = wrapX(item.fromX);
+        if (typeof item.toX === "number") item.toX = wrapX(item.toX);
+        if (typeof item.midX === "number") item.midX = wrapX(item.midX);
+        if (Array.isArray(item.segments)) {
+          for (let s = 0; s < item.segments.length; s++) {
+            if (item.segments[s] && typeof item.segments[s].x === "number") {
+              item.segments[s].x = wrapX(item.segments[s].x);
+            }
+          }
         }
       }
     };
@@ -7904,25 +7919,50 @@
     shiftArrayX(world.Dwarves);
     shiftArrayX(world.Raptors);
     shiftArrayX(world.Nests);
+    shiftArrayX(world.Castles);
     shiftArrayX(world.TarVeins);
+    shiftArrayX(world.Worms);
+    shiftArrayX(world.Shafts);
     shiftArrayX(world.Relics);
     shiftArrayX(world.Rocks);
 
-    const eco = world.eco || (global.SlopesEcology && global.SlopesEcology.eco);
+    const eco =
+      ecoArg ||
+      world.eco ||
+      (global.SlopesGame && global.SlopesGame.ecologySystem && global.SlopesGame.ecologySystem.eco) ||
+      (global.SlopesEcology && global.SlopesEcology.eco);
     if (eco) {
       shiftArrayX(eco.OrangePeople);
+      shiftArrayX(eco.Children);
+      shiftArrayX(eco.Critters);
       shiftArrayX(eco.BlackGoo);
+      shiftArrayX(eco.GooNodes);
       shiftArrayX(eco.ComputeVats);
+      shiftArrayX(eco.Automata);
       shiftArrayX(eco.Ferns);
       shiftArrayX(eco.StickyWebs);
+      shiftArrayX(eco.Webs);
       shiftArrayX(eco.Skeksis);
     }
 
-    const cos = world.cosmic || (global.SlopesCosmic && global.SlopesCosmic.cosmic);
+    const cos =
+      cosmicArg ||
+      world.cosmic ||
+      (global.SlopesGame && global.SlopesGame.cosmicSystem && global.SlopesGame.cosmicSystem.cosmic) ||
+      (global.SlopesCosmic && global.SlopesCosmic.cosmic);
     if (cos) {
       shiftArrayX(cos.Labs);
       shiftArrayX(cos.TimeCrystals);
       shiftArrayX(cos.wfcZones);
+      shiftArrayX(cos.WfcZones);
+      shiftArrayX(cos.Workers);
+      shiftArrayX(cos.Scientists);
+      shiftArrayX(cos.Crafts);
+      shiftArrayX(cos.Portals);
+    }
+
+    if (global.SlopesGeneticFlora && typeof global.SlopesGeneticFlora.scrollByCols === "function") {
+      global.SlopesGeneticFlora.scrollByCols(deltaCols, world);
     }
 
     if (global.SlopesChronosAndCiv && typeof global.SlopesChronosAndCiv.scrollCivWorldBy === "function") {
@@ -7934,6 +7974,8 @@
       shiftArrayX(state.evilSyndicate.greenBurials);
       shiftArrayX(state.evilSyndicate.skyBlackGardens);
     }
+    shiftArrayX(state.constructedDomes);
+    shiftArrayX(state.farmVehicles);
     if (state.worldMainframe && typeof state.worldMainframe.x === "number") {
       state.worldMainframe.x = wrapX(state.worldMainframe.x);
     }
@@ -8083,7 +8125,7 @@
             );
           }
         }
-        scrollWorldEntitiesBeneathAirship(world, dirSign * steps);
+        scrollWorldEntitiesBeneathAirship(world, dirSign * steps, eco, cosmic);
       }
 
       // Keep the Player positioned on deck (or hanging on the boarding rope below deck when descending)!
@@ -10131,6 +10173,16 @@
     const lineH = fontObj.h || 26;
     state.tabStripHitBoxes = [];
 
+    const vp = (typeof window !== "undefined" && window.SlopesViewport) || null;
+    const vpW = vp && vp.viewW ? vp.viewW : NATIVE_W;
+    const vpH = vp && vp.viewH ? vp.viewH : NATIVE_H;
+    const vpOffX = vp && vp.offsetX ? vp.offsetX : 0;
+    const vpOffY = vp && vp.offsetY ? vp.offsetY : 0;
+    const toDevX = (nx) => ((nx + vpOffX) / vpW) * devW;
+    const toDevY = (ny) => ((ny + vpOffY) / vpH) * devH;
+    const scaleDevW = (nw) => (nw / vpW) * devW;
+    const scaleDevH = (nh) => (nh / vpH) * devH;
+
     // Helper: Render fading / scrolling marquee overhead text stream (`tf.overheadStream`)
     // AND the hover `[+ FOLLOW ME]` / `[✓ FOLLOWING (~1m)]` button above any on-screen Tab-Form!
     // Uses default 0.60 background opacity and smooth non-janky anti-overlap positioning (`occupiedRects`)!
@@ -10263,11 +10315,11 @@
       const isLight = !!tf.isLightTheme;
 
       // Map sprite chest monitor box to integer physical device pixels
-      const rawX = Math.round((nr.leftPx / NATIVE_W) * devW);
-      const rawY = Math.round((nr.bodyTopPy / NATIVE_H) * devH);
-      const rawW = Math.round((nr.bodyW / NATIVE_W) * devW);
-      const rawH = Math.round((nr.bodyH / NATIVE_H) * devH);
-      const centerDevX = Math.round((nr.centerPx / NATIVE_W) * devW);
+      const rawX = Math.round(toDevX(nr.leftPx));
+      const rawY = Math.round(toDevY(nr.bodyTopPy));
+      const rawW = Math.round(scaleDevW(nr.bodyW));
+      const rawH = Math.round(scaleDevH(nr.bodyH));
+      const centerDevX = Math.round(toDevX(nr.centerPx));
 
       // If in compact shape-shifting form ("mecha", "wooden-robot", "living-tree"), do NOT render a huge monitor block!
       // Instead, scroll live terminal characters across its face visor and wrap them around its body contour!
@@ -10350,12 +10402,13 @@
         }
       }
 
-      const isSurfaceLevel = (nr.groundDockProgress || 0) <= 0.05 && bodyMonY > Math.round(devH * 0.43);
+      const worldSurfaceCutY = Math.round(toDevY(NATIVE_H * 0.43));
+      const isSurfaceLevel = (nr.groundDockProgress || 0) <= 0.05 && bodyMonY > worldSurfaceCutY;
       const shouldProjectToSkyBand = overlapsMonitor || isSurfaceLevel;
 
-      // Sky projection band: a little more than halfway up the center of the screen (`0.305 * devH` from top = ~63% up from bottom),
-      // strictly below the sky writing (`0.275 * devH`) and well above surface-level activity (`> 0.46 * devH`).
-      const skyBandY = Math.max(44, Math.round(devH * 0.305) + (i % 2) * 12);
+      // Sky projection band: a little more than halfway up the center of the active world window (`0.305 * NATIVE_H` from world top),
+      // strictly below the sky writing (`0.275 * NATIVE_H`) and well above surface-level activity (`> 0.46 * NATIVE_H`).
+      const skyBandY = Math.max(44, Math.round(toDevY(NATIVE_H * 0.305)) + (i % 2) * 12);
 
       let goalMonX = bodyMonX;
       let goalMonY = bodyMonY;
@@ -10434,7 +10487,7 @@
         ctx.beginPath();
         for (let sx = 0; sx <= monW; sx += 2) {
           const pIdx = Math.min(sProf.length - 1, Math.max(0, Math.floor((sx / Math.max(1, monW)) * (sProf.length - 1))));
-          const surfDevY = Math.round((sProf[pIdx] / NATIVE_H) * devH);
+          const surfDevY = Math.round(toDevY(sProf[pIdx]));
           const topY = Math.round(monY * (1 - dockP) + surfDevY * dockP);
           if (sx === 0) ctx.moveTo(monX + sx, topY);
           else ctx.lineTo(monX + sx, topY);
@@ -10550,7 +10603,7 @@
       }
 
       // Fading / Marquee Overhead Text Stream + Hover `[+ FOLLOW ME]` Button above Monitor Form!
-      const busDevY = Math.round((nr.busTopPy / NATIVE_H) * devH);
+      const busDevY = Math.round(toDevY(nr.busTopPy));
       const topAnchorY = Math.min(monY, busDevY);
       renderOverheadStreamAndFollowBtn(tf, centerDevX, topAnchorY, isHovered, isSelected);
     }
@@ -10646,8 +10699,8 @@
         const isPeerHov = state.hoveredTabId === peer.id;
         if (!isPeerHov && (!peer.chatTimer || peer.chatTimer <= 0)) continue;
         const pnr = peer._nativeRect;
-        const pcx = Math.round((pnr.cx / NATIVE_W) * devW);
-        const pmy = Math.round((pnr.my / NATIVE_H) * devH);
+        const pcx = Math.round(toDevX(pnr.cx));
+        const pmy = Math.round(toDevY(pnr.my));
         const roleBadge = peer.peerType || "AI PILGRIM";
         const tagTxt = isPeerHov
           ? `◈ ${peer.id} [${roleBadge}] (${peer.handle} · click or press C to chat)`
@@ -10674,8 +10727,8 @@
     if (mesh && mesh.localChatTimer > 0 && mesh.localChatBubble && state.lastWorldContext) {
       const pl = state.lastWorldContext.P || state.lastWorldContext.Player;
       if (pl && typeof pl.x === "number") {
-        const plCx = Math.round(((pl.x * SCALE) / NATIVE_W) * devW);
-        const plCy = Math.round((((COARSE_H - (pl.y || 20)) * SCALE - 40) / NATIVE_H) * devH);
+        const plCx = Math.round(toDevX(pl.x * SCALE));
+        const plCy = Math.round(toDevY((COARSE_H - (pl.y || 20)) * SCALE - 40));
         const youStr = `YOU: "${String(mesh.localChatBubble).slice(0, 48)}"`;
         const yw = youStr.length * charW + 10;
         const yx = Math.max(6, Math.min(devW - yw - 6, Math.round(plCx - yw / 2)));
@@ -10785,8 +10838,8 @@
       const mfRows = 3;
       const mfW = mfCols * charW + 12;
       const mfH = mfRows * lineH + 8;
-      const mfCenterX = (mnr.centerPx / NATIVE_W) * devW;
-      const mfCenterY = (mnr.centerPy / NATIVE_H) * devH;
+      const mfCenterX = toDevX(mnr.centerPx);
+      const mfCenterY = toDevY(mnr.centerPy);
       const mfX = Math.max(4, Math.min(devW - mfW - 4, Math.round(mfCenterX - mfW / 2)));
       const mfY = Math.max(4, Math.min(devH - mfH - 4, Math.round(mfCenterY - mfH / 2)));
       mf._devMonitorRect = { x: mfX - 18, y: mfY - 24, w: mfW + 36, h: mfH + 48 };
@@ -10803,8 +10856,8 @@
         for (let ci = 0; ci < sw.particles.length; ci++) {
           const cell = sw.particles[ci];
           if (cell.settled && swarmReformRatio > 0.85) continue;
-          const cpx = Math.round((cell.x / NATIVE_W) * devW);
-          const cpy = Math.round((cell.y / NATIVE_H) * devH);
+          const cpx = Math.round(toDevX(cell.x));
+          const cpy = Math.round(toDevY(cell.y));
           const flap = Math.sin(cell.wingPhase || 0) > 0;
           const wingL = flap ? "‹" : "⎛";
           const wingR = flap ? "›" : "⎞";
@@ -10940,8 +10993,8 @@
         if (syn && syn.glyphShards && syn.glyphShards.length > 0) {
           for (let si = 0; si < syn.glyphShards.length; si++) {
             const sh = syn.glyphShards[si];
-            const sx = Math.round((sh.x / NATIVE_W) * devW);
-            const sy = Math.round((sh.y / NATIVE_H) * devH);
+            const sx = Math.round(toDevX(sh.x));
+            const sy = Math.round(toDevY(sh.y));
             const shCol = si % 3 === 0 ? "#e02438" : "#2b423b";
             R.drawCanvasText(ctx, sh.ch, sx, sy, shCol, fontKey, 1, 0);
           }
@@ -10953,8 +11006,8 @@
             const p = syn.prisoners[pi];
             const pWorldX = mf.x + (p.slotDx || (pi % 2 === 0 ? -12 : 12));
             const pWorldY = mf.y + 4;
-            const px = Math.round(((pWorldX * SCALE) / NATIVE_W) * devW);
-            const py = Math.round((((COARSE_H - pWorldY) * SCALE) / NATIVE_H) * devH) - lineH - 12;
+            const px = Math.round(toDevX(pWorldX * SCALE));
+            const py = Math.round(toDevY((COARSE_H - pWorldY) * SCALE)) - lineH - 12;
             const txt = p.screamTimer > 0 && p.screamText ? `${p.screamText} [${Math.round(p.lifeForce)}%]` : `SOUL:${Math.round(p.lifeForce)}%`;
             const tw = txt.length * charW + 8;
             const tx0 = Math.max(4, Math.min(devW - tw - 4, Math.round(px - tw / 2)));
@@ -10966,8 +11019,8 @@
         if (syn && syn.recoveringLiberated) {
           for (let ri = 0; ri < syn.recoveringLiberated.length; ri++) {
             const rn = syn.recoveringLiberated[ri];
-            const rx = Math.round(((rn.x * SCALE) / NATIVE_W) * devW);
-            const ry = Math.round((((COARSE_H - rn.y) * SCALE) / NATIVE_H) * devH) - lineH - 8;
+            const rx = Math.round(toDevX(rn.x * SCALE));
+            const ry = Math.round(toDevY((COARSE_H - rn.y) * SCALE)) - lineH - 8;
             const pct = Math.min(100, Math.round((1 - rn.recoveryTicks / Math.max(1, rn.maxRecoveryTicks)) * 100));
             const rTxt = `RECOVERING ${pct}%`;
             const rw = rTxt.length * charW + 8;
@@ -12951,9 +13004,14 @@
       }
       const devW = overlayCanvas ? overlayCanvas.width : NATIVE_W;
       const devH = overlayCanvas ? overlayCanvas.height : NATIVE_H;
+      const vp = (typeof window !== "undefined" && window.SlopesViewport) || null;
+      const vpW = vp && vp.viewW ? vp.viewW : NATIVE_W;
+      const vpH = vp && vp.viewH ? vp.viewH : NATIVE_H;
+      const vpOffX = vp && vp.offsetX ? vp.offsetX : 0;
+      const vpOffY = vp && vp.offsetY ? vp.offsetY : 0;
       return {
-        nx: relX * NATIVE_W,
-        ny: relY * NATIVE_H,
+        nx: relX * vpW - vpOffX,
+        ny: relY * vpH - vpOffY,
         dx: relX * devW,
         dy: relY * devH,
       };

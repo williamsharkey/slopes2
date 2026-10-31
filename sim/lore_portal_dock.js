@@ -1297,8 +1297,25 @@
     const seaNativeY = (COARSE_H - seaLevel) * SCALE;
     const seaZoomY = toZoomY(seaNativeY);
     const worldScroll = ((world && world.worldX) || 0) * NATIVE_W;
+    const worldLayer = (world && world.worldLayer) || 0;
+    const currentBiome = (world && world.currentBiome) || "surface";
+    const ceilingArr = (world && world.Ceiling) || null;
+    const islandBaseArr = (world && world.IslandBase) || null;
 
-    // Smooth Catmull-Rom spline evaluator across coarse terrain columns `blocks[c]`
+    // Pre-smooth coarse terrain columns gently so integer step changes become natural hills/cliffs without spikes
+    const smoothBlocks = new Float32Array(COARSE_W);
+    for (let c = 0; c < COARSE_W; c++) {
+      const hm1 = blocks[Math.max(0, c - 1)] || 0;
+      const h0 = blocks[c] || 0;
+      const hp1 = blocks[Math.min(COARSE_W - 1, c + 1)] || 0;
+      // Preserve intentional steep cliff faces while rounding staircase steps
+      const stepDiff = Math.max(Math.abs(h0 - hm1), Math.abs(hp1 - h0));
+      const smoothW = stepDiff >= 5 ? 0.10 : 0.22;
+      smoothBlocks[c] = h0 * (1 - 2 * smoothW) + (hm1 + hp1) * smoothW;
+    }
+
+    // Monotone Cubic Hermite Spline evaluator (Fritsch-Carlson) across `smoothBlocks[c]`
+    // Guarantees zero overshoot and zero artificial spikes at any zoom depth!
     const sampleSmoothElev = (coarseF) => {
       const c1 = Math.floor(coarseF);
       const t = coarseF - c1;
@@ -1306,22 +1323,71 @@
       const idx1 = Math.max(0, Math.min(COARSE_W - 1, c1));
       const idx2 = Math.max(0, Math.min(COARSE_W - 1, c1 + 1));
       const idx3 = Math.max(0, Math.min(COARSE_W - 1, c1 + 2));
-      const h0 = blocks[idx0] || 0;
-      const h1 = blocks[idx1] || 0;
-      const h2 = blocks[idx2] || 0;
-      const h3 = blocks[idx3] || 0;
+      const y0 = smoothBlocks[idx0];
+      const y1 = smoothBlocks[idx1];
+      const y2 = smoothBlocks[idx2];
+      const y3 = smoothBlocks[idx3];
+
+      const d0 = y1 - y0;
+      const d1 = y2 - y1;
+      const d2 = y3 - y2;
+      let m1 = d0 * d1 <= 0 ? 0 : 0.5 * (d0 + d1);
+      let m2 = d1 * d2 <= 0 ? 0 : 0.5 * (d1 + d2);
+      if (Math.abs(d1) < 1e-5) {
+        m1 = 0;
+        m2 = 0;
+      } else {
+        const a = m1 / d1;
+        const b = m2 / d1;
+        const s = a * a + b * b;
+        if (s > 9) {
+          const tau = 3 / Math.sqrt(s);
+          m1 = tau * a * d1;
+          m2 = tau * b * d1;
+        }
+      }
       const t2 = t * t;
       const t3 = t2 * t;
-      const catmull =
-        0.5 *
-        (2 * h1 +
-          (-h0 + h2) * t +
-          (2 * h0 - 5 * h1 + 4 * h2 - h3) * t2 +
-          (-h0 + 3 * h1 - 3 * h2 + h3) * t3);
-      // Add fine 1px micro-topographic rock relief so zoomed ridges have natural crags instead of flat lines
-      const micro = (zoomValNoise1D(coarseF * 6.5, 19) - 0.5) * 0.28 + (zoomValNoise1D(coarseF * 23.0, 73) - 0.5) * 0.09;
-      return Math.max(0, catmull + micro);
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+      const hermite = h00 * y1 + h10 * m1 + h01 * y2 + h11 * m2;
+
+      // Subtle, low-curvature natural relief (never high-frequency sawtooth spikes)
+      const uWorld = coarseF + ((world && world.worldX) || 0) * COARSE_W;
+      const micro =
+        (zoomValNoise1D(uWorld * 1.4, 19) - 0.5) * 0.055 +
+        (zoomValNoise1D(uWorld * 3.6, 73) - 0.5) * 0.022;
+      return Math.max(0, hermite + micro);
     };
+
+    const sampleCeilingElev = (coarseF) => {
+      if (!ceilingArr || worldLayer >= 0) return 0;
+      const c1 = Math.floor(coarseF);
+      const t = coarseF - c1;
+      const ts = t * t * (3 - 2 * t);
+      const c0 = ceilingArr[Math.max(0, Math.min(COARSE_W - 1, c1))] || 0;
+      const c2 = ceilingArr[Math.max(0, Math.min(COARSE_W - 1, c1 + 1))] || 0;
+      const base = c0 + (c2 - c0) * ts;
+      const stal = Math.pow(zoomValNoise1D(coarseF * 2.8, 311), 2) * 1.4;
+      return Math.max(0, base + stal);
+    };
+
+    const sampleIslandBaseElev = (coarseF) => {
+      if (!islandBaseArr || worldLayer <= 0) return 0;
+      const c1 = Math.floor(coarseF);
+      const t = coarseF - c1;
+      const ts = t * t * (3 - 2 * t);
+      const b0 = islandBaseArr[Math.max(0, Math.min(COARSE_W - 1, c1))] || 0;
+      const b2 = islandBaseArr[Math.max(0, Math.min(COARSE_W - 1, c1 + 1))] || 0;
+      return b0 + (b2 - b0) * ts;
+    };
+
+    const colSlope = new Float32Array(NATIVE_W);
+    const colCeilZoomY = new Float32Array(NATIVE_W);
+    const colCeilNativeY = new Float32Array(NATIVE_W);
+    const colIslandBotZoomY = new Float32Array(NATIVE_W);
 
     for (let px = 0; px < NATIVE_W; px++) {
       const wx = sx + px / magX;
@@ -1331,6 +1397,22 @@
       const surfNY = (COARSE_H - elev) * SCALE;
       colSurfNativeY[px] = surfNY;
       colSurfZoomY[px] = toZoomY(surfNY);
+
+      if (worldLayer < 0 && ceilingArr) {
+        const ceilNY = sampleCeilingElev(coarseF) * SCALE;
+        colCeilNativeY[px] = ceilNY;
+        colCeilZoomY[px] = toZoomY(ceilNY);
+      } else {
+        colCeilNativeY[px] = -9999;
+        colCeilZoomY[px] = -9999;
+      }
+
+      if (worldLayer > 0 && islandBaseArr) {
+        const ibNY = (COARSE_H - sampleIslandBaseElev(coarseF)) * SCALE;
+        colIslandBotZoomY[px] = toZoomY(ibNY);
+      } else {
+        colIslandBotZoomY[px] = NATIVE_H + 9999;
+      }
 
       // Multi-depth parallax horizon curves in zoomed device space:
       // Depth 0.08x: Far mountain ridge
@@ -1359,6 +1441,14 @@
 
       colLightWarm[px] = 0;
       colLightCyan[px] = 0;
+    }
+
+    // Compute true world-space terrain slope `|d(surfNY)/d(wx)|` for cliff/rock vs meadow/sand classification
+    for (let px = 0; px < NATIVE_W; px++) {
+      const p0 = Math.max(0, px - 2);
+      const p1 = Math.min(NATIVE_W - 1, px + 2);
+      const dwx = Math.max(0.0001, colWorldX[p1] - colWorldX[p0]);
+      colSlope[px] = Math.abs(colSurfNativeY[p1] - colSurfNativeY[p0]) / dwx;
     }
 
     // Accumulate adjacent-object illumination (Town hearths/braziers, Dwarf forges, Crystals, TimeCrystals, Vats, Lava)
@@ -1406,24 +1496,36 @@
     }
 
     // =========================================================================
-    // 2. 1:1 DEVICE-PIXEL (`1008x630`) MULTI-PARALLAX MOIRÉ DITHER & SPLINE
-    //    STRATA FRAMEBUFFER SYNTHESIS (ZERO BLOCKY UPSCALED PIXELS!)
+    // 2. 1:1 DEVICE-PIXEL (`1008x630`) NATURAL BIOME & GEOLOGICAL STRATA
+    //    SYNTHESIS (ZERO SPIKEY CONTOURS, ZERO WARPED/SHEARED TEXTURES!)
     // =========================================================================
     const hiData = zoomState.hiResImgData.data;
-    // Parallax shifts in device pixels for multi-screen moiré interference:
-    const parShift04X = Math.round((sx + worldScroll) * 0.18 + tick * 0.08);
-    const parShift04Y = Math.round(sy * 0.14);
-    const parShift11X = Math.round((sx + worldScroll) * 0.47 - tick * 0.05);
-    const parShift11Y = Math.round(sy * 0.39);
-    const parShift22X = Math.round((sx + worldScroll) * 0.95 + tick * 0.22);
-    const parShift48X = Math.round((sx + worldScroll) * 1.85);
-    const parShift100X = Math.round(sx * 3.1);
-    const parShift119X = Math.round(sx * 3.7 + sy * 1.3);
+
+    // Fast 2D value-noise helper in world coordinates for natural rock/soil/sand/cloud micro-detail
+    const valNoise2D = (ux, uy, seed) => {
+      const ix = Math.floor(ux);
+      const iy = Math.floor(uy);
+      const fx = ux - ix;
+      const fy = uy - iy;
+      const sx0 = fx * fx * (3 - 2 * fx);
+      const sy0 = fy * fy * (3 - 2 * fy);
+      const n00 = ((hash32(ix * 374761393 + iy * 668265263 + seed) >>> 0) & 1023) / 1023;
+      const n10 = ((hash32((ix + 1) * 374761393 + iy * 668265263 + seed) >>> 0) & 1023) / 1023;
+      const n01 = ((hash32(ix * 374761393 + (iy + 1) * 668265263 + seed) >>> 0) & 1023) / 1023;
+      const n11 = ((hash32((ix + 1) * 374761393 + (iy + 1) * 668265263 + seed) >>> 0) & 1023) / 1023;
+      const nx0 = n00 + (n10 - n00) * sx0;
+      const nx1 = n01 + (n11 - n01) * sx0;
+      return nx0 + (nx1 - nx0) * sy0;
+    };
 
     // Prime-period harmonic tint offsets
     const skyTintR = p307 * 7 + p757 * 5;
     const skyTintG = p211 * 6 + p499 * 6;
     const skyTintB = p211 * 9 + p1103 * 6;
+
+    // Fade out raw nearest-neighbor `snapRaw` above-ground sampling when `mag > 1.5` so upscaled blocky
+    // dither squares never appear when zoomed in (vector world art renders crisp 1:1 objects on top!)
+    const snapSpriteBlend = Math.max(0, Math.min(1, (2.1 - mag) / 0.7));
 
     for (let y = 0; y < NATIVE_H; y++) {
       const wy = sy + y / magY;
@@ -1433,80 +1535,114 @@
       for (let x = 0; x < NATIVE_W; x++) {
         const idx = rowOff + (x << 2);
         const wx = colWorldX[x];
+        const wxWorld = wx + worldScroll;
         const surfZY = colSurfZoomY[x];
+        const surfNY = colSurfNativeY[x];
+        const ceilZY = colCeilZoomY[x];
+        const islandBotZY = colIslandBotZoomY[x];
         const warmL = colLightWarm[x];
         const cyanL = colLightCyan[x];
 
-        if (y < surfZY) {
+        // Subterranean Cavern Ceiling Stalactites & Dripstone (`worldLayer < 0 && y < ceilZY`)
+        if (worldLayer < 0 && y < ceilZY) {
+          const cDepthN = ( colCeilNativeY[x] - wy );
+          const nRock = valNoise2D(wxWorld * 0.45, wy * 0.65, 911);
+          const nFine = valNoise2D(wxWorld * 2.4, wy * 2.4, 929);
+          const strata = Math.sin(wy * 0.85 + Math.sin(wxWorld * 0.08) * 1.6) * 0.5 + 0.5;
+          const isCrystalTip = cDepthN < 1.6 && ((Math.floor(wxWorld * 0.35) & 3) === 0);
+          let r, g, b;
+          if (isCrystalTip) {
+            r = 88 + nFine * 45;
+            g = 215 + nFine * 38;
+            b = 238 + nFine * 17;
+          } else {
+            const shade = 0.28 + 0.16 * strata + (nRock - 0.5) * 0.12 + (nFine - 0.5) * 0.08;
+            r = bgR * shade + 14;
+            g = bgG * shade + 18;
+            b = bgB * shade + 24;
+          }
+          hiData[idx] = r < 0 ? 0 : r > 255 ? 255 : r | 0;
+          hiData[idx + 1] = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+          hiData[idx + 2] = b < 0 ? 0 : b > 255 ? 255 : b | 0;
+          hiData[idx + 3] = 255;
+          continue;
+        }
+
+        if (y < surfZY || (worldLayer > 0 && y > islandBotZY)) {
           // -------------------------------------------------------------------
-          // A. ABOVE TERRAIN SPLINE: CLEAN SKY, RIDGES, MIST & SEA (NO ARTIFICIAL MOIRÉ)
+          // A. ABOVE TERRAIN SPLINE: CLEAN SKY, RIDGES, MIST & SEA
           // -------------------------------------------------------------------
-          // 1. Clean atmospheric sky matching the unzoomed world sky color
           const grad = 0.94 + 0.10 * (1 - skyV);
           let r = bgR * grad + skyTintR * 0.35;
           let g = bgG * grad + skyTintG * 0.35;
           let b = bgB * grad + skyTintB * 0.35;
 
-          // 2. Parallax 0.08x Far Horizon Mountains (clean solid silhouette, no Bayer moiré)
+          // Parallax 0.08x Far Horizon Mountains (with natural alpine rock crag & snow line detail)
           const farZY = colFarRidgeY[x];
-          if (y >= farZY) {
-            const dFar = (y - farZY) / Math.max(8, NATIVE_H * 0.25 * mag);
-            const snowCap = dFar < 0.035;
-            const mR = snowCap ? 196 : 38 + bgR * 0.38;
-            const mG = snowCap ? 214 : 58 + bgG * 0.42;
-            const mB = snowCap ? 218 : 68 + bgB * 0.44;
+          if (y >= farZY && worldLayer >= 0) {
+            const dFarN = (y - farZY) / Math.max(1, magY);
+            const ridgeTex = valNoise2D(wxWorld * 0.12, wy * 0.18, 307);
+            const snowCap = dFarN < 4.5 + ridgeTex * 3.2;
+            const mR = snowCap ? 202 + ridgeTex * 24 : 38 + bgR * 0.38 + (ridgeTex - 0.5) * 14;
+            const mG = snowCap ? 220 + ridgeTex * 22 : 58 + bgG * 0.42 + (ridgeTex - 0.5) * 16;
+            const mB = snowCap ? 226 + ridgeTex * 20 : 68 + bgB * 0.44 + (ridgeTex - 0.5) * 16;
             const blend = 0.56;
             r += (mR - r) * blend;
             g += (mG - g) * blend;
             b += (mB - b) * blend;
           }
 
-          // 3. Parallax 0.22x Drifting Cloud / Mist Veil (smooth translucent band, no dither grid)
+          // Parallax 0.22x Drifting Cloud / Mist Veil
           const mTop = colMistTopY[x];
           const mBot = colMistBotY[x];
-          if (y >= mTop && y <= mBot) {
+          if (y >= mTop && y <= mBot && worldLayer >= 0) {
             const mMid = 0.5 * (mTop + mBot);
             const mHalf = Math.max(2, 0.5 * (mBot - mTop));
             const env = Math.max(0, 1 - Math.abs(y - mMid) / mHalf);
-            const aMist = env * env * 0.18;
-            r += (212 - r) * aMist;
-            g += (226 - g) * aMist;
-            b += (226 - b) * aMist;
+            const cloudPuff = valNoise2D(wxWorld * 0.09 + tick * 0.01, wy * 0.14, 409);
+            const aMist = env * env * (0.14 + 0.12 * cloudPuff);
+            r += (224 - r) * aMist;
+            g += (238 - g) * aMist;
+            b += (240 - b) * aMist;
           }
 
-          // 4. Parallax 0.48x Foothills Silhouette (clean smooth tone, no moiré screen)
+          // Parallax 0.48x Foothills Silhouette
           const footZY = colFoothillY[x];
-          if (y >= footZY) {
-            const fR = 28 + bgR * 0.26;
-            const fG = 44 + bgG * 0.28;
-            const fB = 50 + bgB * 0.30;
+          if (y >= footZY && worldLayer >= 0) {
+            const footTex = valNoise2D(wxWorld * 0.25, wy * 0.30, 503);
+            const fR = 28 + bgR * 0.26 + (footTex - 0.5) * 12;
+            const fG = 46 + bgG * 0.28 + (footTex - 0.5) * 15;
+            const fB = 50 + bgB * 0.30 + (footTex - 0.5) * 14;
             r += (fR - r) * 0.48;
             g += (fG - g) * 0.48;
             b += (fB - b) * 0.48;
           }
 
-          // 5. Coastal Sea / Basin Water (clean depth gradient & crest line, no moiré caustics)
-          if (y >= seaZoomY && colSurfNativeY[x] > seaNativeY - 1.5) {
+          // Coastal Sea / Underwater Pelagic Column (with sunlit wave ripples & subtle caustic rays)
+          if (y >= seaZoomY && surfNY > seaNativeY - 1.5) {
             const waterDepthPx = y - seaZoomY;
-            const waterDepthN = waterDepthPx / mag;
-            const waveFoam = waterDepthPx < Math.max(2, mag * 0.24);
-            if (waveFoam) {
-              r = 186;
-              g = 236;
-              b = 240;
+            const waterDepthN = wy - seaNativeY;
+            const waveRipple = Math.sin(wxWorld * 0.35 + tick * 0.08) * 0.35;
+            const waveFoam = waterDepthN < 0.45 + waveRipple * 0.25 && waterDepthPx < Math.max(3, magY * 0.38);
+            if (waveFoam && currentBiome !== "underwater") {
+              r = 196;
+              g = 242;
+              b = 246;
             } else {
-              const deepT = Math.min(1, waterDepthN / 28);
-              const wR = 16 + (1 - deepT) * 28;
-              const wG = 62 + (1 - deepT) * 76;
-              const wB = 78 + (1 - deepT) * 84;
-              r = r * 0.18 + wR * 0.82;
-              g = g * 0.18 + wG * 0.82;
-              b = b * 0.18 + wB * 0.82;
+              const deepT = Math.max(0, Math.min(1, waterDepthN / 32));
+              const causticRay = Math.sin(wxWorld * 0.22 + wy * 0.08 + tick * 0.05) * 0.5 + 0.5;
+              const rayBoost = (1 - deepT * 0.7) * Math.pow(causticRay, 3) * 18;
+              const wR = 14 + (1 - deepT) * 26 + rayBoost * 0.5;
+              const wG = 60 + (1 - deepT) * 78 + rayBoost * 0.9;
+              const wB = 78 + (1 - deepT) * 88 + rayBoost;
+              r = r * 0.16 + wR * 0.84;
+              g = g * 0.16 + wG * 0.84;
+              b = b * 0.16 + wB * 0.84;
             }
           }
 
-          // 6. Preserve non-sky foreground objects from `snapRaw` cleanly at 100% opacity (zero Bayer holes!)
-          if (snapRaw) {
+          // Preserve non-sky foreground objects from `snapRaw` only at low zoom (`mag < 2.1`)
+          if (snapRaw && snapSpriteBlend > 0.01) {
             const sxi = Math.max(0, Math.min(NATIVE_W - 1, wx | 0));
             const syi = Math.max(0, Math.min(NATIVE_H - 1, wy | 0));
             const inMonoBox =
@@ -1522,10 +1658,10 @@
               const sb = snapRaw[sIdx + 2];
               const sa = snapRaw[sIdx + 3];
               const diffSky = Math.abs(sr - bgR) + Math.abs(sg - bgG) + Math.abs(sb - bgB);
-              if (sa > 120 && diffSky > 48 && wy < colSurfNativeY[x] - 4) {
-                r = sr;
-                g = sg;
-                b = sb;
+              if (sa > 120 && diffSky > 48 && wy < surfNY - 4) {
+                r += (sr - r) * snapSpriteBlend;
+                g += (sg - g) * snapSpriteBlend;
+                b += (sb - b) * snapSpriteBlend;
               }
             }
           }
@@ -1546,68 +1682,313 @@
           hiData[idx + 3] = 255;
         } else {
           // -------------------------------------------------------------------
-          // B. BELOW CONTINUOUS TERRAIN SPLINE: CLEAN TOPSOIL, STONE COBBLES & VEINS
-          //    (NO ARTIFICIAL MOIRÉ / BAYER DITHER GRIDS)
+          // B. BELOW CONTINUOUS TERRAIN SPLINE: HYPER-DETAILED NATURAL BIOME
+          //    SURFACES & WORLD-ANCHORED GEOLOGICAL STRATA (ZERO WARPING!)
           // -------------------------------------------------------------------
           const depthPx = y - surfZY;
-          const depthN = depthPx / mag;
+          const depthN = wy - surfNY; // True depth in native world pixels
+          const slope = colSlope[x];
 
-          let r, g, b;
-          const crestPx = Math.max(2.5, Math.min(10, mag * 0.55));
-          if (depthPx < crestPx) {
-            // 1. Clean topsoil & moss ridge crest following the smooth spline
-            r = 76;
-            g = 142 + p499 * 8;
-            b = 110 + p211 * 6;
-            if (depthPx < 1.5 && ((x + tick) & 7) === 0 && p211 + p307 > 0.2) {
-              r = 166;
-              g = 232;
-              b = 216;
+          // Multi-scale world-anchored noise fields (NEVER using `y - surfZY` as Y coordinate,
+          // so strata, pebbles, soil grains, and rock fractures never shear or warp with terrain slope!)
+          const nMacro = valNoise2D(wxWorld * 0.16, wy * 0.16, 101);
+          const nMed = valNoise2D(wxWorld * 0.65, wy * 0.65, 211);
+          const nFine = valNoise2D(wxWorld * 2.6, wy * 2.6, 307);
+          // Ultra-fine micro-grain that resolves as you zoom deeper (`mag > 2`)
+          const nMicro = mag > 1.6 ? valNoise2D(wxWorld * 9.5, wy * 9.5, 499) : 0.5;
+          const nHyper = mag > 6.0 ? valNoise2D(wxWorld * 32.0, wy * 32.0, 757) : 0.5;
+          const grain = (nFine - 0.5) * 16 + (nMicro - 0.5) * 12 + (nHyper - 0.5) * 9;
+
+          const isUnderwaterBed = currentBiome === "underwater" || surfNY > seaNativeY + 1.2;
+          const isBeachSand = !isUnderwaterBed && worldLayer === 0 && Math.abs(surfNY - seaNativeY) <= 5.5 && slope < 0.78;
+          const isCliffRock = slope >= 0.62 || (worldLayer === 0 && surfNY < NATIVE_H * 0.42);
+          const horizonJitter = (nMacro - 0.5) * 1.3 + (nMed - 0.5) * 0.55;
+
+          let r = 40;
+          let g = 68;
+          let b = 72;
+
+          if (worldLayer > 0) {
+            // -----------------------------------------------------------------
+            // BIOME 1: CLOUD SURFACE & FLOATING SKY-ISLAND AETHERIUM STONE
+            // -----------------------------------------------------------------
+            const cloudDeckDepth = 3.2 + (nMacro - 0.5) * 1.4;
+            if (depthN < cloudDeckDepth) {
+              // Billowy sunlit Cumulus Cloud Surface with silver-white crests & soft vapor wisps
+              const billow = 0.5 + 0.5 * Math.sin(wxWorld * 0.18 + nMed * 2.2);
+              const rim = Math.max(0, 1 - depthN / 1.2);
+              r = 188 + billow * 36 + rim * 24 + grain * 0.55;
+              g = 218 + billow * 26 + rim * 20 + grain * 0.55;
+              b = 232 + billow * 18 + rim * 16 + grain * 0.45;
+            } else {
+              // Ancient Sky-Island Marble & Aetherium Foundation Strata (horizontally bedded in world Y!)
+              const bedWave = Math.sin(wy * 0.75 + Math.sin(wxWorld * 0.05) * 1.2);
+              const joint = Math.abs(Math.sin(wxWorld * 0.28 + Math.floor(wy * 0.22) * 1.7)) < 0.06;
+              const fade = Math.max(0.45, 1 - depthN / 55);
+              if (joint) {
+                r = (42 + grain * 0.4) * fade;
+                g = (74 + grain * 0.4) * fade;
+                b = (88 + grain * 0.4) * fade;
+              } else {
+                r = (78 + bedWave * 14 + grain * 0.7) * fade;
+                g = (118 + bedWave * 16 + grain * 0.7) * fade;
+                b = (134 + bedWave * 16 + grain * 0.7) * fade;
+              }
+              // Glowing Aetherium levitation veins coursing through the sky-island base
+              const aetherSeam = Math.sin(wxWorld * 0.19 + wy * 0.31 + nMed * 1.8) + Math.cos(wxWorld * 0.11 - wy * 0.27);
+              if (aetherSeam > 1.62) {
+                r = 96 + nMicro * 45;
+                g = 232 + nMicro * 22;
+                b = 250;
+              }
+            }
+          } else if (worldLayer < 0) {
+            // -----------------------------------------------------------------
+            // BIOME 2: SUBTERRANEAN MINERAL CAVERN FLOOR, SLATE & CRYSTAL GEODES
+            // -----------------------------------------------------------------
+            const dipY = wy + Math.sin(wxWorld * 0.025) * 4.0 + (nMacro - 0.5) * 2.2;
+            const slateBand = Math.sin(dipY * 1.15) * 0.5 + 0.5;
+            const fracture = Math.abs(Math.sin(wxWorld * 0.32 + wy * 0.14 + nMed * 2.4)) < 0.045;
+            const fade = Math.max(0.35, 1 - depthN / 68);
+            if (depthN < 1.2 + (nMed - 0.5) * 0.4) {
+              // Mineral-crusted cavern floor with bioluminescent moss & crystalline dust
+              r = 46 + slateBand * 18 + grain * 0.75;
+              g = 88 + slateBand * 28 + grain * 0.85;
+              b = 98 + slateBand * 26 + grain * 0.85;
+              if (nMicro > 0.82) {
+                r = 110;
+                g = 236;
+                b = 245;
+              }
+            } else if (fracture) {
+              r = 18 * fade;
+              g = 30 * fade;
+              b = 38 * fade;
+            } else {
+              r = (36 + slateBand * 18 + grain * 0.65) * fade;
+              g = (58 + slateBand * 22 + grain * 0.65) * fade;
+              b = (70 + slateBand * 24 + grain * 0.65) * fade;
+            }
+          } else if (isUnderwaterBed) {
+            // -----------------------------------------------------------------
+            // BIOME 3: UNDERWATER SEA BED (RIPPLED BENTHIC SAND, COBBLES, SHELLS & CORAL)
+            // -----------------------------------------------------------------
+            const caustic = Math.pow(0.5 + 0.5 * Math.sin(wxWorld * 0.38 + wy * 0.15 + tick * 0.06), 2.5);
+            const sandDepth = 3.8 + horizonJitter;
+            if (depthN < sandDepth) {
+              // Current-rippled seabed sand & marine silt
+              const ripple = Math.sin(wxWorld * 1.45 + Math.sin(wy * 0.6) * 0.8) * 8;
+              r = 52 + ripple + caustic * 22 + grain * 0.65;
+              g = 98 + ripple + caustic * 30 + grain * 0.65;
+              b = 108 + ripple + caustic * 28 + grain * 0.65;
+
+              // Smooth rounded sea cobbles & tiny shells on the seabed
+              const cobbleCellX = Math.floor(wxWorld * 0.55);
+              const cobbleCellY = Math.floor(wy * 0.65);
+              const cobbleHash = ((hash32(cobbleCellX * 73856093 ^ cobbleCellY * 19349663) >>> 0) & 255) / 255;
+              if (cobbleHash > 0.72) {
+                const cx = (wxWorld * 0.55 - cobbleCellX) - 0.5;
+                const cy = (wy * 0.65 - cobbleCellY) - 0.5;
+                const d2 = cx * cx * 1.2 + cy * cy * 1.8;
+                if (d2 < 0.16) {
+                  if (cobbleHash > 0.91 && depthN < 1.6) {
+                    // Calcified pink/pearl sea shell or coral nodule
+                    r = 178 + grain * 0.5;
+                    g = 148 + grain * 0.5;
+                    b = 152 + grain * 0.5;
+                  } else {
+                    // Smooth water-worn sea cobble with top highlight
+                    const hl = cy < 0 ? 12 : -8;
+                    r = 44 + hl + grain * 0.4;
+                    g = 72 + hl + grain * 0.4;
+                    b = 84 + hl + grain * 0.4;
+                  }
+                }
+              }
+            } else {
+              // Compacted marine limestone & oceanic basalt below the seabed
+              const dipY = wy + Math.sin(wxWorld * 0.03) * 2.5;
+              const layer = Math.sin(dipY * 0.95) * 10;
+              const fade = Math.max(0.34, 1 - depthN / 64);
+              r = (34 + layer + grain * 0.55) * fade;
+              g = (62 + layer + grain * 0.55) * fade;
+              b = (74 + layer + grain * 0.55) * fade;
+            }
+          } else if (isBeachSand) {
+            // -----------------------------------------------------------------
+            // BIOME 4: COASTAL SAND / BEACH DUNES & SANDSTONE BEDDING
+            // -----------------------------------------------------------------
+            const sandDepth = 4.6 + horizonJitter;
+            if (depthN < sandDepth) {
+              // Wet shoreline darkening near water level + wind-rippled golden silica/shell sand grains
+              const wetFactor = surfNY >= seaNativeY - 1.4 ? 0.78 : 1.0;
+              const windRipple = Math.sin(wxWorld * 1.8 + wy * 0.4 + nMed * 1.5) * 7;
+              const sandGrain = (nFine - 0.5) * 18 + (nMicro - 0.5) * 15 + (nHyper - 0.5) * 12;
+              r = (158 + windRipple + sandGrain) * wetFactor * 0.58 + bgR * 0.42;
+              g = (154 + windRipple + sandGrain) * wetFactor * 0.58 + bgG * 0.42;
+              b = (118 + windRipple + sandGrain) * wetFactor * 0.58 + bgB * 0.42;
+              // Occasional sparkling white quartz / shell grain at zoomed resolution
+              if (mag > 2.2 && nMicro > 0.86) {
+                r += 24;
+                g += 24;
+                b += 22;
+              }
+            } else {
+              // Cross-bedded coastal sandstone below beach sand
+              const crossBed = Math.sin(wy * 1.1 + Math.sin(wxWorld * 0.12) * 2.0) * 11;
+              const fade = Math.max(0.36, 1 - depthN / 62);
+              r = (68 + crossBed + grain * 0.6) * fade;
+              g = (88 + crossBed + grain * 0.6) * fade;
+              b = (82 + crossBed + grain * 0.6) * fade;
+            }
+          } else if (isCliffRock) {
+            // -----------------------------------------------------------------
+            // BIOME 5: STEEP MOUNTAIN / ROCK / CLIFF CRAG & GRANITE STRATA
+            // -----------------------------------------------------------------
+            // World-horizontal & gently dipping geological strata (NEVER sheared by `surfZY`!)
+            const dipY = wy + Math.sin(wxWorld * 0.022) * 3.8 + (nMacro - 0.5) * 1.8;
+            const stratum = Math.sin(dipY * 0.92) * 12 + Math.cos(dipY * 2.3 + nMed * 1.6) * 6;
+            // Natural angular rock joint / crag fractures
+            const jointA = Math.abs(Math.sin(wxWorld * 0.36 + wy * 0.18 + nMed * 2.1));
+            const jointB = Math.abs(Math.cos(wxWorld * 0.19 - wy * 0.42 + nMacro * 2.5));
+            const isCrevice = jointA < 0.042 || jointB < 0.038;
+            const fade = Math.max(0.35, 1 - depthN / 68);
+
+            // Alpine moss / lichen clinging only to the very top 0.8px of less-vertical micro-ledges
+            if (depthN < 0.85 && slope < 1.15 && nMed > 0.42) {
+              r = 64 + grain * 0.6;
+              g = 132 + grain * 0.7;
+              b = 104 + grain * 0.6;
+            } else if (isCrevice) {
+              r = (22 + grain * 0.3) * fade;
+              g = (38 + grain * 0.3) * fade;
+              b = (44 + grain * 0.3) * fade;
+            } else {
+              // Granite / basalt mineral speckle (feldspar, quartz & dark biotite mica grains)
+              const mica = nMicro < 0.18 ? -12 : nMicro > 0.84 ? 14 : 0;
+              r = (54 + stratum + mica + grain * 0.65) * fade;
+              g = (82 + stratum + mica + grain * 0.68) * fade;
+              b = (88 + stratum + mica + grain * 0.70) * fade;
             }
           } else {
-            // 2. Staggered interlocking stone cobbles & sedimentary bedding courses (clean solid tones)
-            const courseH = Math.max(3, Math.min(18, Math.round(mag * 1.35)));
-            const courseIdx = Math.floor(depthPx / courseH);
-            const inCourseY = Math.floor(depthPx) % courseH;
-            const brickW = Math.max(5, Math.min(28, Math.round(mag * 2.2)));
-            const brickStagger = (courseIdx & 1) ? (brickW >> 1) : 0;
-            const brickIdx = Math.floor((x + parShift100X + brickStagger) / brickW);
-            const inBrickX = Math.floor(x + parShift100X + brickStagger) % brickW;
+            // -----------------------------------------------------------------
+            // BIOME 6: MEADOW GRASS, ORGANIC TOPSOIL / DIRT, PEBBLES & BEDROCK
+            // -----------------------------------------------------------------
+            const turfDepth = 1.45 + (nMed - 0.5) * 0.55;
+            const topsoilDepth = 5.4 + horizonJitter;
+            const subsoilDepth = 11.2 + horizonJitter * 1.4;
 
-            const isMortar = inCourseY === 0 || inBrickX === 0;
-            const stoneHash = ((hash32(brickIdx * 193 + courseIdx * 37) >>> 0) & 255) / 255;
-            const deepFade = Math.max(0.32, 1 - depthN / 62);
+            if (depthN < turfDepth) {
+              // 1. Hyper-detailed Meadow Grass & Turf Mat with individual blades & tiny wildflowers
+              const bladeWave = Math.sin(wxWorld * 3.8 + wy * 0.7 + (nFine - 0.5) * 2.2);
+              const isCrestBlade = depthPx < Math.max(3.0, magY * 0.55) && bladeWave > 0.15;
+              r = (isCrestBlade ? 74 : 58) + bladeWave * 12 + grain * 0.55;
+              g = (isCrestBlade ? 162 : 138) + bladeWave * 18 + p499 * 6 + grain * 0.65;
+              b = (isCrestBlade ? 114 : 96) + bladeWave * 12 + p211 * 5 + grain * 0.55;
 
-            if (isMortar && depthN < 24) {
-              r = 20 * deepFade;
-              g = 34 * deepFade;
-              b = 40 * deepFade;
-            } else {
-              const toneShift = (stoneHash - 0.5) * 14;
-              r = (32 + stoneHash * 16 + toneShift) * deepFade;
-              g = (56 + stoneHash * 18 + toneShift) * deepFade;
-              b = (62 + stoneHash * 16 + toneShift) * deepFade;
-            }
-
-            // 3. Continuous Neighbor-Connected Glowing Aetherium & Gold-Quartz Veins (Prime-Cycled!)
-            if (depthN > 2.2) {
-              const veinWave =
-                Math.sin(wx * 0.21 + depthN * 0.34 + Math.sin(depthN * 0.15) * 1.4) +
-                Math.cos(wx * 0.09 - depthN * 0.42);
-              if (veinWave > 1.66) {
-                const isGoldVein = ((Math.floor(wx * 0.1 + depthN * 0.1) & 1) === 0);
-                const pulse = isGoldVein
-                  ? 0.72 + 0.28 * (0.5 * p307 + 0.5 * p757)
-                  : 0.72 + 0.28 * (0.5 * p211 + 0.5 * p499);
-                if (isGoldVein) {
-                  r = 228 * pulse;
-                  g = 186 * pulse;
-                  b = 96 * pulse;
-                } else {
-                  r = 98 * pulse;
-                  g = 228 * pulse;
-                  b = 238 * pulse;
+              // Occasional tiny wildflower petals (gold, sky-cyan, or coral-pink) in the grass crest
+              if (depthN < 0.65 && mag > 1.8) {
+                const flowerHash = ((hash32(Math.floor(wxWorld * 1.5) * 92837111 + Math.floor(wy * 1.5) * 1928371) >>> 0) & 255);
+                if (flowerHash < 7) {
+                  r = flowerHash < 3 ? 245 : flowerHash < 5 ? 242 : 125;
+                  g = flowerHash < 3 ? 212 : flowerHash < 5 ? 128 : 235;
+                  b = flowerHash < 3 ? 82 : flowerHash < 5 ? 158 : 248;
                 }
+              }
+            } else if (depthN < topsoilDepth) {
+              // 2. Rich Organic Topsoil / Dirt / Loam with soil crumbs, fibrous rootlets & embedded pebbles
+              const soilMix = (depthN - turfDepth) / Math.max(0.5, topsoilDepth - turfDepth);
+              const crumb = (nFine - 0.5) * 16 + (nMicro - 0.5) * 14 + (nHyper - 0.5) * 10;
+              // Warm earthy brown-teal loam that harmonizes with the world palette
+              r = 62 * (1 - soilMix * 0.18) + bgR * 0.18 + crumb * 0.65;
+              g = 68 * (1 - soilMix * 0.22) + bgG * 0.24 + crumb * 0.60;
+              b = 54 * (1 - soilMix * 0.22) + bgB * 0.22 + crumb * 0.55;
+
+              // Fine fibrous plant rootlets reaching down from the grass turf into the topsoil
+              if (depthN < turfDepth + 2.6) {
+                const rootWave = Math.abs(Math.sin(wxWorld * 1.9 + Math.sin(wy * 1.7) * 0.85));
+                if (rootWave < 0.055) {
+                  r += 24;
+                  g += 28;
+                  b += 14;
+                }
+              }
+
+              // Embedded rounded pebbles & small stones in the dirt (anchored in world space!)
+              const pebCellX = Math.floor(wxWorld * 0.62);
+              const pebCellY = Math.floor(wy * 0.68);
+              const pebHash = ((hash32(pebCellX * 15485863 ^ pebCellY * 32452843) >>> 0) & 255) / 255;
+              if (pebHash > 0.74) {
+                const pxOff = (wxWorld * 0.62 - pebCellX) - 0.5;
+                const pyOff = (wy * 0.68 - pebCellY) - 0.5;
+                const rad2 = pxOff * pxOff * 1.3 + pyOff * pyOff * 1.7;
+                if (rad2 < 0.14) {
+                  const rimShade = pyOff < 0 ? 10 : -8;
+                  r = 68 + rimShade + crumb * 0.35;
+                  g = 86 + rimShade + crumb * 0.35;
+                  b = 88 + rimShade + crumb * 0.35;
+                }
+              }
+            } else if (depthN < subsoilDepth) {
+              // 3. Compacted Stony Subsoil & Weathered Regolith Transition
+              const regMix = (depthN - topsoilDepth) / Math.max(0.5, subsoilDepth - topsoilDepth);
+              const dipY = wy + Math.sin(wxWorld * 0.03) * 2.2;
+              const regBand = Math.sin(dipY * 1.1 + nMed * 1.8) * 8;
+              r = 52 * (1 - regMix) + 42 * regMix + regBand + grain * 0.6;
+              g = 68 * (1 - regMix) + 64 * regMix + regBand + grain * 0.6;
+              b = 64 * (1 - regMix) + 70 * regMix + regBand + grain * 0.6;
+            } else {
+              // 4. Deep Stratified Bedrock (World-Horizontal Sedimentary & Granite Courses — ZERO SHEARING!)
+              const dipY = wy + Math.sin(wxWorld * 0.02) * 3.2 + (nMacro - 0.5) * 1.5;
+              const courseH = 3.2; // In native world pixels
+              const courseIdx = Math.floor(dipY / courseH);
+              const inCourse = dipY - courseIdx * courseH;
+              const blockW = 6.5;
+              const stagger = (courseIdx & 1) ? blockW * 0.5 : 0;
+              const wxStag = wxWorld + stagger + (nMed - 0.5) * 0.9;
+              const blockIdx = Math.floor(wxStag / blockW);
+              const inBlock = wxStag - blockIdx * blockW;
+
+              const seamThickness = Math.max(0.14, Math.min(0.32, 1.1 / Math.max(1, mag)));
+              const isSeam = inCourse < seamThickness || inBlock < seamThickness;
+              const stoneHash = ((hash32(blockIdx * 193 + courseIdx * 37) >>> 0) & 255) / 255;
+              const deepFade = Math.max(0.34, 1 - (depthN - subsoilDepth) / 58);
+
+              if (isSeam && depthN < 34) {
+                r = (22 + grain * 0.25) * deepFade;
+                g = (36 + grain * 0.25) * deepFade;
+                b = (42 + grain * 0.25) * deepFade;
+              } else {
+                const tone = (stoneHash - 0.5) * 14;
+                r = (38 + stoneHash * 14 + tone + grain * 0.55) * deepFade;
+                g = (62 + stoneHash * 16 + tone + grain * 0.58) * deepFade;
+                b = (68 + stoneHash * 16 + tone + grain * 0.60) * deepFade;
+              }
+            }
+          }
+
+          // -------------------------------------------------------------------
+          // C. WORLD-ANCHORED MINERAL SEAMS (AETHERIUM CRYSTAL & GOLD-QUARTZ VEINS)
+          //    Uses true world `(wxWorld, wy)` so veins never warp with surface spikes!
+          // -------------------------------------------------------------------
+          if (depthN > 3.2 && worldLayer <= 0) {
+            const veinField =
+              Math.sin(wxWorld * 0.17 + wy * 0.26 + Math.sin(wy * 0.11 + nMacro * 2.0) * 1.3) +
+              Math.cos(wxWorld * 0.085 - wy * 0.31 + nMed * 0.9);
+            if (veinField > 1.68) {
+              const isGoldVein = ((Math.floor(wxWorld * 0.07 + wy * 0.07) & 1) === 0);
+              const facet = 0.82 + 0.32 * Math.sin(wxWorld * 4.5 + wy * 4.5 + nMicro * 3.14);
+              const pulse = isGoldVein
+                ? (0.76 + 0.24 * (0.5 * p307 + 0.5 * p757)) * facet
+                : (0.76 + 0.24 * (0.5 * p211 + 0.5 * p499)) * facet;
+              if (isGoldVein) {
+                r = 228 * pulse;
+                g = 186 * pulse;
+                b = 92 * pulse;
+              } else {
+                r = 92 * pulse;
+                g = 228 * pulse;
+                b = 242 * pulse;
               }
             }
           }
@@ -1815,14 +2196,10 @@
           mainCtx.fillStyle = ((px + tick) % 23 === 0 && p211 + p307 > 0) ? "#ffffff" : "#78ead4";
           mainCtx.fillRect(px, topZY, 1, 2);
 
-          // Multi-Layer Transparent Parallax Moiré Glass Screen inside the Biodome!
-          for (let py = Math.max(0, topZY + 2); py < Math.min(NATIVE_H, groundZY); py += 2) {
-            const gScreenA = ZOOM_BAYER8[(((py + parShift04Y) & 7) << 3) | ((px + parShift22X) & 7)];
-            const gScreenB = (((px - parShift11X) + (py * 3)) & 7) * 0.125;
-            if (Math.abs(gScreenA - gScreenB) < 0.22) {
-              mainCtx.fillStyle = "rgba(168, 228, 234, 0.22)";
-              mainCtx.fillRect(px, py, 1, 1);
-            }
+          // Clean translucent glass canopy fill inside the Biodome (no artificial Bayer moiré)
+          if (groundZY > topZY + 2) {
+            mainCtx.fillStyle = "rgba(168, 228, 234, 0.07)";
+            mainCtx.fillRect(px, Math.max(0, topZY + 2), 1, Math.min(NATIVE_H, groundZY) - Math.max(0, topZY + 2));
           }
           // Vertical geodesic ribs
           if ((px - Math.floor(leftZ)) % ribStepZ === 0) {

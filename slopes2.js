@@ -497,9 +497,13 @@
       Towns,
       Caves,
       TarVeins,
+      Worms,
+      Shafts,
       Crystals,
       Relics,
       Airships,
+      Raptors,
+      Nests,
       Castles,
       Mushrooms,
       Dwarves,
@@ -509,6 +513,8 @@
       frameCount,
       healHealth,
       announceSky,
+      eco: ecology ? ecology.eco : null,
+      cosmic: cosmic ? cosmic.cosmic : null,
     };
   }
 
@@ -2535,6 +2541,168 @@
     }
   }
 
+  let fsScratchCanvas = null;
+  let fsScratchCtx = null;
+
+  function presentWorldToViewportCanvas(skipZoom) {
+    ctx.putImageData(screen, 0, 0);
+    if (!skipZoom && window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom === "function") {
+      window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom(primeRenderer, getWorldBundle());
+    }
+
+    const vp = window.SlopesViewport;
+    const baseW = 1008;
+    const baseH = 630;
+    if (!vp || !vp.isFullscreen || (vp.viewW === baseW && vp.viewH === baseH)) {
+      if (canvas.width !== baseW || canvas.height !== baseH) {
+        canvas.width = baseW;
+        canvas.height = baseH;
+        ctx.imageSmoothingEnabled = false;
+        ctx.putImageData(screen, 0, 0);
+        if (!skipZoom && window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom === "function") {
+          window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom(primeRenderer, getWorldBundle());
+        }
+      }
+      return;
+    }
+
+    const viewW = vp.viewW;
+    const viewH = vp.viewH;
+    const offX = vp.offsetX || 0;
+    const offY = vp.offsetY || 0;
+    if (canvas.width !== viewW || canvas.height !== viewH) {
+      canvas.width = viewW;
+      canvas.height = viewH;
+      ctx.imageSmoothingEnabled = false;
+    }
+
+    if (!fsScratchCanvas) {
+      fsScratchCanvas = document.createElement("canvas");
+      fsScratchCanvas.width = baseW;
+      fsScratchCanvas.height = baseH;
+      fsScratchCtx = fsScratchCanvas.getContext("2d");
+      fsScratchCtx.imageSmoothingEnabled = false;
+    }
+    fsScratchCtx.clearRect(0, 0, baseW, baseH);
+    fsScratchCtx.drawImage(canvas, 0, 0, baseW, baseH, 0, 0, baseW, baseH);
+
+    const bgR = cachedBgRgb[0] || 72;
+    const bgG = cachedBgRgb[1] || 160;
+    const bgB = cachedBgRgb[2] || 148;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, viewW, viewH);
+
+    // 1. Extended Portrait Top Window (`0 .. offY`): Upper Stratosphere, Celestial Stars & Floating Sky Islands
+    if (offY > 0) {
+      const bandH = 7;
+      for (let y = 0; y < offY; y += bandH) {
+        const u = y / Math.max(1, offY);
+        const shade = 0.66 + 0.34 * u;
+        ctx.fillStyle = `rgb(${Math.round(bgR * shade)}, ${Math.round(bgG * shade)}, ${Math.round(bgB * (0.72 + 0.28 * u))})`;
+        ctx.fillRect(0, y, viewW, Math.min(bandH, offY - y));
+      }
+      // Twinkling upper-stratosphere stars & high-altitude floating sky islands
+      for (let si = 0; si < 42; si++) {
+        const sx = ((si * 197 + worldX * 73) % (viewW - 14)) + 7;
+        const sy = ((si * 131 + Math.abs(worldX) * 29) % Math.max(14, offY - 24)) + 7;
+        const tw = 0.5 + 0.5 * Math.sin(frameCount * 0.05 + si * 1.7);
+        if (tw > 0.55) {
+          ctx.fillStyle = `rgba(215, 250, 245, ${((tw - 0.5) * 1.4).toFixed(2)})`;
+          ctx.fillRect(sx - (sx % 7), sy - (sy % 7), 7, 7);
+        }
+      }
+      // Distant Floating Sky-Island silhouettes in the upper stratosphere
+      for (let isl = 0; isl < 3; isl++) {
+        const ix = Math.round(((isl * 330 + 140 - ((frameCount * 0.12) | 0)) % (viewW - 180) + (viewW - 180)) % (viewW - 180)) + 40;
+        const iy = Math.round(offY * (0.28 + isl * 0.24));
+        const iw = 98 + (isl % 2) * 42;
+        if (iy + 28 < offY) {
+          ctx.fillStyle = `rgb(${Math.round(bgR * 0.48)}, ${Math.round(bgG * 0.52)}, ${Math.round(bgB * 0.56)})`;
+          ctx.fillRect(ix, iy, iw, 14);
+          ctx.fillRect(ix + 14, iy + 14, iw - 28, 7);
+          ctx.fillStyle = `rgb(${Math.round(bgR * 0.64)}, ${Math.round(bgG * 0.78)}, ${Math.round(bgB * 0.72)})`;
+          ctx.fillRect(ix + 7, iy - 7, iw - 14, 7);
+          ctx.fillStyle = "rgba(95, 235, 255, 0.82)";
+          ctx.fillRect(ix + Math.floor(iw * 0.5), iy + 14, 7, 7);
+        }
+      }
+    }
+
+    // 2. Extended Portrait Bottom Window (`offY + baseH .. viewH`): Deep Subterranean Lithosphere, Crystal Caverns & Mineral Veins
+    const botStart = offY + baseH;
+    if (botStart < viewH) {
+      const botH = viewH - botStart;
+      const cell = 7;
+      for (let ry = 0; ry < botH; ry += cell) {
+        const depthFrac = ry / Math.max(1, botH);
+        const rowCourse = Math.floor(ry / cell);
+        const shade = Math.max(0.18, 0.34 - depthFrac * 0.14 + Math.sin(rowCourse * 0.7) * 0.025);
+        ctx.fillStyle = `rgb(${Math.round(bgR * shade)}, ${Math.round(bgG * shade)}, ${Math.round(bgB * shade)})`;
+        ctx.fillRect(0, botStart + ry, viewW, Math.min(cell, botH - ry));
+      }
+      // Staggered subterranean stone bedding seams, glowing Aetherium crystal pockets & gold-quartz veins
+      for (let ry = cell; ry < botH - cell; ry += cell * 2) {
+        const rowIdx = Math.floor(ry / (cell * 2));
+        const yPx = botStart + ry;
+        for (let rx = ((rowIdx & 1) ? 14 : 0); rx < viewW; rx += 28) {
+          const hVal = ((rx * 37 + rowIdx * 193 + worldX * 53) & 255);
+          if (hVal < 36) {
+            ctx.fillStyle = `rgba(${Math.round(bgR * 0.16)}, ${Math.round(bgG * 0.20)}, ${Math.round(bgB * 0.22)}, 0.85)`;
+            ctx.fillRect(rx, yPx, 21, 2);
+          } else if (hVal > 241) {
+            // Glowing cyan Aetherium or warm gold-quartz mineral vein in deep bedrock
+            const isGold = (hVal & 1) === 0;
+            const pulse = 0.7 + 0.3 * Math.sin(frameCount * 0.08 + rowIdx + rx * 0.02);
+            ctx.fillStyle = isGold
+              ? `rgba(235, 192, 92, ${(0.82 * pulse).toFixed(2)})`
+              : `rgba(92, 232, 248, ${(0.85 * pulse).toFixed(2)})`;
+            ctx.fillRect(rx, yPx, 14, cell);
+            ctx.fillRect(rx + 7, yPx + cell, 14, cell);
+          }
+        }
+      }
+    }
+
+    // 3. Extended Wide Landscape Side Windows (`0 .. offX` and `offX + baseW .. viewW`): Panoramic Coastal Terrain & Sea
+    if (offX > 0) {
+      const cell = 7;
+      const seaY = offY + (H - seaLevel) * cell;
+      const leftElev = Blocks[0] || 16;
+      const rightElev = Blocks[W - 1] || 16;
+      const drawSideWing = (startX, widthPx, edgeElev, dirSign) => {
+        for (let x = 0; x < widthPx; x += cell) {
+          const colDist = Math.floor((dirSign < 0 ? widthPx - x : x) / cell);
+          const hOff = Math.round(Math.sin((colDist + worldX * 17) * 0.18) * 2.5 + Math.cos(colDist * 0.07) * 1.5);
+          const colElev = Math.max(4, Math.min(H - 12, edgeElev + hOff));
+          const surfY = offY + (H - colElev) * cell;
+          const drawX = startX + x;
+          const colW = Math.min(cell, widthPx - x);
+          if (surfY > seaY && seaLevel > 0) {
+            ctx.fillStyle = `rgb(${Math.round(bgR * 0.58 + 12)}, ${Math.round(bgG * 0.62 + 45)}, ${Math.round(bgB * 0.62 + 65)})`;
+            ctx.fillRect(drawX, seaY, colW, surfY - seaY);
+            ctx.fillStyle = "rgba(210, 248, 255, 0.85)";
+            ctx.fillRect(drawX, seaY, colW, cell);
+          }
+          // Crest & subterranean stone column
+          ctx.fillStyle = `rgb(${Math.round(bgR * 0.56)}, ${Math.round(bgG * 0.56)}, ${Math.round(bgB * 0.56)})`;
+          ctx.fillRect(drawX, surfY, colW, cell);
+          ctx.fillStyle = `rgb(${Math.round(bgR * 0.48)}, ${Math.round(bgG * 0.48)}, ${Math.round(bgB * 0.48)})`;
+          ctx.fillRect(drawX, surfY + cell, colW, cell * 3);
+          ctx.fillStyle = `rgb(${Math.round(bgR * 0.34)}, ${Math.round(bgG * 0.34)}, ${Math.round(bgB * 0.34)})`;
+          ctx.fillRect(drawX, surfY + cell * 4, colW, Math.max(0, viewH - (surfY + cell * 4)));
+        }
+      };
+      drawSideWing(0, offX, leftElev, -1);
+      drawSideWing(offX + baseW, viewW - (offX + baseW), rightElev, 1);
+    }
+
+    // 4. Composite the 1008x630 active world frame at `(offX, offY)` at exact 1:1 square pixels!
+    ctx.drawImage(fsScratchCanvas, 0, 0, baseW, baseH, offX, offY, baseW, baseH);
+    ctx.restore();
+  }
+
   // ============================================================================
   // RENDER 120x75 FRAME (840x525 Multi-Scale Prime Sub-Pixel Framebuffer)
   // ============================================================================
@@ -2565,7 +2733,7 @@
         cosmic ? cosmic.cosmic : null,
         tabForms ? tabForms.tabForms : null
       );
-      ctx.putImageData(screen, 0, 0);
+      presentWorldToViewportCanvas(true);
       return;
     }
 
@@ -3168,12 +3336,7 @@
       rotation.renderCompassOverlay(primeRenderer);
     }
 
-    ctx.putImageData(screen, 0, 0);
-
-    // 24C. Apply 5-Deep Recursive Holonomic Zoom & Wide Panoramic Zoom-Out AFTER `ctx.putImageData`!
-    if (window.SlopesChronosAndCiv && typeof window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom === "function") {
-      window.SlopesChronosAndCiv.stepAndRenderRecursiveZoom(primeRenderer, getWorldBundle());
-    }
+    presentWorldToViewportCanvas(false);
 
     // Update bottom Hairline Terminus pixel HUD with Layer, 5-Fold Facet, Civilization Pop, Vats, Tab-Forms & Integrity
     if (window.SlopesHUD && frameCount % 4 === 0) {

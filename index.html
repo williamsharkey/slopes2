@@ -50,11 +50,11 @@ body.fullscreen-mode #screen{
   transition:opacity 0.45s ease;
 }
 body.fullscreen-mode .pad{
-  opacity:0.18;
+  opacity:0.52;
 }
 body.fullscreen-mode .pad:hover,
 body.fullscreen-mode .pad.active-touch{
-  opacity:0.86;
+  opacity:0.92;
 }
 .pad canvas.b{
   position:absolute;pointer-events:auto;touch-action:none;cursor:pointer;display:block;
@@ -65,17 +65,17 @@ body.fullscreen-mode .pad.active-touch{
   transition:opacity 0.4s ease;
 }
 body.fullscreen-mode #osd{
-  opacity:0.22;
+  opacity:0.52;
 }
 body.fullscreen-mode #osd:hover{
-  opacity:0.92;
+  opacity:0.95;
 }
 #fullscreen-btn{
   position:fixed;z-index:4;cursor:pointer;touch-action:none;display:block;
   transition:opacity 0.4s ease;
 }
 body.fullscreen-mode #fullscreen-btn{
-  opacity:0.24;
+  opacity:0.56;
 }
 body.fullscreen-mode #fullscreen-btn:hover{
   opacity:0.95;
@@ -87,7 +87,7 @@ body.fullscreen-mode #fullscreen-btn:hover{
   transition:opacity 0.4s ease;
 }
 body.fullscreen-mode #minimap-canvas{
-  opacity:0.22;
+  opacity:0.52;
 }
 body.fullscreen-mode #minimap-canvas:hover{
   opacity:0.95;
@@ -98,10 +98,16 @@ body.fullscreen-mode #minimap-canvas:hover{
   transition:opacity 0.4s ease;
 }
 body.fullscreen-mode #social-tui-canvas{
-  opacity:0.18;
+  opacity:0.62;
 }
 body.fullscreen-mode #social-tui-canvas:hover{
   opacity:0.95;
+}
+body.fullscreen-mode #mobile-bottom-input{
+  opacity:0.68;
+}
+body.fullscreen-mode #mobile-bottom-input:focus{
+  opacity:0.96;
 }
 #mobile-bottom-input{
   position:fixed;z-index:6;display:none;
@@ -1620,7 +1626,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
       drawTxt(sendLbl, sendX + 5 * p, footTextY, "#78ead4", uiSpec);
       socialState.hitBoxes.push({ id: "send_chat", x: sendX, y: footY, w: sendW + 4 * p, h: footerH });
 
-      if (mobileBottomInput && !isFullscreenMode) {
+      if (mobileBottomInput) {
         const inLeft = socLeft + Math.round(promptW / dpr) + 2;
         const inTop = socTop + cssH - footerCssH + 2;
         const inW = Math.max(70, cssW - Math.round(promptW / dpr) - Math.round(sendW / dpr) - 10);
@@ -2543,12 +2549,31 @@ body.fullscreen-mode #social-tui-canvas:hover{
       sy = 0;
       sw = W;
       sh = H;
-      span = Math.min(148, Math.max(108, Math.min(W, H) * 0.22));
-      cy = H - span * 0.72 - 12;
-      lCx = span * 0.72 + 16;
-      rCx = W - span * 0.72 - 16;
       socialH = 74;
       socialTop = H - socialH - 6;
+      span = Math.min(148, Math.max(108, Math.min(W, H) * 0.22));
+      const fsBtnSz = Math.max(32, Math.min(44, span * 0.29));
+      const fsR = Math.max(fsBtnSz * 0.90, span * 0.34);
+      const fsPh = Math.max(20, fsBtnSz * 0.44);
+      const bottomReach = fsR + fsBtnSz * 0.56 + fsPh * 1.06;
+      const isPortraitFs = H >= W * 0.85;
+      if (isPortraitFs) {
+        // Portrait fullscreen: place control pads cleanly above the bottom chat controls (`socialTop`)!
+        cy = Math.max(topBarH + bottomReach + 12, socialTop - bottomReach - 10);
+        lCx = Math.max(span * 0.68 + 14, W * 0.24);
+        rCx = Math.min(W - span * 0.68 - 14, W * 0.76);
+      } else {
+        // Landscape fullscreen: place control pads in left/right wings moved up slightly, and keep above `socialTop` if narrow!
+        lCx = span * 0.68 + 14;
+        rCx = W - span * 0.68 - 14;
+        const padInnerEdge = lCx + fsR + fsBtnSz * 0.65;
+        const socHalfW = Math.min(520, W - 24) * 0.5;
+        if (W * 0.5 - socHalfW < padInnerEdge + 8) {
+          cy = Math.max(topBarH + bottomReach + 8, socialTop - bottomReach - 8);
+        } else {
+          cy = Math.min(H - bottomReach - 22, socialTop - fsPh - 8);
+        }
+      }
     } else if (port) {
       // Single compact top row (`topBarH = 32px`), then #screen immediately below (`sy = topBarH + 2`),
       // then #social-tui-canvas directly below #screen, and controller pads at bottom!
@@ -2591,6 +2616,53 @@ body.fullscreen-mode #social-tui-canvas:hover{
     scr.style.width = Math.round(sw) + "px";
     scr.style.height = Math.round(sh) + "px";
 
+    // Update `window.SlopesViewport` so `#pi-shift` dynamically sizes its window for the display's exact aspect ratio
+    // in fullscreen mode without stretching pixels!
+    const baseW = 1008;
+    const baseH = 630;
+    let viewW = baseW;
+    let viewH = baseH;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (isFullscreenMode && sw > 0 && sh > 0) {
+      const dispAR = sw / sh;
+      const baseAR = baseW / baseH;
+      if (dispAR < baseAR - 0.01) {
+        // Tall / portrait fullscreen: keep full 1008 world width and extend vertical window height
+        viewW = baseW;
+        viewH = Math.max(baseH, Math.round(baseW / dispAR));
+        offsetX = 0;
+        offsetY = Math.round((viewH - baseH) * 0.38);
+      } else if (dispAR > baseAR + 0.01) {
+        // Wide / landscape fullscreen: keep full 630 world height and extend horizontal window width
+        viewH = baseH;
+        viewW = Math.max(baseW, Math.round(baseH * dispAR));
+        offsetX = Math.round((viewW - baseW) * 0.5);
+        offsetY = 0;
+      }
+    }
+    window.SlopesViewport = {
+      isFullscreen: isFullscreenMode,
+      baseW,
+      baseH,
+      viewW,
+      viewH,
+      offsetX,
+      offsetY,
+      sw: Math.round(sw),
+      sh: Math.round(sh),
+    };
+    const piCanvas = document.getElementById("pi-shift");
+    if (piCanvas && (piCanvas.width !== viewW || piCanvas.height !== viewH)) {
+      piCanvas.width = viewW;
+      piCanvas.height = viewH;
+      const piCtx = piCanvas.getContext("2d");
+      if (piCtx) piCtx.imageSmoothingEnabled = false;
+      if (window.SlopesGame && typeof window.SlopesGame.render === "function") {
+        window.SlopesGame.render();
+      }
+    }
+
     const isExpandedBottom = !isFullscreenMode && (socialState.bottomMode === "chat" || socialState.bottomMode === "terminal");
 
     if (padL) padL.style.display = isExpandedBottom ? "none" : "block";
@@ -2615,7 +2687,9 @@ body.fullscreen-mode #social-tui-canvas:hover{
         socialCanvas.style.width = W + "px";
         socialCanvas.style.height = Math.round(socialH) + "px";
       } else {
-        const socW = isFullscreenMode ? Math.min(520, W - 24) : Math.round(sw);
+        const isPortraitFs = H >= W * 0.85;
+        const wingPad = isFullscreenMode && !isPortraitFs ? Math.round((lCx + span * 0.56 + 14) * 2) : 24;
+        const socW = isFullscreenMode ? Math.min(520, Math.max(320, W - wingPad)) : Math.round(sw);
         const socLeft = isFullscreenMode ? Math.round((W - socW) / 2) : Math.round(sx);
         socialCanvas.style.left = socLeft + "px";
         socialCanvas.style.top = Math.round(socialTop) + "px";
@@ -2643,7 +2717,9 @@ body.fullscreen-mode #social-tui-canvas:hover{
     // SELECT / START / ZOOM pills + Top Shoulder ROT L / TAB-FORM / ROT R / DAT-307 pills
     const pw = Math.max(60, btn * 1.18);
     const ph = Math.max(20, btn * 0.44);
-    const py = Math.min(H - ph / 2 - 4, cy + R + btn * 0.56 + ph * 0.56);
+    const pillsOverlapChatX = isFullscreenMode && (lCx + pw * 1.05 >= (W - Math.min(520, Math.max(320, W - 24))) * 0.5);
+    const maxPy = (isFullscreenMode && (H >= W * 0.85 || pillsOverlapChatX)) ? socialTop - ph / 2 - 8 : H - ph / 2 - 6;
+    const py = Math.min(maxPy, cy + R + btn * 0.56 + ph * 0.56);
     place(q('[data-k="sel"]'), lCx - pw * 0.52, py, pw, ph);
     place(q('[data-k="zoomOut"]'), lCx + pw * 0.52, py, pw, ph);
     place(q('[data-k="sta"]'), rCx - pw * 0.52, py, pw, ph);
@@ -2661,7 +2737,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
     //   and Minimap (#minimap-canvas on right) onto ONE single shared 26px top row (`top = 4px`)!
     // - On desktop / landscape (`!port`): Volume (#osd) and Fullscreen (#fullscreen-btn) on top row (`top = 4px`),
     //   and Minimap (#minimap-canvas) at top-left outside #screen above the left controller buttons!
-    if (port && !isFullscreenMode) {
+    if (port) {
       const rowTop = 4;
       const rowH = 26;
       const gap = 4;

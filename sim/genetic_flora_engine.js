@@ -3327,6 +3327,81 @@
     };
   }
 
+  function scrollByCols(deltaCols, world) {
+    if (!deltaCols) return;
+    if (world && world.Blocks) state.world = world;
+    if (!state.initialized || !state.world || !state.world.Blocks) return;
+    const span = W - 4;
+    if (span <= 0) return;
+    const wrapCol = (c) => {
+      let nc = (c | 0) - deltaCols;
+      while (nc < 2) nc += span;
+      while (nc > W - 3) nc -= span;
+      return nc;
+    };
+
+    // Shift 1D hydrology / soil arrays so soil moisture and nutrients scroll with the terrain
+    const shiftTyped = (arr) => {
+      if (!arr || arr.length < W) return;
+      const tmp = arr.slice();
+      for (let c = 2; c <= W - 3; c++) {
+        let src = c + deltaCols;
+        while (src < 2) src += span;
+        while (src > W - 3) src -= span;
+        arr[c] = tmp[src];
+      }
+    };
+    shiftTyped(moist);
+    shiftTyped(gw);
+    shiftTyped(nut);
+    shiftTyped(surf);
+    shiftTyped(stab);
+    shiftTyped(rootMass);
+    shiftTyped(erosion);
+    if (springCol >= 0) springCol = wrapCol(springCol);
+    computeWaterDist();
+
+    // Shift all grounded / sea / ceiling / island plants so trees and flora stay put on the ground below the airship!
+    for (let i = 0; i < state.plants.length; i++) {
+      const p = state.plants[i];
+      if (!p || p.dead) continue;
+      if (p.habitat === "cloud") continue;
+      p.col = wrapCol(p.col);
+      if (p.habitat === "ground" || p.habitat === "sea") {
+        p.ax = p.col * SCALE + p.sub;
+        p.ay = (H - groundElev(p.col)) * SCALE;
+      } else {
+        reanchor(p);
+      }
+    }
+
+    // Shift airborne pollen / spore / litter particles and fauna with the terrain
+    for (let i = 0; i < pCount; i++) {
+      let nx = P_X[i] - deltaCols * SCALE;
+      const minPx = 2 * SCALE;
+      const maxPx = (W - 2) * SCALE;
+      const spanPx = span * SCALE;
+      while (nx < minPx) nx += spanPx;
+      while (nx >= maxPx) nx -= spanPx;
+      P_X[i] = nx;
+    }
+    if (Array.isArray(state.fauna)) {
+      const minPx = 2 * SCALE;
+      const maxPx = (W - 2) * SCALE;
+      const spanPx = span * SCALE;
+      for (let i = 0; i < state.fauna.length; i++) {
+        const f = state.fauna[i];
+        if (!f || typeof f.x !== "number") continue;
+        f.x -= deltaCols * SCALE;
+        while (f.x < minPx) f.x += spanPx;
+        while (f.x >= maxPx) f.x -= spanPx;
+      }
+    }
+
+    rebuildOccupancy();
+    state.drawDirty = true;
+  }
+
   function reset() {
     state.initialized = false;
     state.worldCache.clear();
@@ -3351,6 +3426,7 @@
     init,
     step,
     render,
+    scrollByCols,
     onCivilizationEditGenome,
     getShadowFactorAt,
     getLightAt,
