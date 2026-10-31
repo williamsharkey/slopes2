@@ -123,18 +123,20 @@ body.fullscreen-mode #fullscreen-btn:hover{
   <canvas id="dlg-canvas"></canvas>
 </div>
 
-<script src="font.js?v=19"></script>
-<script src="audio.js?v=19"></script>
-<script src="sim/wasm_bridge.js?v=19"></script>
-<script src="sim/ecology_design.js?v=19"></script>
-<script src="sim/cosmic_engine.js?v=19"></script>
-<script src="sim/pentagonal_rotation.js?v=19"></script>
-<script src="sim/hardcore_tab.js?v=19"></script>
-<script src="sim/real_tabcomputer_bridge.js?v=19"></script>
-<script src="sim/tabform_lifeforms.js?v=19"></script>
-<script src="slopes2.js?v=19"></script>
-<script src="sim/ai_interface.js?v=19"></script>
-<script src="sim/lore_portal_dock.js?v=19"></script>
+<script src="font.js?v=20"></script>
+<script src="audio.js?v=20"></script>
+<script src="sim/wasm_bridge.js?v=20"></script>
+<script src="sim/ecology_design.js?v=20"></script>
+<script src="sim/cosmic_engine.js?v=20"></script>
+<script src="sim/pentagonal_rotation.js?v=20"></script>
+<script src="sim/hardcore_tab.js?v=20"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=20"></script>
+<script src="sim/tabform_lifeforms.js?v=20"></script>
+<script src="sim/genetic_flora_engine.js?v=20"></script>
+<script src="sim/parallax_dither_art.js?v=20"></script>
+<script src="slopes2.js?v=20"></script>
+<script src="sim/ai_interface.js?v=20"></script>
+<script src="sim/lore_portal_dock.js?v=20"></script>
 <script>
 (() => {
   "use strict";
@@ -1278,7 +1280,8 @@ body.fullscreen-mode #fullscreen-btn:hover{
   };
   const heldKeys = new Set();
   window.addEventListener("keydown", (e) => {
-    if (window.SlopesTabForms && window.SlopesTabForms.state && window.SlopesTabForms.state.terminalOpen) return;
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+    if (window.SlopesTabForms && window.SlopesTabForms.state && (window.SlopesTabForms.state.terminalOpen || window.SlopesTabForms.state.monolithChatOpen)) return;
     if (window.SlopesDatPuter && window.SlopesDatPuter.state && window.SlopesDatPuter.state.open) return;
     if (isTouchMode) {
       isTouchMode = false;
@@ -1292,7 +1295,8 @@ body.fullscreen-mode #fullscreen-btn:hover{
     triggerKey(k, true);
   });
   window.addEventListener("keyup", (e) => {
-    if (window.SlopesTabForms && window.SlopesTabForms.state && window.SlopesTabForms.state.terminalOpen) return;
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+    if (window.SlopesTabForms && window.SlopesTabForms.state && (window.SlopesTabForms.state.terminalOpen || window.SlopesTabForms.state.monolithChatOpen)) return;
     if (window.SlopesDatPuter && window.SlopesDatPuter.state && window.SlopesDatPuter.state.open) return;
     const k = KEY_MAP[e.code];
     if (!k) return;

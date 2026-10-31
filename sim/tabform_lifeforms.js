@@ -5504,7 +5504,7 @@
     if (typeof global.__slopes2EvalInScope === "function") {
       try {
         global.__slopes2EvalInScope(
-          `transitionToWorld(worldX + (${stepX}), worldLayer + (${stepY}), "${dir}"); if (P) { P.x = ${stepX > 0 ? 12 : stepX < 0 ? 130 : "P.x"}; if (Blocks && Blocks[P.x]) P.y = Blocks[P.x]; }`
+          `transitionToWorld(worldX + (${stepX}), worldLayer + (${stepY}), "${dir}"); if (P && ${stepX !== 0}) { P.x = ${stepX > 0 ? 12 : 130}; if (Blocks && Blocks[P.x]) P.y = Blocks[P.x]; }`
         );
         return;
       } catch (_) {}
@@ -5796,29 +5796,47 @@
             pushOverheadThought(tf, arrTxt, "#69db7c");
           }
         } else {
-          // Not currently set to follow: terminals randomly wander into your frame when they feel like visiting!
-          tf.randomVisitTimer = (tf.randomVisitTimer || 750) - 1;
-          if (tf.randomVisitTimer <= 0) {
-            const fromRoomX = tf.roomX || 0;
-            const entryEdge = fromRoomX < curScreenX ? "left" : "right";
-            tf.roomX = curScreenX;
-            tf.roomY = curLayer;
-            tf.currentScreenX = curScreenX;
-            tf.isOffScreen = false;
-            tf.entryEdge = entryEdge;
-            tf.x = entryEdge === "left" ? 4 : COARSE_W - 5;
-            tf.y = Math.max(seaLevel + 4, (blocks[Math.round(tf.x)] || 18) + 4);
-            tf.catchingUp = true;
-            tf.thrusterActive = true;
-            tf.randomVisitTimer = 1400 + i * 520;
-            const visitLines = [
-              `Wandered over from Sector (${fromRoomX},0) to say hi! Hover me & click [+ FOLLOW ME] to travel together.`,
-              `Came across from Sector (${fromRoomX},0) with fresh bamboo & brass blueprints—checking how your valley looks!`,
-              `Finished my autonomous chores in Sector (${fromRoomX},0) and decided to visit your frame!`,
-            ];
-            const vTxt = visitLines[(state.tickCount + i) % visitLines.length];
-            if (tf.shell) tf.shell.pushLine(`\x1b[96m[random-visit]\x1b[0m ${vTxt}`);
-            pushOverheadThought(tf, vTxt, tf.accentHex || "#78ead4");
+          // Not set to follow: some Tab-Forms are local homebodies (`i === 1` TAB-02) that remain in their own frame,
+          // while others (`i === 0, 2`) wander slowly in their own room and only cross into an adjacent frame
+          // when they physically walk across the frame border (never teleporting to the player!).
+          const isLocalHomebody = i === 1;
+          const offSpeed = isLocalHomebody ? 0.055 : 0.085;
+          if (typeof tf.offScreenTargetX !== "number" || Math.abs(tf.offScreenTargetX - (tf.x || 50)) < 2.2) {
+            if (isLocalHomebody) {
+              // Stay well inside its local room (cols 18..102)
+              tf.offScreenTargetX = 18 + ((state.tickCount * 13 + i * 41) % (COARSE_W - 36));
+            } else {
+              // Wander slowly; 80% of the time pick a spot inside the room, 20% walk to a border to enter an adjacent room
+              const crossRoll = (state.tickCount + i * 29) % 5;
+              if (crossRoll === 0) {
+                tf.offScreenTargetX = (state.tickCount + i) % 2 === 0 ? 1 : COARSE_W - 2;
+              } else {
+                tf.offScreenTargetX = 14 + ((state.tickCount * 17 + i * 53) % (COARSE_W - 28));
+              }
+            }
+          }
+          const dir = Math.sign(tf.offScreenTargetX - (tf.x || 50));
+          tf.x = (tf.x || 50) + dir * offSpeed;
+          tf.facing = dir || 1;
+          // Physically accurate border crossing into adjacent room (left edge -> roomX - 1 at right edge; right edge -> roomX + 1 at left edge)
+          if (!isLocalHomebody && tf.x <= 1.5) {
+            tf.roomX = (tf.roomX || 0) - 1;
+            tf.x = COARSE_W - 3;
+            tf.offScreenTargetX = COARSE_W - 28 - ((state.tickCount * 7) % 50);
+            if (tf.roomX === curScreenX && (tf.roomY || 0) === curLayer) {
+              tf.isOffScreen = false;
+              tf.catchingUp = false;
+              tf.targetX = tf.offScreenTargetX;
+            }
+          } else if (!isLocalHomebody && tf.x >= COARSE_W - 2.5) {
+            tf.roomX = (tf.roomX || 0) + 1;
+            tf.x = 3;
+            tf.offScreenTargetX = 28 + ((state.tickCount * 7) % 50);
+            if (tf.roomX === curScreenX && (tf.roomY || 0) === curLayer) {
+              tf.isOffScreen = false;
+              tf.catchingUp = false;
+              tf.targetX = tf.offScreenTargetX;
+            }
           }
         }
         continue;
@@ -5829,21 +5847,23 @@
 
       // 0D. If `tf` decided of its own accord ("mind of its own") to go help in an adjacent room, walk to the edge & depart!
       if (tf.departingToRoomX !== null && tf.departingToRoomX !== undefined) {
-        const edgeX = tf.departingToRoomX < curScreenX ? 3 : COARSE_W - 4;
+        const edgeX = tf.departingToRoomX < curScreenX ? 2 : COARSE_W - 3;
         const dir = edgeX >= tf.x ? 1 : -1;
-        tf.x += dir * 0.42;
+        tf.x += dir * 0.24;
         tf.facing = dir;
-        tf.wheelPhase += dir * 0.55;
+        tf.wheelPhase += dir * 0.45;
         const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(tf.x)));
         tf.y = Math.max(seaLevel + 2, (blocks[col] || 18) + (tf.defaultHover ? 5 : 0));
-        if (Math.abs(tf.x - edgeX) <= 2.2) {
+        if (Math.abs(tf.x - edgeX) <= 1.8) {
+          const enteredLeftOfAdj = tf.departingToRoomX > curScreenX;
           tf.roomX = tf.departingToRoomX;
           tf.departingToRoomX = null;
           tf.isOffScreen = true;
+          // Physically accurate entry position at the matching border of the adjacent room!
+          tf.x = enteredLeftOfAdj ? 3 : COARSE_W - 4;
+          tf.offScreenTargetX = enteredLeftOfAdj ? 38 : COARSE_W - 38;
           if (tf.followRequested) {
-            tf.followEtaTicks = 960 + i * 320; // Will return to player in ~16..26 seconds after helping out!
-          } else {
-            tf.randomVisitTimer = 980 + i * 420;
+            tf.followEtaTicks = 960 + i * 320;
           }
         }
         continue;
@@ -5853,42 +5873,45 @@
       //     logging it and showing a fading/marquee overhead text line above their robot/tree form!
       tf.mindOfOwnTimer = (tf.mindOfOwnTimer || 440) - 1;
       if (tf.mindOfOwnTimer <= 0) {
-        tf.mindOfOwnTimer = 440 + ((state.tickCount * 19 + i * 173) % 420);
-        const urgeRoll = (state.tickCount + i * 7) % 9;
-        if (urgeRoll === 0 && state.tickCount > 520) {
-          // Decide to head to an adjacent room for a bit to help villagers or consecrate burials!
+        tf.mindOfOwnTimer = 480 + ((state.tickCount * 19 + i * 173) % 460);
+        const urgeRoll = (state.tickCount + i * 7) % 11;
+        // TAB-02 (`i === 1`) is a local homebody and stays in its frame; others only rarely wander to an adjacent room
+        if (urgeRoll === 0 && i !== 1 && state.tickCount > 600) {
           const adjRoom = curScreenX + ((state.tickCount + i) % 2 === 0 ? 1 : -1);
           tf.departingToRoomX = adjRoom;
           const departMsgs = [
-            `Hold on—villagers in Sector (${adjRoom},0) need help terracing a landslide! Heading over, I'll be back in a minute.`,
-            `My sensors picked up Ghost Ship coffins in Sector (${adjRoom},0)—going to consecrate green burials, catch up soon!`,
-            `Heading to Sector (${adjRoom},0) to deliver brass gears to the Sky Hospital—use arrows to find me or wait a minute!`,
+            `Heading slowly to Sector (${adjRoom},0) to terrace a slope—I'll cross at the frame border.`,
+            `Walking over to Sector (${adjRoom},0) to tend the wild flora & consecrate green burials.`,
+            `Wandering to Sector (${adjRoom},0) to deliver brass gears to the Sky Hospital.`,
           ];
           const dTxt = departMsgs[(state.tickCount + i) % departMsgs.length];
           if (tf.shell) tf.shell.pushLine(`\x1b[93m[mind-of-own]\x1b[0m ${dTxt}`);
           pushOverheadThought(tf, dTxt, "#ffd43b");
         } else {
-          // In-frame autonomous urge: move to a spot on this screen and do meaningful work!
+          // In-frame autonomous urge: wander slowly to a local ridge/valley coordinate (not necessarily to the player!)
+          const randomRidgeX = 18 + ((state.tickCount * 11 + i * 37) % (COARSE_W - 36));
           const localUrges = [
             {
-              targetX: 28,
+              targetX: 26,
               form: "wooden-robot",
               text: "Shifting to Wooden-Robot form to grade the western slope & plant bamboo for the villagers.",
             },
             {
-              targetX: 108,
+              targetX: 98,
               form: "living-tree",
               text: "Taking root as a Living-Tree on the eastern ridge to shelter fawns & synthesize flora DNA.",
             },
             {
-              targetX: Math.max(16, Math.min(COARSE_W - 16, Math.round(playerX + (i - 1) * 16))),
+              targetX: tf.followRequested
+                ? Math.max(16, Math.min(COARSE_W - 16, Math.round(playerX + (i - 1) * 16)))
+                : randomRidgeX,
               form: "mecha",
               text: tf.followRequested
                 ? "Keeping pace with you across the valley—scanning horizon for Ghost Ships & Castle roots."
-                : "Checking in near your position before my next autonomous patrol—hover me to toggle [FOLLOW]!",
+                : `Wandering slowly to x=${randomRidgeX} on my own local patrol—hover me to toggle [FOLLOW]!`,
             },
             {
-              targetX: 68,
+              targetX: 58,
               form: "wooden-robot",
               text: "Trading spun bamboo & glass blueprints with the Automata University to upgrade Sky-Homes.",
             },
@@ -6272,15 +6295,19 @@
     const stateFlags = new Uint8Array(MASS_AGENT_COUNT); // bit0=snared in web/trap, bit1=locked in prison, bit2=airborne flyer, bit3=melee swinging
     const cooldown = new Uint8Array(MASS_AGENT_COUNT);
     const targetIdx = new Int16Array(MASS_AGENT_COUNT);
+    const homeRoomX = new Int16Array(MASS_AGENT_COUNT);
 
     for (let i = 0; i < MASS_AGENT_COUNT; i++) {
       const f = i & 3; // 4 civilizations interacting simultaneously
       faction[i] = f;
       const r = (i * 7 + (i >> 2)) % 9;
       role[i] = r;
-      const isFlyer = f === 1 || r === ROLE_EGG_BOMBER;
+      const isFlyer = f === 1 || r === ROLE_EGG_BOMBER || (i & 7) === 3;
       stateFlags[i] = isFlyer ? 4 : 0;
-      // Distribute across the 144-column world in faction clusters & battle fronts
+      // Distribute across 6 world frames (rooms -2, -1, 0, 1, 2, 3) so ground units stay put in their own room
+      // when you walk to a new frame, while aerial flyers flock naturally across frame edges!
+      const rm = (i % 6) - 2;
+      homeRoomX[i] = rm;
       const baseCol =
         f === 0
           ? 10 + ((i * 13) % 52)
@@ -6289,14 +6316,15 @@
           : f === 2
           ? 58 + ((i * 19) % 54)
           : 42 + ((i * 23) % 88);
-      x[i] = baseCol + (i % 7) * 0.14;
-      const gnd = Math.max(seaLevel + 1, blocks[Math.min(COARSE_W - 2, Math.max(2, Math.round(x[i])))] || 18);
+      const localCol = baseCol + (i % 7) * 0.14;
+      x[i] = rm * COARSE_W + localCol;
+      const gnd = Math.max(seaLevel + 1, blocks[Math.min(COARSE_W - 2, Math.max(2, Math.round(localCol)))] || 18);
       y[i] = isFlyer ? gnd + 14 + (i % 18) : gnd;
-      vx[i] = ((i & 1) === 0 ? 1 : -1) * (0.12 + (i % 5) * 0.03);
+      vx[i] = ((i & 1) === 0 ? 1 : -1) * (0.14 + (i % 5) * 0.03);
       vy[i] = 0;
       hp[i] = 100;
       cooldown[i] = (i * 11) % 45;
-      targetIdx[i] = (i + 513) % MASS_AGENT_COUNT;
+      targetIdx[i] = (i + 6) % MASS_AGENT_COUNT;
     }
 
     state.massBattle = {
@@ -6311,7 +6339,9 @@
       stateFlags,
       cooldown,
       targetIdx,
-      // Projectiles (aimed arrows, weapon shots, dropped eggs, bombs)
+      homeRoomX,
+      lastScrollCol: 0,
+      // Projectiles (aimed arrows, weapon shots, dropped eggs, bombs) in global world coordinates
       projX: new Float32Array(MASS_PROJ_COUNT),
       projY: new Float32Array(MASS_PROJ_COUNT),
       projVx: new Float32Array(MASS_PROJ_COUNT),
@@ -6362,6 +6392,12 @@
     const mb = ensureMassCivilizationBattle(world);
     const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
     const seaLevel = (world && world.seaLevel) || 12;
+    const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
+    const as = state.airshipVillage;
+    const cameraWorldX =
+      as && as.riding && typeof as.continuousScrollX === "number"
+        ? as.continuousScrollX
+        : curSx * COARSE_W;
     const ct = mb.cTuner;
     ct.horizonTick++;
 
@@ -6388,7 +6424,7 @@
           floodG[c - 1] = Math.min(10, floodG[c - 1] + flow * 0.96);
         }
         if (hCur > hR + 0.1) {
-          const flow = Math.min( floodG[c] * 0.25, 0.45);
+          const flow = Math.min(floodG[c] * 0.25, 0.45);
           floodG[c] -= flow;
           floodG[c + 1] = Math.min(10, floodG[c + 1] + flow * 0.96);
         }
@@ -6431,7 +6467,10 @@
       ct.eggBombRate = 0.52 + 0.34 * Math.sin(phase * 2.3);
     }
 
-    // 2. Step all 2,048 Civilization Individuals in a single tight TypedArray loop!
+    // 2. Step all 2,048 Civilization Individuals in global world coordinates:
+    //    - Ground combatants stay put in their own room (`homeRoomX[i]`) when you travel to a new frame!
+    //    - Aerial flyers (`isFlyer`) flock naturally over the frame edges with Boids cohesion, alignment,
+    //      separation, and obstacle avoidance (terrain peaks, Glass Biodomes, and Airship hull)!
     const ax = mb.x;
     const ay = mb.y;
     const avx = mb.vx;
@@ -6442,9 +6481,13 @@
     const aflags = mb.stateFlags;
     const acd = mb.cooldown;
     const atgt = mb.targetIdx;
+    const aroom = mb.homeRoomX;
 
     let imprisonedCnt = 0;
     let snaredCnt = 0;
+    const activeRoomCenterWorldX = cameraWorldX + COARSE_W * 0.5;
+    const airshipWorldX = as ? cameraWorldX + as.x : -9999;
+    const airshipY = as ? as.y : 60;
 
     for (let i = 0; i < MASS_AGENT_COUNT; i++) {
       const f = afac[i];
@@ -6452,51 +6495,54 @@
       let xi = ax[i];
       let yi = ay[i];
       let flags = aflags[i];
-      const col = Math.max(2, Math.min(COARSE_W - 3, xi | 0));
-      const gnd = Math.max(seaLevel + 1, blocks[col] || 18);
       const isFlyer = (flags & 4) !== 0;
 
-      // Check field prisons & web/snare traps at this column!
-      if (!isFlyer) {
-        if (prisG[col] > 0 && mb.prisonFaction[col] !== f) {
+      const relX = xi - cameraWorldX;
+      const inCurrentView = relX >= 2 && relX < COARSE_W - 2;
+      const localCol = inCurrentView
+        ? Math.max(2, Math.min(COARSE_W - 3, relX | 0))
+        : Math.max(2, Math.min(COARSE_W - 3, (((xi % COARSE_W) + COARSE_W) % COARSE_W) | 0));
+      const gnd = Math.max(seaLevel + 1, blocks[localCol] || 18);
+
+      // Check field prisons & web/snare traps at this column (when in current view)!
+      if (!isFlyer && inCurrentView) {
+        if (prisG[localCol] > 0 && mb.prisonFaction[localCol] !== f) {
           flags |= 2; // Locked in enemy field prison!
           imprisonedCnt++;
-          ax[i] = col + 0.5;
           ay[i] = gnd;
           aflags[i] = flags;
-          // Fight with fists/sword to break out of prison!
-          if (((tick + i) & 15) === 0 && prisG[col] > 0) prisG[col]--;
+          if (((tick + i) & 15) === 0 && prisG[localCol] > 0) prisG[localCol]--;
           continue;
         } else {
           flags &= ~2;
         }
 
-        if (trapG[col] > 0) {
+        if (trapG[localCol] > 0) {
           flags |= 1; // Snared in web/trap!
           snaredCnt++;
           avx[i] *= 0.25;
-          if (((tick + i) & 7) === 0 && trapG[col] > 0) trapG[col]--;
+          if (((tick + i) & 7) === 0 && trapG[localCol] > 0) trapG[localCol]--;
         } else {
           flags &= ~1;
         }
 
         // Rushing floodwater sweeps ground combatants down-slope!
-        if (floodG[col] > 0.35) {
-          const slopeDir = (blocks[col + 1] || gnd) < (blocks[col - 1] || gnd) ? 1 : -1;
+        if (floodG[localCol] > 0.35) {
+          const slopeDir = (blocks[localCol + 1] || gnd) < (blocks[localCol - 1] || gnd) ? 1 : -1;
           xi += slopeDir * 0.18;
         }
 
         // Fire damages ground combatants and makes them flee or flood!
-        if (fireG[col] > 20) {
+        if (fireG[localCol] > 20) {
           if (ahp[i] > 10) ahp[i]--;
           avx[i] = (i & 1 ? 1 : -1) * 0.32;
         }
       }
 
-      // Target acquisition: check current target or sample a new opposing civilization individual
+      // Target acquisition: prefer targets in the same room or nearby
       let tid = atgt[i];
-      if (tid < 0 || tid >= MASS_AGENT_COUNT || afac[tid] === f || ((tick + i) & 63) === 0) {
-        const cand = (i * 37 + tick * 13) & (MASS_AGENT_COUNT - 1);
+      if (tid < 0 || tid >= MASS_AGENT_COUNT || afac[tid] === f || Math.abs(ax[tid] - xi) > COARSE_W || ((tick + i) & 63) === 0) {
+        const cand = (i + 6 * (1 + ((tick + i) & 7))) % MASS_AGENT_COUNT;
         if ((afac[cand] === 3) !== (f === 3)) {
           tid = cand;
           atgt[i] = tid;
@@ -6509,51 +6555,121 @@
       const dy = ty - yi;
       const absDx = dx < 0 ? -dx : dx;
 
-      // Movement & Vertical Physics
-      const dir = dx >= 0 ? 1 : -1;
-      const desiredSpd =
-        r <= ROLE_SPEAR
-          ? 0.22 * ct.meleeAggression
-          : r === ROLE_EGG_BOMBER
-          ? 0.28
-          : absDx > 24
-          ? 0.16
-          : absDx < 9
-          ? -0.12
-          : 0.06;
-
-      if ((flags & 1) === 0) {
-        avx[i] = avx[i] * 0.82 + dir * desiredSpd * 0.18;
-      }
-      xi += avx[i];
-      if (xi < 4) {
-        xi = 4;
-        avx[i] = Math.abs(avx[i]);
-      } else if (xi > COARSE_W - 5) {
-        xi = COARSE_W - 5;
-        avx[i] = -Math.abs(avx[i]);
-      }
-
-      const newCol = Math.max(2, Math.min(COARSE_W - 3, xi | 0));
-      const newGnd = Math.max(seaLevel + 1, blocks[newCol] || 18);
       if (isFlyer) {
-        const cruiseAlt = newGnd + 14 + ((i * 5) % 18) + Math.sin(tick * 0.08 + i) * 1.5;
-        yi += (cruiseAlt - yi) * 0.15;
+        // ====================================================================
+        // AERIAL FLOCKING (Boids Cohesion + Alignment + Separation) &
+        // NATURAL MIGRATION ACROSS FRAME EDGES + OBSTACLE AVOIDANCE!
+        // ====================================================================
+        const mate1 = (i + 4) & (MASS_AGENT_COUNT - 1);
+        const mate2 = (i + 12) & (MASS_AGENT_COUNT - 1);
+        let cohX = 0;
+        let cohY = 0;
+        let sepX = 0;
+        let sepY = 0;
+        let alignVx = 0;
+        let flockCnt = 0;
+        for (let m = 0; m < 2; m++) {
+          const mIdx = m === 0 ? mate1 : mate2;
+          if ((aflags[mIdx] & 4) === 0) continue;
+          const mdx = ax[mIdx] - xi;
+          const mdy = ay[mIdx] - yi;
+          const md2 = mdx * mdx + mdy * mdy;
+          if (md2 < 1800) {
+            cohX += mdx;
+            cohY += mdy;
+            alignVx += avx[mIdx];
+            flockCnt++;
+            if (md2 < 28 && md2 > 0.01) {
+              sepX -= mdx * 0.35;
+              sepY -= mdy * 0.35;
+            }
+          }
+        }
+
+        // Gradual migration pull toward the player's current frame (`activeRoomCenterWorldX`)
+        // so flyers naturally cross over the left/right edges into the new frame over time instead of teleporting!
+        const toActiveRoom = activeRoomCenterWorldX + ((i * 19) % 88) - 44 - xi;
+        const migrationPull = Math.abs(toActiveRoom) > COARSE_W * 0.48
+          ? Math.sign(toActiveRoom) * 0.34
+          : Math.sign(dx) * 0.22;
+
+        let targetVx = migrationPull;
+        let targetVy = 0;
+        if (flockCnt > 0) {
+          targetVx = targetVx * 0.62 + (alignVx / flockCnt) * 0.26 + (cohX / flockCnt) * 0.012 + sepX * 0.18;
+          targetVy += (cohY / flockCnt) * 0.02 + sepY * 0.18;
+        }
+
+        // Obstacle Avoidance 1: Look ahead at terrain slope & high mountain peaks
+        const aheadCol = Math.max(2, Math.min(COARSE_W - 3, (localCol + Math.sign(avx[i] || 1) * 5) | 0));
+        const maxTerrainAhead = Math.max(gnd, blocks[aheadCol] || 18);
+        const minSafeAlt = maxTerrainAhead + 11 + ((i * 5) % 16);
+        if (yi < minSafeAlt) {
+          targetVy += (minSafeAlt - yi) * 0.22;
+        } else {
+          const cruiseAlt = maxTerrainAhead + 14 + ((i * 5) % 18) + Math.sin(tick * 0.07 + i * 0.5) * 2.2;
+          targetVy += (cruiseAlt - yi) * 0.09;
+        }
+
+        // Obstacle Avoidance 2: Avoid the Airship hull & envelope!
+        const adx = xi - airshipWorldX;
+        const ady = yi - airshipY;
+        if (Math.abs(adx) < 14 && Math.abs(ady) < 10) {
+          targetVy += (ady >= 0 ? 1 : -1) * 0.45;
+          targetVx += (adx >= 0 ? 1 : -1) * 0.22;
+        }
+
+        avx[i] = Math.max(-0.52, Math.min(0.52, avx[i] * 0.86 + targetVx * 0.14));
+        avy[i] = Math.max(-0.42, Math.min(0.42, avy[i] * 0.82 + targetVy * 0.18));
+        xi += avx[i];
+        yi = Math.max(maxTerrainAhead + 4, Math.min(COARSE_H - 5, yi + avy[i]));
       } else {
-        yi = newGnd;
+        // ====================================================================
+        // GROUND COMBATANTS & CITIZENS: Stay put in their own `homeRoomX[i]`!
+        // ====================================================================
+        const rm = aroom[i];
+        const minRoomX = rm * COARSE_W + 4;
+        const maxRoomX = (rm + 1) * COARSE_W - 5;
+        const dir = dx >= 0 ? 1 : -1;
+        const desiredSpd =
+          r <= ROLE_SPEAR
+            ? 0.22 * ct.meleeAggression
+            : absDx > 24
+            ? 0.16
+            : absDx < 9
+            ? -0.12
+            : 0.06;
+
+        if ((flags & 1) === 0) {
+          avx[i] = avx[i] * 0.82 + dir * desiredSpd * 0.18;
+        }
+        xi += avx[i];
+        if (xi < minRoomX) {
+          xi = minRoomX;
+          avx[i] = Math.abs(avx[i]);
+        } else if (xi > maxRoomX) {
+          xi = maxRoomX;
+          avx[i] = -Math.abs(avx[i]);
+        }
+        yi = gnd;
       }
 
       ax[i] = xi;
       ay[i] = yi;
 
-      // Procedural Combat & Engineering Decision per Individual!
+      // Procedural Combat & Engineering Decision per Individual (when in or near current view)
+      if (!inCurrentView && absDx > 36) {
+        aflags[i] = flags;
+        continue;
+      }
+      const dir = dx >= 0 ? 1 : -1;
+      const newCol = Math.max(2, Math.min(COARSE_W - 3, (xi - cameraWorldX) | 0));
       if (acd[i] > 0) {
         acd[i]--;
         flags &= ~8;
       } else {
         // Individual is ready to act!
         if (r === ROLE_FIST || r === ROLE_SWORD || r === ROLE_SPEAR) {
-          // Close-quarters melee (Fists, Sword, or Spear)
           const reach = r === ROLE_SPEAR ? 4.2 : r === ROLE_SWORD ? 3.0 : 2.2;
           if (absDx <= reach && Math.abs(dy) <= 4.0) {
             flags |= 8; // Active melee strike flash!
@@ -6561,19 +6677,16 @@
             const dmg = r === ROLE_SWORD ? 18 : r === ROLE_SPEAR ? 16 : 11;
             if (ahp[tid] > dmg) ahp[tid] -= dmg;
             else {
-              // Respawn defeated combatant at their civilization's rally point
               ahp[tid] = 100;
-              ax[tid] = afac[tid] === 3 ? 110 : 22 + afac[tid] * 24;
+              const trm = aroom[tid];
+              ax[tid] = trm * COARSE_W + (afac[tid] === 3 ? 110 : 22 + afac[tid] * 24);
             }
-            // Knockback from fists/spear
-            ax[tid] = Math.max(4, Math.min(COARSE_W - 5, ax[tid] + dir * 1.2));
+            ax[tid] += dir * 1.2;
           } else if (r === ROLE_SPEAR && absDx < 18 && ((tick + i) & 31) === 0) {
-            // Throw javelin/spear!
             spawnMassProjectile(mb, xi, yi + 1.5, dir * 0.75, 0.18, 1, f);
             acd[i] = 42;
           }
         } else if (r === ROLE_ARCHER || r === ROLE_GUNNER) {
-          // Ballistic Aiming: compute lead on moving target + gravity compensation to aim arrows or fire weapons!
           if (absDx < 52 && ((tick + i) & 7) === 0) {
             const flightTime = Math.max(4, absDx / 0.85);
             const leadX = tx + avx[tid] * flightTime * ct.aimLead;
@@ -6593,34 +6706,28 @@
             acd[i] = 36 + (i & 15);
           }
         } else if (r === ROLE_EGG_BOMBER || isFlyer) {
-          // Aerial Flyer: drop Eggs or drop Bombs onto enemy clusters below!
           if (absDx < 10 && yi > ty + 4) {
             const isBomb = f === 3 || ((i + tick) & 3) === 0;
             spawnMassProjectile(mb, xi, yi - 1, avx[i] * 0.4, -0.55, isBomb ? 4 : 3, f);
             acd[i] = Math.max(28, Math.round(52 * (1.2 - ct.eggBombRate * 0.5)));
           }
-        } else if (r === ROLE_WEB_TRAPPER) {
-          // Spin Webs & Snare Traps at tactical choke points!
+        } else if (r === ROLE_WEB_TRAPPER && inCurrentView) {
           if (trapG[newCol] < 80 && absDx < 18) {
             trapG[newCol] = Math.min(255, trapG[newCol] + 95);
             acd[i] = Math.max(35, Math.round(70 * (1.2 - ct.webTrapRate * 0.5)));
           }
-        } else if (r === ROLE_PRISON_BUILDER) {
-          // Construct Field Prisons around snared enemies or contested ground!
+        } else if (r === ROLE_PRISON_BUILDER && inCurrentView) {
           if (prisG[newCol] < 90 && (trapG[newCol] > 20 || absDx < 8)) {
             prisG[newCol] = Math.min(255, prisG[newCol] + 120);
             mb.prisonFaction[newCol] = f;
             acd[i] = Math.max(45, Math.round(85 * (1.2 - ct.prisonBuildRate * 0.5)));
           }
-        } else if (r === ROLE_PYRO_FLOODER) {
-          // Elemental Sapper: set things on fire OR flood areas with rushing water!
+        } else if (r === ROLE_PYRO_FLOODER && inCurrentView) {
           if (f === 3 || (f === 0 && ct.pyroFireRate > ct.hydroFloodRate && floodG[newCol] < 0.2)) {
-            // Set fire / launch fire-bomb!
             fireG[newCol] = Math.min(255, fireG[newCol] + 110);
             spawnMassProjectile(mb, xi, yi + 1.5, dir * 0.65, 0.22, 5, f);
             acd[i] = 55;
           } else {
-            // Release floodgate water wave to flood area, sweep enemies & extinguish fires!
             floodG[newCol] = Math.min(9.5, floodG[newCol] + 2.8);
             spawnMassProjectile(mb, xi, yi + 1.5, dir * 0.6, 0.18, 6, f);
             acd[i] = 50;
@@ -6639,7 +6746,6 @@
     const pvx = mb.projVx;
     const pvy = mb.projVy;
     const pk = mb.projKind;
-    const pf = mb.projFaction;
 
     for (let p = 0; p < MASS_PROJ_COUNT; p++) {
       const k = pk[p];
@@ -6649,21 +6755,21 @@
       if (k === 1 || k === 3 || k === 4 || k === 5) {
         pvy[p] -= 0.016; // Gravity arc for arrows, eggs, and bombs
       }
-      const xCol = px[p] | 0;
-      if (xCol < 2 || xCol >= COARSE_W - 2 || py[p] > COARSE_H) {
+      const relCol = (px[p] - cameraWorldX) | 0;
+      if (relCol < -40 || relCol >= COARSE_W + 40 || py[p] > COARSE_H) {
         pk[p] = 0;
         continue;
       }
-      const gnd = Math.max(seaLevel, blocks[xCol] || 18);
+      const clampedCol = Math.max(2, Math.min(COARSE_W - 3, relCol));
+      const gnd = Math.max(seaLevel, blocks[clampedCol] || 18);
       if (py[p] <= gnd) {
-        // Projectile impacted terrain!
-        if (k === 4 || k === 5) {
-          // Bomb or Fire-Bomb ignites fire on impact!
-          fireG[xCol] = Math.min(255, fireG[xCol] + (k === 5 ? 140 : 85));
-        } else if (k === 6) {
-          // Flood-jet floods the impact column!
-          floodG[xCol] = Math.min(10.0, floodG[xCol] + 3.2);
-          fireG[xCol] = 0;
+        if (relCol >= 2 && relCol < COARSE_W - 2) {
+          if (k === 4 || k === 5) {
+            fireG[relCol] = Math.min(255, fireG[relCol] + (k === 5 ? 140 : 85));
+          } else if (k === 6) {
+            floodG[relCol] = Math.min(10.0, floodG[relCol] + 3.2);
+            fireG[relCol] = 0;
+          }
         }
         pk[p] = 0;
       }
@@ -6673,8 +6779,15 @@
   function renderMassCivilizationBattle(primeRenderer, tick) {
     const mb = state.massBattle;
     if (!mb || typeof primeRenderer.fillNativeRect !== "function") return;
-    const blocks = (state.lastWorldContext && state.lastWorldContext.Blocks) || new Array(COARSE_W).fill(18);
-    const seaLevel = (state.lastWorldContext && state.lastWorldContext.seaLevel) || 12;
+    const curW = state.lastWorldContext;
+    const blocks = (curW && curW.Blocks) || new Array(COARSE_W).fill(18);
+    const seaLevel = (curW && curW.seaLevel) || 12;
+    const curSx = curW && (curW.worldX !== undefined ? curW.worldX : curW.screenX !== undefined ? curW.screenX : 0);
+    const as = state.airshipVillage;
+    const cameraWorldX =
+      as && as.riding && typeof as.continuousScrollX === "number"
+        ? as.continuousScrollX
+        : curSx * COARSE_W;
 
     const fireG = mb.fireGrid;
     const floodG = mb.floodGrid;
@@ -6727,8 +6840,7 @@
       }
     }
 
-    // 2. Render all 2,048 Individual Civilization Combatants & Citizens at 60 FPS!
-    //    Each individual shows their faction color + active weapon (fists, sword, spear, bow/gun, wings)!
+    // 2. Render Individual Civilization Combatants & Aerial Flocking Flyers in the current camera view!
     const ax = mb.x;
     const ay = mb.y;
     const avx = mb.vx;
@@ -6737,7 +6849,9 @@
     const aflags = mb.stateFlags;
 
     for (let i = 0; i < MASS_AGENT_COUNT; i++) {
-      const px = (ax[i] * SCALE) | 0;
+      const relX = ax[i] - cameraWorldX;
+      if (relX < 0.3 || relX >= COARSE_W - 0.3) continue;
+      const px = (relX * SCALE) | 0;
       const py = ((COARSE_H - ay[i]) * SCALE) | 0;
       if (px < 2 || px >= NATIVE_W - 2 || py < 2 || py >= NATIVE_H - 2) continue;
 
@@ -6756,46 +6870,41 @@
 
       // Weapon / Action visualization:
       if ((flg & 8) !== 0) {
-        // Active melee strike with Fists, Sword, or Spear!
         if (r === ROLE_SWORD) {
           primeRenderer.fillNativeRect(px + dir, py - 3, 3 * dir, 1, 240, 248, 255, 1);
         } else if (r === ROLE_SPEAR) {
           primeRenderer.fillNativeRect(px + dir, py - 2, 5 * dir, 1, 255, 220, 120, 1);
         } else {
-          // Fist punch flash
           primeRenderer.fillNativeRect(px + dir, py - 2, 2 * dir, 1, 255, 200, 150, 1);
         }
       } else if ((flg & 4) !== 0) {
-        // Flapping wings for aerial Egg/Bomb droppers
+        // Flapping wings for aerial flocking flyers
         const flap = ((tick + i) & 2) === 0 ? -1 : 1;
         primeRenderer.fillNativeRect(px - 1, py - 2 + flap, 3, 1, cr, cg, cb, 0.85);
       }
     }
 
-    // 3. Render all active Projectiles (Arrows, Weapon Bolts, Dropped Eggs, Bombs, Fireballs, Flood-Jets)
+    // 3. Render all active Projectiles in the current camera view
     const pxArr = mb.projX;
     const pyArr = mb.projY;
     const pkArr = mb.projKind;
     for (let p = 0; p < MASS_PROJ_COUNT; p++) {
       const k = pkArr[p];
       if (k === 0) continue;
-      const x = (pxArr[p] * SCALE) | 0;
+      const relX = pxArr[p] - cameraWorldX;
+      if (relX < 0.3 || relX >= COARSE_W - 0.3) continue;
+      const x = (relX * SCALE) | 0;
       const y = ((COARSE_H - pyArr[p]) * SCALE) | 0;
       if (x < 2 || x >= NATIVE_W - 2 || y < 2 || y >= NATIVE_H - 2) continue;
       if (k === 1) {
-        // Arrow
         primeRenderer.fillNativeRect(x - 1, y, 3, 1, 255, 230, 130, 0.95);
       } else if (k === 2) {
-        // Weapon bolt
         primeRenderer.fillNativeRect(x - 1, y, 3, 1, 120, 245, 255, 1);
       } else if (k === 3) {
-        // Dropped Egg
         primeRenderer.fillNativeRect(x - 1, y - 1, 2, 3, 248, 242, 215, 1);
       } else if (k === 4 || k === 5) {
-        // Bomb / Fire-Bomb
         primeRenderer.fillNativeRect(x - 1, y - 1, 3, 3, 255, 95, 40, 1);
       } else if (k === 6) {
-        // Water Flood-Jet
         primeRenderer.fillNativeRect(x - 1, y - 1, 3, 2, 65, 185, 255, 0.95);
       }
     }
@@ -6825,13 +6934,20 @@
       label: "CASTLE-VILLAGE AIRSHIP SOVEREIGN",
       x: 68,
       y: 62,
+      globalX: curSx * COARSE_W + 68, // Continuous global world X across frames!
+      targetAltitudeY: 58,
       vx: 0.22,
       vy: 0.0,
       cruiseVx: 0.28,
       riding: false,
+      isOffScreen: false,
       centeringBlend: 0.0,       // 0.0 (free world frame) -> 1.0 (centered Airship continuous-world reference frame)
       continuousScrollX: curSx * COARSE_W,
+      scrollColumnAccum: 0.0,
       playerDeckOffset: 0,
+      playerRopeDrop: 0,         // Vertical descent down the boarding rope when pressing Down aboard!
+      playerSteerTimer: 0,
+      dismountCooldown: 0,
       hullHp: 200,
       maxHullHp: 200,
       rescuedVillagersAboard: 4,
@@ -6889,85 +7005,319 @@
     return state.airshipVillage;
   }
 
+  // Player controls while aboard the Airship Castle-Village:
+  // - Left / Right: Steer the Airship direction & cruise velocity (`as.cruiseVx`).
+  // - Up: If hanging on the rope (`as.playerRopeDrop > 0`), climb back up the rope; if on deck, guide the Airship higher (`as.targetAltitudeY`).
+  // - Down: Descend the rope below the Airship (`as.playerRopeDrop`). While on the rope, if you don't go all the way to the ground,
+  //   the Airship slowly descends to meet you and puts you back on board (guiding the ship downward). If you go all the way to the
+  //   bottom of the rope at the ground, it lets you off onto solid ground!
+  function onAirshipPlayerControl(dir, world) {
+    const as = ensureAirshipCastleVillage(world || state.lastWorldContext);
+    if (!as || !as.riding) return false;
+    const w = world || state.lastWorldContext;
+    const blocks = (w && w.Blocks) || new Array(COARSE_W).fill(18);
+    const seaLevel = (w && w.seaLevel) || 12;
+    const player =
+      (w && (w.Player || w.P)) ||
+      (global.SlopesGame && typeof global.SlopesGame.getPlayer === "function" && global.SlopesGame.getPlayer()) ||
+      null;
+
+    if (dir === "left") {
+      as.cruiseVx = Math.max(-0.68, (as.cruiseVx || 0) - 0.14);
+      if (Math.abs(as.cruiseVx) < 0.08) as.cruiseVx = -0.14;
+      as.vx = as.cruiseVx;
+      as.playerSteerTimer = 180;
+      as.playerDeckOffset = Math.max(-5, (as.playerDeckOffset || 0) - 0.5);
+      return true;
+    }
+    if (dir === "right") {
+      as.cruiseVx = Math.min(0.68, (as.cruiseVx || 0) + 0.14);
+      if (Math.abs(as.cruiseVx) < 0.08) as.cruiseVx = 0.14;
+      as.vx = as.cruiseVx;
+      as.playerSteerTimer = 180;
+      as.playerDeckOffset = Math.min(5, (as.playerDeckOffset || 0) + 0.5);
+      return true;
+    }
+    if (dir === "up") {
+      if ((as.playerRopeDrop || 0) > 0.2) {
+        as.playerRopeDrop = Math.max(0, as.playerRopeDrop - 3.2);
+      } else {
+        as.targetAltitudeY = Math.min(COARSE_H - 12, (as.targetAltitudeY || as.y || 58) + 2.8);
+      }
+      return true;
+    }
+    if (dir === "down") {
+      as.playerRopeDrop = (as.playerRopeDrop || 0) + 3.4;
+      const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(as.x + (as.playerDeckOffset || 0))));
+      const groundH = Math.max(seaLevel, blocks[col] || 18);
+      const ropePlayerY = as.y - 1.5 - as.playerRopeDrop;
+      // Also nudge the Airship's target altitude slightly downward when pulling on the rope
+      as.targetAltitudeY = Math.max(groundH + 10, (as.targetAltitudeY || as.y || 58) - 1.1);
+      if (ropePlayerY <= groundH + 1.2) {
+        // Reached the bottom of the rope at the ground -> dismount onto solid terrain!
+        as.riding = false;
+        as.playerRopeDrop = 0;
+        as.dismountCooldown = 75;
+        if (player) {
+          player.x = col;
+          player.y = groundH;
+          player.onAirship = null;
+          player.hopTimer = 0;
+        }
+        pushMainframeLine(
+          `\x1b[93m[AIRSHIP ROPE DISMOUNT]\x1b[0m Climbed all the way down the boarding rope and stepped off onto the ground at x=${col}.`
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Scroll all world objects (`Towns`, `Caves`, `Crystals`, `Mushrooms`, `Dwarves`, `Rocks`,
+  // `OrangePeople`, `ComputeVats`, `Labs`, `TimeCrystals`, `wfcZones`, `Biodomes/Civ`, `White Monoliths`, `Tab-Forms`)
+  // by `-deltaCols` when the Airship scrolls the world, so objects stay in the world and scroll with the ground
+  // rather than moving with the Airship!
+  function scrollWorldEntitiesBeneathAirship(world, deltaCols) {
+    if (!deltaCols || !world) return;
+    const wrapX = (x) => {
+      let nx = x - deltaCols;
+      if (nx < 2) nx += COARSE_W - 4;
+      else if (nx > COARSE_W - 3) nx -= COARSE_W - 4;
+      return nx;
+    };
+
+    const shiftArrayX = (arr) => {
+      if (!Array.isArray(arr)) return;
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] && typeof arr[i].x === "number") {
+          arr[i].x = wrapX(arr[i].x);
+          if (typeof arr[i].homeX === "number") arr[i].homeX = wrapX(arr[i].homeX);
+          if (typeof arr[i].forgeX === "number") arr[i].forgeX = wrapX(arr[i].forgeX);
+        }
+      }
+    };
+
+    shiftArrayX(world.Towns);
+    shiftArrayX(world.Caves);
+    shiftArrayX(world.Crystals);
+    shiftArrayX(world.Mushrooms);
+    shiftArrayX(world.Kelp);
+    shiftArrayX(world.Dwarves);
+    shiftArrayX(world.Raptors);
+    shiftArrayX(world.Nests);
+    shiftArrayX(world.TarVeins);
+    shiftArrayX(world.Relics);
+    shiftArrayX(world.Rocks);
+
+    const eco = world.eco || (global.SlopesEcology && global.SlopesEcology.eco);
+    if (eco) {
+      shiftArrayX(eco.OrangePeople);
+      shiftArrayX(eco.BlackGoo);
+      shiftArrayX(eco.ComputeVats);
+      shiftArrayX(eco.Ferns);
+      shiftArrayX(eco.StickyWebs);
+      shiftArrayX(eco.Skeksis);
+    }
+
+    const cos = world.cosmic || (global.SlopesCosmic && global.SlopesCosmic.cosmic);
+    if (cos) {
+      shiftArrayX(cos.Labs);
+      shiftArrayX(cos.TimeCrystals);
+      shiftArrayX(cos.wfcZones);
+    }
+
+    if (global.SlopesChronosAndCiv && typeof global.SlopesChronosAndCiv.scrollCivWorldBy === "function") {
+      global.SlopesChronosAndCiv.scrollCivWorldBy(deltaCols);
+    }
+
+    if (state.evilSyndicate) {
+      shiftArrayX(state.evilSyndicate.civilizationBuildings);
+      shiftArrayX(state.evilSyndicate.greenBurials);
+      shiftArrayX(state.evilSyndicate.skyBlackGardens);
+    }
+    if (state.worldMainframe && typeof state.worldMainframe.x === "number") {
+      state.worldMainframe.x = wrapX(state.worldMainframe.x);
+    }
+
+    // Shift White Monoliths (`state.sharedMonolithMesh.peers`) with the ground so they stay in the world!
+    if (state.sharedMonolithMesh && Array.isArray(state.sharedMonolithMesh.peers)) {
+      for (let i = 0; i < state.sharedMonolithMesh.peers.length; i++) {
+        const p = state.sharedMonolithMesh.peers[i];
+        if (!p || typeof p.x !== "number") continue;
+        p.x -= deltaCols;
+        if (typeof p.targetX === "number") p.targetX -= deltaCols;
+        if (typeof p.editTargetX === "number") p.editTargetX -= deltaCols;
+        if (p.x < 2) {
+          p.x += COARSE_W - 4;
+          p.targetX = Math.max(12, Math.min(COARSE_W - 12, (p.targetX || 60) + (COARSE_W - 4)));
+        } else if (p.x > COARSE_W - 3) {
+          p.x -= COARSE_W - 4;
+          p.targetX = Math.max(12, Math.min(COARSE_W - 12, (p.targetX || 60) - (COARSE_W - 4)));
+        }
+      }
+    }
+
+    // Shift non-following Tab-Forms with the ground so they stay anchored in the world!
+    if (Array.isArray(state.tabForms)) {
+      for (let i = 0; i < state.tabForms.length; i++) {
+        const tf = state.tabForms[i];
+        if (!tf || tf.isOffScreen) continue;
+        tf.x = wrapX(tf.x);
+        if (typeof tf.targetX === "number") tf.targetX = wrapX(tf.targetX);
+      }
+    }
+  }
+
   function stepAirshipCastleVillage(world, eco, cosmic, tick) {
     const as = ensureAirshipCastleVillage(world);
     const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
     const seaLevel = (world && world.seaLevel) || 12;
-    as.propellerPhase = (as.propellerPhase || 0) + 0.45;
+    const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
+    as.propellerPhase = (as.propellerPhase || 0) + 0.25 + Math.abs(as.cruiseVx || 0.22) * 0.85;
     as.bannerPhase = (as.bannerPhase || 0) + 0.16;
+    if (as.dismountCooldown > 0) as.dismountCooldown--;
+    if (as.playerSteerTimer > 0) as.playerSteerTimer--;
 
     // Check if the Player walked/jumped onto the Airship deck or grabbed a lowered Rescue Rope Ladder!
     const player =
       (world && (world.Player || world.P)) ||
       (global.SlopesGame && typeof global.SlopesGame.getPlayer === "function" && global.SlopesGame.getPlayer()) ||
       null;
-    if (player && typeof player.x === "number" && typeof player.y === "number" && !as.riding) {
+    if (
+      player &&
+      typeof player.x === "number" &&
+      typeof player.y === "number" &&
+      !as.riding &&
+      !as.isOffScreen &&
+      (as.dismountCooldown || 0) <= 0
+    ) {
       const distDeckX = Math.abs(player.x - as.x);
       const distDeckY = Math.abs(player.y - as.y);
       const nearLadder = as.ropeLadders.some((ld) => {
         const lx = as.x + ld.dx * (1 / SCALE);
         return Math.abs(player.x - lx) < 2.8 && player.y >= (blocks[Math.round(lx)] || 18) && player.y <= as.y + 3;
       });
-      if ((distDeckX < 7.5 && distDeckY < 4.5) || (nearLadder && player.vy > 0.05)) {
+      if ((distDeckX < 7.5 && distDeckY < 4.5) || (nearLadder && (player.hopTimer > 0 || player.vy > 0.05))) {
         as.riding = true;
+        as.playerRopeDrop = 0;
+        as.targetAltitudeY = Math.max(36, Math.min(COARSE_H - 14, as.y || 58));
         as.playerDeckOffset = Math.max(-5, Math.min(5, player.x - as.x));
         pushMainframeLine(
-          `\x1b[92m[AIRSHIP BOARDED]\x1b[0m Stepped aboard ${as.label}! Centering reference frame -> Continuous World active!`
+          `\x1b[92m[AIRSHIP BOARDED]\x1b[0m Stepped aboard ${as.label}! Left/Right/Up steer ship; Down descends rope (guides ship down or dismounts at ground)!`
         );
       }
     }
 
-    // 1. Airship Continuous-World Reference Frame vs. Free-Roaming Frame Transit
+    // 1. Airship Continuous-World Reference Frame vs. Physically Accurate Global Velocity Transit
     if (as.riding) {
-      // Slowly center the Airship around where you are standing (`centeringBlend: 0 -> 1`)!
-      as.centeringBlend = Math.min(1.0, (as.centeringBlend || 0) + 0.012);
-      const targetCenterX = 72;
-      const targetCenterY = 58 + Math.sin(tick * 0.035) * 1.2;
-      as.x += (targetCenterX - as.x) * (0.04 + as.centeringBlend * 0.14);
-      as.y += (targetCenterY - as.y) * (0.05 + as.centeringBlend * 0.12);
+      as.isOffScreen = false;
+      as.centeringBlend = Math.min(1.0, (as.centeringBlend || 0) + 0.015);
+      const targetCenterX = 68;
+      const colBelow = Math.max(2, Math.min(COARSE_W - 3, Math.round(as.x + (as.playerDeckOffset || 0))));
+      const groundBelow = Math.max(seaLevel, blocks[colBelow] || 18);
 
-      // Inside the Airship's frame of reference, there are no longer discrete frames—
-      // the entire world scrolls continuously beneath the centered Airship keel!
-      as.continuousScrollX = (as.continuousScrollX || 0) + as.cruiseVx;
-      if (world && Array.isArray(world.Blocks) && (tick & 1) === 0) {
-        const bLen = world.Blocks.length;
-        const firstH = world.Blocks[0] || 18;
-        for (let c = 0; c < bLen - 1; c++) {
-          world.Blocks[c] = world.Blocks[c + 1];
+      // If the player descended partially on the boarding rope (`as.playerRopeDrop > 0`),
+      // the Airship slowly descends to meet the player and gently puts them back on board!
+      // If they descend all the way to the ground, let them off onto solid ground!
+      if ((as.playerRopeDrop || 0) > 0.05) {
+        const ropePlayerY = as.y - 1.5 - as.playerRopeDrop;
+        if (ropePlayerY <= groundBelow + 1.2) {
+          // Reached the ground at the bottom of the rope -> dismount!
+          as.riding = false;
+          as.playerRopeDrop = 0;
+          as.dismountCooldown = 75;
+          if (player) {
+            player.x = colBelow;
+            player.y = groundBelow;
+            player.onAirship = null;
+            player.hopTimer = 0;
+          }
+          return;
         }
-        // Generate smooth continuous procedural ridge terrain entering on the horizon
-        const scrollPhase = as.continuousScrollX * 0.045;
-        const nextH = Math.round(
-          Math.max(
-            seaLevel + 2,
-            Math.min(
-              38,
-              19 + Math.sin(scrollPhase) * 6.5 + Math.cos(scrollPhase * 0.37) * 4.2 + (firstH - 19) * 0.15
-            )
-          )
-        );
-        world.Blocks[bLen - 1] = nextH;
-        const nextWorldX = Math.floor(as.continuousScrollX / COARSE_W);
-        if (world.worldX !== undefined) world.worldX = nextWorldX;
-        if (world.screenX !== undefined) world.screenX = nextWorldX;
+        // Slowly descend the Airship to meet the player on the rope and reel them back aboard!
+        as.targetAltitudeY = Math.max(groundBelow + 9, (as.targetAltitudeY || as.y) - 0.16);
+        as.y = Math.max(groundBelow + 9, as.y - 0.14);
+        as.playerRopeDrop = Math.max(0, as.playerRopeDrop - 0.15);
+      } else {
+        const baseTargetY = Math.max(groundBelow + 10, Math.min(COARSE_H - 12, as.targetAltitudeY || 58));
+        const targetCenterY = baseTargetY + Math.sin(tick * 0.035) * 0.9;
+        as.y += (targetCenterY - as.y) * (0.06 + as.centeringBlend * 0.12);
       }
 
-      // Keep the Player standing comfortably inside the centered Airship Castle-Village!
+      as.x += (targetCenterX - as.x) * (0.05 + as.centeringBlend * 0.14);
+      as.globalX = curSx * COARSE_W + as.x;
+
+      // Scroll the continuous world & all world objects beneath the Airship according to `as.cruiseVx`
+      // WITHOUT mutating `world.worldX` (which previously caused 15Hz White Monolith strobing)!
+      as.continuousScrollX = (as.continuousScrollX || 0) + (as.cruiseVx || 0);
+      as.scrollColumnAccum = (as.scrollColumnAccum || 0) + (as.cruiseVx || 0) * 0.55;
+      const shiftCols = Math.trunc(as.scrollColumnAccum);
+      if (shiftCols !== 0 && world && Array.isArray(world.Blocks)) {
+        as.scrollColumnAccum -= shiftCols;
+        const bLen = world.Blocks.length;
+        const steps = Math.min(4, Math.abs(shiftCols));
+        const dirSign = Math.sign(shiftCols);
+        for (let st = 0; st < steps; st++) {
+          if (dirSign > 0) {
+            const firstH = world.Blocks[0] || 18;
+            for (let c = 0; c < bLen - 1; c++) {
+              world.Blocks[c] = world.Blocks[c + 1];
+            }
+            const scrollPhase = (as.continuousScrollX + st) * 0.045;
+            world.Blocks[bLen - 1] = Math.round(
+              Math.max(
+                seaLevel + 2,
+                Math.min(38, 19 + Math.sin(scrollPhase) * 6.5 + Math.cos(scrollPhase * 0.37) * 4.2 + (firstH - 19) * 0.15)
+              )
+            );
+          } else {
+            const lastH = world.Blocks[bLen - 1] || 18;
+            for (let c = bLen - 1; c > 0; c--) {
+              world.Blocks[c] = world.Blocks[c - 1];
+            }
+            const scrollPhase = (as.continuousScrollX - st) * 0.045;
+            world.Blocks[0] = Math.round(
+              Math.max(
+                seaLevel + 2,
+                Math.min(38, 19 + Math.sin(scrollPhase) * 6.5 + Math.cos(scrollPhase * 0.37) * 4.2 + (lastH - 19) * 0.15)
+              )
+            );
+          }
+        }
+        scrollWorldEntitiesBeneathAirship(world, dirSign * steps);
+      }
+
+      // Keep the Player positioned on deck (or hanging on the boarding rope below deck when descending)!
       if (player && typeof player.x === "number") {
-        player.x = as.x + (as.playerDeckOffset || 0);
-        player.y = as.y - 1.5;
+        player.x = Math.max(4, Math.min(COARSE_W - 5, Math.round(as.x + (as.playerDeckOffset || 0))));
+        player.y = Math.max(groundBelow, as.y - 1.5 - (as.playerRopeDrop || 0));
         if (player.vy !== undefined) player.vy = 0;
       }
     } else {
-      as.centeringBlend = Math.max(0.0, (as.centeringBlend || 0) - 0.025);
-      as.x += as.vx;
-      as.y = 60 + Math.sin(tick * 0.04) * 2.2;
-      // Carry across adjacent frames when cruising past screen boundaries
-      if (as.x > COARSE_W - 10) {
-        as.vx = -Math.abs(as.vx || 0.22);
-      } else if (as.x < 10) {
-        as.vx = Math.abs(as.vx || 0.22);
+      // Not riding: the Airship moves in continuous global world space (`as.globalX`) at velocity `as.vx`!
+      // When the player travels to a new frame (`curSx`), the Airship does NOT instantly teleport to its old
+      // screen coordinate—it enters the frame at the exact physical time for its velocity!
+      as.centeringBlend = Math.max(0.0, (as.centeringBlend || 0) - 0.03);
+      as.playerRopeDrop = 0;
+      if (typeof as.globalX !== "number" || Number.isNaN(as.globalX)) {
+        as.globalX = curSx * COARSE_W + (as.x || 68);
       }
+      as.globalX += as.vx || 0.22;
+      const minGlobalX = -1 * COARSE_W + 18;
+      const maxGlobalX = 2 * COARSE_W - 18;
+      if (as.globalX > maxGlobalX) {
+        as.globalX = maxGlobalX;
+        as.vx = -Math.abs(as.vx || 0.22);
+        as.cruiseVx = as.vx;
+      } else if (as.globalX < minGlobalX) {
+        as.globalX = minGlobalX;
+        as.vx = Math.abs(as.vx || 0.22);
+        as.cruiseVx = as.vx;
+      }
+      const relX = as.globalX - curSx * COARSE_W;
+      as.x = relX;
+      as.y = (as.targetAltitudeY || 60) + Math.sin(tick * 0.04) * 1.8;
+      as.isOffScreen = relX < -18 || relX > COARSE_W + 18;
     }
 
     // 2. Step Good Builders constructing & upgrading Habitat Structures inside the Airship Castle-Village!
@@ -6980,7 +7330,6 @@
           bld.hammering = 0;
         } else {
           bld.hammering = (bld.hammering || 0) + 1;
-          // Upgrade the habitat module at this deck station!
           const modIdx = (b + Math.floor(tick / 180)) % as.habitatModules.length;
           const mod = as.habitatModules[modIdx];
           if (mod) {
@@ -7000,7 +7349,7 @@
 
     // 3. Step Sailor Defense Stations firing upon Bad Actors who would harm the Airship!
     const syn = state.evilSyndicate;
-    if (Array.isArray(as.sailorStations)) {
+    if (!as.isOffScreen && Array.isArray(as.sailorStations)) {
       for (let s = 0; s < as.sailorStations.length; s++) {
         const st = as.sailorStations[s];
         if (st.cooldown > 0) {
@@ -7010,7 +7359,6 @@
         const sx = as.x + st.dx / SCALE;
         const sy = as.y - st.dy / SCALE;
 
-        // Scan for nearby bad actors (`evilBirds`, `skySwarms`, `harvesters`, or Vexari raiders)
         let badTarget = null;
         if (syn) {
           if (Array.isArray(syn.evilBirds) && syn.evilBirds.length > 0) {
@@ -7050,12 +7398,11 @@
         bt.x += bt.vx;
         bt.y += bt.vy;
         bt.ttl--;
-        // Check hit on Evil Birds or Sky Swarms to protect the Airship!
         if (syn && Array.isArray(syn.evilBirds)) {
           for (let eb = 0; eb < syn.evilBirds.length; eb++) {
             const bird = syn.evilBirds[eb];
             if (Math.hypot(bt.x - bird.x, bt.y - bird.y) < 3.5) {
-              bird.vx = Math.sign(bird.x - as.x || 1) * 0.35; // Repel evil bird away from the Airship!
+              bird.vx = Math.sign(bird.x - as.x || 1) * 0.35;
               bird.y = Math.max(24, bird.y - 3);
               bt.ttl = 0;
               break;
@@ -7086,7 +7433,6 @@
             const rescueLabels = ["RESCUED VILLAGER", "SAVED CERVUS FAWN", "FREED HEARTH-ELDER", "INJURED MASON"];
             ld.rescueeLabel = rescueLabels[(tick + li) % rescueLabels.length];
             ld.state = "hoisting-to-safety";
-            // If TE-307 Junk Castle has prisoners, rescue one onto the safety rope!
             if (syn && Array.isArray(syn.prisoners) && syn.prisoners.length > 0) {
               const freed = syn.prisoners.pop();
               if (freed && freed.label) ld.rescueeLabel = freed.label;
@@ -7113,7 +7459,7 @@
 
   function renderAirshipCastleVillage(primeRenderer, tick) {
     const as = ensureAirshipCastleVillage(state.lastWorldContext);
-    if (!as || typeof primeRenderer.fillNativeRect !== "function") return;
+    if (!as || as.isOffScreen || typeof primeRenderer.fillNativeRect !== "function") return;
     const blocks = (state.lastWorldContext && state.lastWorldContext.Blocks) || new Array(COARSE_W).fill(18);
     const seaLevel = (state.lastWorldContext && state.lastWorldContext.seaLevel) || 12;
 
@@ -7142,15 +7488,26 @@
     //    render seamless continuous-world wind streamlines & warm brass reference-frame horizon bars!
     if (as.centeringBlend > 0.05) {
       const alpha = Math.min(0.85, as.centeringBlend * 0.75);
-      // Continuous wind-streamlines flowing past the centered Airship frame of reference
+      const windDir = Math.sign(as.cruiseVx || 0.25) || 1;
       for (let w = 0; w < 14; w++) {
         const wy = 28 + ((w * 33) % (NATIVE_H - 90));
-        const wx = (NATIVE_W - ((tick * (4 + (w % 3)) + w * 97) % (NATIVE_W + 80))) - 40;
+        const wx = ((NATIVE_W + 80 - ((tick * windDir * (4 + (w % 3)) + w * 97) % (NATIVE_W + 80))) % (NATIVE_W + 80)) - 40;
         fillRect(wx, wy, 22 + (w % 3) * 8, 1, 185, 238, 255, alpha * 0.35);
       }
-      // Subtle Continuous-Frame Brass Horizon Compass Band at top & bottom of viewport
       fillRect(0, 0, NATIVE_W, 2, 218, 172, 78, alpha * 0.8);
       fillRect(0, NATIVE_H - 2, NATIVE_W, 2, 218, 172, 78, alpha * 0.8);
+    }
+
+    // 1b. If the player is descending on the central Boarding Rope (`as.playerRopeDrop > 0`),
+    //     render the taut golden-brass Boarding Winch Rope & Harness connecting the Airship keel to the player!
+    if (as.riding && (as.playerRopeDrop || 0) > 0.05) {
+      const ropePx = Math.round((as.x + (as.playerDeckOffset || 0)) * SCALE);
+      const ropeEndPy = Math.round((COARSE_H - (as.y - 1.5 - as.playerRopeDrop)) * SCALE);
+      fillLine(ropePx - 1, ay + 6, ropePx - 1, ropeEndPy, 248, 216, 112, 0.98);
+      fillLine(ropePx + 1, ay + 6, ropePx + 1, ropeEndPy, 214, 172, 78, 0.95);
+      for (let ry = ay + 10; ry < ropeEndPy; ry += 5) {
+        fillRect(ropePx - 3, ry, 7, 1, 255, 234, 148, 0.96);
+      }
     }
 
     // 2. Render Hoisted Rope Ladders + Rescue Worker Sailors & Medics holding safety ropes to lift people to safety!
@@ -7165,27 +7522,22 @@
         const curLen = Math.round(maxLen * (ld.hoistDepth || 0.8));
         const botY = deckY + curLen;
 
-        // Twin vertical braided hemp ladder ropes + wooden rungs every 5px
         fillLine(lx - 3, deckY, lx - 3, botY, 198, 162, 98, 0.92);
         fillLine(lx + 3, deckY, lx + 3, botY, 198, 162, 98, 0.92);
         for (let ry = deckY + 4; ry <= botY; ry += 5) {
           fillRect(lx - 3, ry, 7, 1, 224, 186, 118, 0.95);
         }
 
-        // Taut diagonal Safety Hoist Rope held from the Airship winch down to the Rescue Sailor & Medic!
         const climberY = Math.round(deckY + curLen * (ld.climberDepth || 0.5));
         fillLine(lx + 7, deckY - 2, lx + 1, climberY, 255, 228, 130, 0.95);
 
-        // Rescue Worker Sailor (blue/brass coat) holding the safety rope on the ladder
         fillCircle(lx - 2, climberY - 4, 2, 255, 218, 172, 1);
         fillRect(lx - 3, climberY - 2, 3, 4, 58, 148, 235, 1);
 
-        // Field Medic (white/emerald cross tunic) beside the Sailor on the safety rope
         fillCircle(lx + 3, climberY + 2, 2, 255, 218, 172, 1);
         fillRect(lx + 2, climberY + 4, 3, 4, 240, 250, 245, 1);
         fillRect(lx + 3, climberY + 5, 1, 2, 68, 238, 165, 1);
 
-        // Rescued person being lifted to safety on the rope harness!
         if (ld.carryingRescuee) {
           fillCircle(lx, climberY + 8, 2, 255, 210, 155, 1);
           fillRect(lx - 1, climberY + 10, 3, 4, 255, 148, 58, 1);
@@ -7199,7 +7551,6 @@
     fillRect(ax - 54, envY - 8, 108, 14, 48, 72, 92, 0.92);
     fillRect(ax - 44, envY - 13, 88, 6, 62, 92, 116, 0.92);
     fillRect(ax - 28, envY - 16, 56, 4, 78, 114, 142, 0.92);
-    // Brass structural ribs & suspension rigging cables holding the Castle-Village hull
     for (let rx = -44; rx <= 44; rx += 11) {
       fillRect(ax + rx, envY - 12, 1, 18, 218, 172, 78, 0.9);
       fillLine(ax + rx, envY + 6, ax + rx * 0.9, ay - 2, 188, 148, 68, 0.85);
@@ -7212,40 +7563,32 @@
         const mx = ax + mod.dx - Math.floor(mod.w / 2);
         const my = ay + mod.dy - mod.h;
         if (mod.kind === "keep-tower") {
-          // Central Stone & Brass Castle Keep with crenellated battlements & warm hearth windows
           fillRect(mx, my, mod.w, mod.h, 88, 102, 118, 0.98);
           fillRect(mx, my, mod.w, 2, 218, 172, 78, 1);
           for (let cx0 = mx; cx0 < mx + mod.w; cx0 += 4) {
             fillRect(cx0, my - 3, 2, 3, 108, 124, 142, 1);
           }
-          // Fluttering emerald-gold Castle-Village pennant
           const flagWave = Math.round(Math.sin(as.bannerPhase) * 2);
           fillRect(mx + Math.floor(mod.w / 2), my - 10, 1, 7, 218, 172, 78, 1);
           fillRect(mx + Math.floor(mod.w / 2) + 1, my - 10 + flagWave, 8, 3, 88, 242, 185, 1);
-          // Warm glowing castle windows
           fillRect(mx + 4, my + 5, 3, 4, 255, 224, 118, 1);
           fillRect(mx + mod.w - 7, my + 5, 3, 4, 255, 224, 118, 1);
         } else if (mod.kind === "cottage-loft") {
-          // Gabled Timber Family Cottages
           fillRect(mx, my + 3, mod.w, mod.h - 3, 142, 96, 54, 0.98);
           fillLine(mx - 1, my + 3, mx + Math.floor(mod.w / 2), my - 2, 218, 128, 58, 1);
           fillLine(mx + mod.w, my + 3, mx + Math.floor(mod.w / 2), my - 2, 218, 128, 58, 1);
           fillRect(mx + 3, my + 5, 3, 3, 255, 230, 130, 1);
           fillRect(mx + mod.w - 6, my + 5, 3, 3, 255, 230, 130, 1);
         } else if (mod.kind === "sky-infirmary") {
-          // Stained-Glass & Brass Medic Apothecary & Triage Ward
           fillRect(mx, my + 2, mod.w, mod.h - 2, 52, 118, 138, 0.96);
           fillRect(mx, my + 2, mod.w, 1, 218, 172, 78, 1);
-          // Glowing healing cross emblem
           const cxCross = mx + Math.floor(mod.w / 2);
           fillRect(cxCross - 1, my + 4, 3, 5, 95, 252, 195, 1);
           fillRect(cxCross - 2, my + 5, 5, 3, 95, 252, 195, 1);
         } else if (mod.kind === "greenhouse-garden") {
-          // Hanging Bamboo & Flora Arboretum Dome
           fillRect(mx, my + 2, mod.w, mod.h - 2, 42, 112, 96, 0.88);
           fillCircle(mx + Math.floor(mod.w / 2), my + 5, 3, 78, 235, 142, 0.95);
         } else {
-          // Village Belfry & Communal Hearth Bakery
           fillRect(mx, my + 2, mod.w, mod.h - 2, 118, 88, 58, 0.96);
           fillRect(mx, my + 2, mod.w, 1, 218, 172, 78, 1);
           fillRect(mx + 3, my + 4, 3, 3, 255, 195, 92, 1);
@@ -7270,7 +7613,6 @@
         fillCircle(bx, by - 3, 2, 255, 220, 172, 1);
         fillRect(bx - 1, by - 1, 3, 4, bld.color[0], bld.color[1], bld.color[2], 1);
         if (bld.hammering > 0 && (tick & 2) === 0) {
-          // Brass hammer spark while building up habitat!
           fillRect(bx + 2, by - 3, 2, 2, 255, 242, 130, 1);
         }
       }
@@ -7282,11 +7624,9 @@
         const st = as.sailorStations[s];
         const sx = Math.round(ax + st.dx);
         const sy = Math.round(ay + st.dy);
-        // Brass turret mount + Sailor figure
         fillRect(sx - 3, sy - 2, 6, 4, 218, 172, 78, 1);
         fillCircle(sx, sy - 5, 2, 255, 218, 168, 1);
         fillRect(sx - 1, sy - 3, 3, 3, 52, 138, 225, 1);
-        // Aimed barrel
         const bxEnd = sx + Math.cos(st.aimAngle || 0) * 6;
         const byEnd = sy + Math.sin(st.aimAngle || 0) * 6;
         fillLine(sx, sy - 1, bxEnd, byEnd, 245, 220, 125, 1);
@@ -7314,22 +7654,34 @@
   // ==========================================================================
   // ONE SHARED MULTIPLAYER WORLD & CROSS-DRIFT PROTOCOL (`DRIFT-MESH/1.0`)
   // ==========================================================================
-  // - Other Monoliths appear as mostly-white (`rgb(245, 249, 255)`) avatars with
-  //   distinct highlight colors/hues to tell them apart (`#38d9f5` Cyan-Ice 192°,
-  //   `#ff5ca8` Rose-Gold 332°, `#38f59b` Emerald-Mint 150°).
-  // - You can chat with them (`chat <msg>` or click `[CHAT MONOLITHS]`), and they
-  //   co-edit the exact same world you do (`world.Blocks`, `eco.Ferns`, buildings).
-  // - Protocol `DRIFT-MESH/1.0` allows drifted worlds running DIFFERENT codebases
-  //   (`codeHash` / `driftBranch`) to inhabit the same shared world by translating
-  //   divergent code execution into Canonical Semantic CRDT World-Intent Envelopes!
+  // - Supports BOTH Real Live Human Players (`peerType: "LIVE PLAYER"`, synced across
+  //   browsers/devices via `drift_mesh.php` and `BroadcastChannel`) AND Autonomous
+  //   AI Pilgrim Monoliths (`peerType: "AI PILGRIM"`).
+  // - White Monoliths NEVER automatically follow you from frame to frame (`p.roomX = curSx`
+  //   removed!): `MONOLITH-A7` is a local keeper in Sector (0,0), while `MONOLITH-K3`
+  //   and `MONOLITH-V9` wander slowly in their own sectors and only cross a frame border
+  //   when they physically walk across `x <= 2` or `x >= COARSE_W - 3`!
+  // - Clicking any White Monolith, clicking `◈MESH` in the top bar, or pressing `C`
+  //   opens an on-screen Chat Input Bar so you can chat directly with them!
   function ensureSharedMonolithMesh(world) {
     if (state.sharedMonolithMesh) return state.sharedMonolithMesh;
     const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
     const seaLevel = (world && world.seaLevel) || 12;
 
+    let sessionPeerId = "PLAYER-" + Math.floor(100 + Math.random() * 899);
+    try {
+      if (typeof localStorage !== "undefined") {
+        const saved = localStorage.getItem("slopes2_monolith_peer_id");
+        if (saved) sessionPeerId = saved;
+        else localStorage.setItem("slopes2_monolith_peer_id", sessionPeerId);
+      }
+    } catch (_) {}
+
     const peers = [
       {
         id: "MONOLITH-A7",
+        peerType: "AI PILGRIM",
+        wanderMode: "local", // Local keeper: remains in Sector (0,0) and never seeks to transition frames!
         handle: "aria@drift-9b2",
         driftBranch: "voronoi-sky-cathedral",
         codeHash: "sha256:9b2f..c4",
@@ -7339,11 +7691,11 @@
         whiteCoreRgb: [246, 250, 255],
         x: 36,
         y: Math.max(seaLevel + 1, blocks[36] || 18),
-        vx: 0.11,
-        targetX: 48,
+        vx: 0.055,
+        targetX: 52,
         roomX: 0,
         roomY: 0,
-        chatBubble: "Co-editing ridge in shared world via DRIFT-MESH/1.0!",
+        chatBubble: "I'm an AI Pilgrim tending Sector (0,0) — click me or press C to chat!",
         chatTimer: 260,
         lastEditOp: "TERRAIN_TERRACE",
         editBeamTimer: 45,
@@ -7352,6 +7704,8 @@
       },
       {
         id: "MONOLITH-K3",
+        peerType: "AI PILGRIM",
+        wanderMode: "slow-wander", // Wanders slowly in Sector (-1,0) and only rarely walks across a frame border
         handle: "kael@fork-4e1",
         driftBranch: "c-hydro-terracer-v4",
         codeHash: "sha256:4e1a..88",
@@ -7359,21 +7713,23 @@
         highlightRgb: [255, 92, 168],
         highlightHex: "#ff5ca8",
         whiteCoreRgb: [250, 246, 252],
-        x: 92,
-        y: Math.max(seaLevel + 1, blocks[92] || 20),
-        vx: -0.09,
-        targetX: 78,
-        roomX: -1, // Exploring Sector (-1,0) West and occasionally crossing into your sector!
+        x: 78,
+        y: Math.max(seaLevel + 1, blocks[78] || 20),
+        vx: -0.05,
+        targetX: 44,
+        roomX: -1,
         roomY: 0,
-        chatBubble: "My drifted C-kernel is seeding bamboo & brass domes here!",
-        chatTimer: 140,
+        chatBubble: "Seeding genetic flora & brass domes in Sector (-1,0)!",
+        chatTimer: 160,
         lastEditOp: "FLORA_AND_MASONRY",
         editBeamTimer: 0,
-        editTargetX: 88,
-        editTargetY: Math.max(seaLevel + 1, blocks[88] || 20),
+        editTargetX: 74,
+        editTargetY: Math.max(seaLevel + 1, blocks[74] || 20),
       },
       {
         id: "MONOLITH-V9",
+        peerType: "AI PILGRIM",
+        wanderMode: "slow-wander", // Wanders slowly in Sector (1,0)
         handle: "lyra@wasm-c8f",
         driftBranch: "non-euclidean-orchard",
         codeHash: "sha256:c8f0..19",
@@ -7383,11 +7739,11 @@
         whiteCoreRgb: [245, 252, 248],
         x: 64,
         y: Math.max(seaLevel + 1, blocks[64] || 19),
-        vx: 0.08,
-        targetX: 112,
-        roomX: 1, // Exploring Sector (1,0) East and occasionally crossing into your sector!
+        vx: 0.05,
+        targetX: 96,
+        roomX: 1,
         roomY: 0,
-        chatBubble: "Bridging drifted WASM rules into our shared valley!",
+        chatBubble: "Bridging drifted WASM rules in Sector (1,0) — press C to chat!",
         chatTimer: 180,
         lastEditOp: "SKY_BRIDGE_CRDT",
         editBeamTimer: 0,
@@ -7411,19 +7767,127 @@
 
     state.sharedMonolithMesh = {
       protocolVersion: "DRIFT-MESH/1.0",
-      localPeerId: "MONOLITH-YOU",
+      localPeerId: sessionPeerId,
+      localHandle: `${sessionPeerId.toLowerCase()}@live`,
       localCodeHash: "sha256:7f3d..e1",
+      localHueHex: "#ffd43b",
       lamportClock: 1024,
       coEditCount: 14,
       peers,
+      livePlayerCount: 0,
+      lastPollMs: 0,
       chatLog: [
-        { from: "aria@drift-9b2", hueHex: "#38d9f5", text: "Connected via DRIFT-MESH/1.0 (sha256:9b2f..c4) — co-editing terrain!" },
-        { from: "kael@fork-4e1", hueHex: "#ff5ca8", text: "Running drifted hydro-terracer code, synced to your world state!" },
+        { from: "aria@drift-9b2 [AI PILGRIM]", hueHex: "#38d9f5", text: "Connected via DRIFT-MESH/1.0 — click any White Monolith or press C to chat!" },
+        { from: "kael@fork-4e1 [AI PILGRIM]", hueHex: "#ff5ca8", text: "We stay in our own sectors unless we walk across a border; real players sync via drift_mesh.php!" },
       ],
       recentEnvelopes: [],
       bc,
     };
     return state.sharedMonolithMesh;
+  }
+
+  function openMonolithChatInput(targetPeerId) {
+    ensureSharedMonolithMesh(state.lastWorldContext);
+    state.monolithChatOpen = true;
+    state.monolithChatTarget = targetPeerId || "ALL MONOLITHS";
+    if (typeof state.monolithChatBuffer !== "string") {
+      state.monolithChatBuffer = "";
+    }
+  }
+
+  function pollRemoteDriftMesh(world) {
+    if (typeof fetch !== "function") return;
+    const mesh = ensureSharedMonolithMesh(world);
+    const nowMs = Date.now();
+    if (nowMs - (mesh.lastPollMs || 0) < 2600) return;
+    mesh.lastPollMs = nowMs;
+
+    const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
+    const curLy = world && world.worldLayer !== undefined ? world.worldLayer : 0;
+    const player = (world && (world.Player || world.P)) || { x: 56, y: 20 };
+
+    fetch("drift_mesh.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        op: "HEARTBEAT",
+        peerId: mesh.localPeerId,
+        handle: mesh.localHandle,
+        hueHex: mesh.localHueHex,
+        roomX: curSx,
+        roomY: curLy,
+        x: Math.round((player.x || 56) * 10) / 10,
+        y: Math.round((player.y || 20) * 10) / 10,
+        chatBubble: mesh.localChatBubble || "",
+        lastEditOp: "LIVE_PRESENCE",
+      }),
+    })
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.ok) return;
+        if (Array.isArray(data.peers)) {
+          let liveCnt = 0;
+          for (let i = 0; i < data.peers.length; i++) {
+            const rp = data.peers[i];
+            if (!rp || !rp.peerId || rp.peerId === mesh.localPeerId) continue;
+            liveCnt++;
+            let existing = mesh.peers.find((p) => p.id === rp.peerId);
+            if (!existing) {
+              existing = {
+                id: rp.peerId,
+                peerType: "LIVE PLAYER",
+                wanderMode: "live-remote",
+                handle: rp.handle || `${rp.peerId.toLowerCase()}@web`,
+                driftBranch: "live-browser-session",
+                codeHash: "sha256:live",
+                highlightHue: 48,
+                highlightRgb: [255, 212, 59],
+                highlightHex: rp.hueHex || "#ffd43b",
+                whiteCoreRgb: [252, 252, 248],
+                x: Number(rp.x) || 56,
+                y: Number(rp.y) || 20,
+                vx: 0,
+                targetX: Number(rp.x) || 56,
+                roomX: Number(rp.roomX) || 0,
+                roomY: Number(rp.roomY) || 0,
+                chatBubble: rp.chatBubble || "Live human player exploring Slopes!",
+                chatTimer: rp.chatBubble ? 240 : 0,
+                lastEditOp: rp.lastEditOp || "LIVE_PLAYER",
+                editBeamTimer: 0,
+              };
+              mesh.peers.push(existing);
+            } else {
+              existing.peerType = "LIVE PLAYER";
+              existing.roomX = Number(rp.roomX) || 0;
+              existing.roomY = Number(rp.roomY) || 0;
+              existing.targetX = Number(rp.x) || existing.x;
+              existing.y = Number(rp.y) || existing.y;
+              if (rp.chatBubble && rp.chatBubble !== existing.chatBubble) {
+                existing.chatBubble = rp.chatBubble;
+                existing.chatTimer = 280;
+              }
+            }
+          }
+          mesh.livePlayerCount = liveCnt;
+        }
+        if (Array.isArray(data.chatLog)) {
+          for (let c = 0; c < data.chatLog.length; c++) {
+            const msg = data.chatLog[c];
+            if (!msg || !msg.text) continue;
+            const already = mesh.chatLog.some((m) => m.ts === msg.ts && m.text === msg.text);
+            if (!already) {
+              mesh.chatLog.push({
+                from: `${msg.from} [LIVE]`,
+                hueHex: msg.hueHex || "#ffd43b",
+                text: msg.text,
+                ts: msg.ts,
+              });
+              if (mesh.chatLog.length > 18) mesh.chatLog.shift();
+            }
+          }
+        }
+      })
+      .catch(() => {});
   }
 
   // Canonical Semantic CRDT World-Intent Reconciler:
@@ -7464,12 +7928,13 @@
         from: env.handle || env.peerId || "peer@drift",
         hueHex: inv.hueHex || "#38d9f5",
         text: String(inv.text).slice(0, 96),
+        ts: Date.now(),
       });
-      if (mesh.chatLog.length > 16) mesh.chatLog.shift();
+      if (mesh.chatLog.length > 18) mesh.chatLog.shift();
       const peer = mesh.peers.find((p) => p.id === env.peerId || p.handle === env.handle);
       if (peer) {
-        peer.chatBubble = String(inv.text).slice(0, 56);
-        peer.chatTimer = 260;
+        peer.chatBubble = String(inv.text).slice(0, 68);
+        peer.chatTimer = 320;
       }
     }
 
@@ -7484,7 +7949,14 @@
     const world = state.lastWorldContext;
     const mesh = ensureSharedMonolithMesh(world);
     const clean = String(rawText || "Hello fellow Monoliths!").trim().slice(0, 88);
-    const sender = fromLabel || "YOU (LOCAL-MONOLITH)";
+    if (!clean) return "";
+    const sender = fromLabel || `YOU (${mesh.localPeerId})`;
+    mesh.localChatBubble = clean;
+    mesh.localChatTimer = 320;
+
+    const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
+    const curLy = world && world.worldLayer !== undefined ? world.worldLayer : 0;
+    const player = (world && (world.Player || world.P)) || { x: 56, y: 20 };
 
     const env = {
       proto: "DRIFT-MESH/1.0",
@@ -7497,41 +7969,82 @@
     };
     applyDriftMeshEnvelope(env, world, false);
 
-    // Have one of the other white+hue Monoliths reply and co-edit in response!
-    const responder = mesh.peers[(state.tickCount || 0) % mesh.peers.length];
+    // Broadcast to real players via `drift_mesh.php`
+    if (typeof fetch === "function") {
+      fetch("drift_mesh.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          op: "CHAT_MSG",
+          peerId: mesh.localPeerId,
+          handle: sender,
+          hueHex: "#ffffff",
+          roomX: curSx,
+          roomY: curLy,
+          x: Math.round((player.x || 56) * 10) / 10,
+          y: Math.round((player.y || 20) * 10) / 10,
+          text: clean,
+        }),
+      }).catch(() => {});
+    }
+
+    // Prefer an AI Pilgrim Monolith in the current room (`roomX === curSx`); if none is in this room,
+    // radio-reply from whichever AI Pilgrim is closest without teleporting them across frames!
+    const inRoomPeers = mesh.peers.filter((p) => p.roomX === curSx);
+    const responder =
+      inRoomPeers.length > 0
+        ? inRoomPeers[(state.tickCount || 0) % inRoomPeers.length]
+        : mesh.peers[(state.tickCount || 0) % mesh.peers.length];
+
     if (responder) {
-      const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
-      responder.roomX = curSx;
-      const replies = [
-        `Heard you: "${clean.slice(0, 26)}"! Reconciling my ${responder.driftBranch} code (${responder.codeHash}) to terrace x=${Math.round(responder.x)}!`,
-        `Synced via DRIFT-MESH/1.0! Even though my fork runs ${responder.driftBranch}, I'm co-editing this ridge with you!`,
-        `White-Monolith ${responder.id} here! Grading a bamboo-brass sanctuary right beside you at x=${Math.round(responder.x)}.`,
-      ];
-      const replyTxt = replies[(state.tickCount + clean.length) % replies.length];
+      const sameRoom = responder.roomX === curSx;
+      if (sameRoom && player && typeof player.x === "number") {
+        responder.targetX = Math.max(12, Math.min(COARSE_W - 12, Math.round(player.x + (responder.x >= player.x ? 8 : -8))));
+      }
+      const lower = clean.toLowerCase();
+      let replyTxt = "";
+      if (lower.includes("real") || lower.includes("who") || lower.includes("human") || lower.includes("people")) {
+        replyTxt = `I'm ${responder.id} (${responder.handle}), an autonomous AI Pilgrim in Sector (${responder.roomX},0)—real human players also join live via drift_mesh.php (${mesh.livePlayerCount || 0} online)!`;
+      } else if (lower.includes("follow") || lower.includes("come") || lower.includes("visit")) {
+        replyTxt = sameRoom
+          ? `Walking over to x=${responder.targetX} in Sector (${curSx},0) to help you terrace and seed genetic flora!`
+          : `Radioing from Sector (${responder.roomX},0)! I stay in my sector unless I walk across the border—head to (${responder.roomX},0) to meet up!`;
+      } else {
+        const replies = [
+          `Heard you ("${clean.slice(0, 28)}")! ${sameRoom ? `Co-editing ridge x=${Math.round(responder.x)} with you!` : `Sending CRDT telemetry from Sector (${responder.roomX},0)!`}`,
+          `[${responder.id} · ${responder.peerType}] Synced your message! Splicing bioluminescent flora & terracing x=${Math.round(responder.x)}.`,
+          `White-Monolith ${responder.id} (${responder.handle}) here in Sector (${responder.roomX},0)—received "${clean.slice(0, 24)}" loud and clear!`,
+        ];
+        replyTxt = replies[(state.tickCount + clean.length) % replies.length];
+      }
       responder.chatBubble = replyTxt;
-      responder.chatTimer = 310;
+      responder.chatTimer = 340;
       responder.editBeamTimer = 65;
       responder.editTargetX = Math.max(10, Math.min(COARSE_W - 10, Math.round(responder.x + (responder.vx >= 0 ? 5 : -5))));
       mesh.chatLog.push({
-        from: `${responder.id} (${responder.handle})`,
+        from: `${responder.id} (${responder.handle}) [${responder.peerType}]`,
         hueHex: responder.highlightHex,
         text: replyTxt,
+        ts: Date.now(),
       });
-      if (mesh.chatLog.length > 16) mesh.chatLog.shift();
-      applyDriftMeshEnvelope(
-        {
-          proto: "DRIFT-MESH/1.0",
-          peerId: responder.id,
-          handle: responder.handle,
-          codeHash: responder.codeHash,
-          lamportTs: ++mesh.lamportClock,
-          op: "TERRAIN_SCULPT",
-          invariants: { col: responder.editTargetX, deltaH: 1 },
-        },
-        world,
-        false
-      );
-      return `\x1b[97m[CHAT -> SHARED WORLD]\x1b[0m You: "${clean}"\n\x1b[96m[${responder.id} ${responder.handle} | ${responder.codeHash}]\x1b[0m: "${replyTxt}"`;
+      if (mesh.chatLog.length > 18) mesh.chatLog.shift();
+      if (sameRoom) {
+        applyDriftMeshEnvelope(
+          {
+            proto: "DRIFT-MESH/1.0",
+            peerId: responder.id,
+            handle: responder.handle,
+            codeHash: responder.codeHash,
+            lamportTs: ++mesh.lamportClock,
+            op: "TERRAIN_SCULPT",
+            invariants: { col: responder.editTargetX, deltaH: 1 },
+          },
+          world,
+          false
+        );
+      }
+      pushMainframeLine(`\x1b[97m[CHAT -> MONOLITH MESH]\x1b[0m You: "${clean}" -> ${responder.id}: "${replyTxt}"`);
+      return `\x1b[97m[CHAT -> SHARED WORLD]\x1b[0m You: "${clean}"\n\x1b[96m[${responder.id} ${responder.handle}]\x1b[0m: "${replyTxt}"`;
     }
     return `\x1b[97m[CHAT -> SHARED WORLD]\x1b[0m You: "${clean}"`;
   }
@@ -7542,33 +8055,70 @@
     const seaLevel = (world && world.seaLevel) || 12;
     const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
 
+    if (mesh.localChatTimer > 0) mesh.localChatTimer--;
+    if ((tick & 63) === 0) {
+      pollRemoteDriftMesh(world);
+    }
+
     for (let i = 0; i < mesh.peers.length; i++) {
       const p = mesh.peers[i];
-      // Periodically let MONOLITH-V9 cross between adjacent rooms and the player's current room
-      if (i === 2 && tick % 480 === 240) {
-        p.roomX = p.roomX === curSx ? curSx + 1 : curSx;
-      } else if (i < 2) {
-        p.roomX = curSx;
-      }
-
       if (p.chatTimer > 0) p.chatTimer--;
       if (p.editBeamTimer > 0) p.editBeamTimer--;
 
-      if (p.roomX !== curSx) continue;
-
-      // Smoothly glide along the shared terrain ridge
-      if (Math.abs((p.targetX || 50) - p.x) < 1.5) {
-        p.targetX = 16 + ((tick * 7 + i * 43) % (COARSE_W - 32));
+      // Live remote players update their coordinates from `pollRemoteDriftMesh`
+      if (p.wanderMode === "live-remote") {
+        p.x += ((p.targetX || p.x) - p.x) * 0.25;
+        continue;
       }
+
+      // Autonomous AI Pilgrim Monoliths NEVER automatically snap `p.roomX = curSx`!
+      // - `wanderMode === "local"` (`MONOLITH-A7`): stays in its home frame `roomX = 0` and wanders slowly inside `[16, COARSE_W - 16]`.
+      // - `wanderMode === "slow-wander"` (`MONOLITH-K3`, `MONOLITH-V9`): wanders slowly in its own room, and only
+      //   transitions into an adjacent room (`roomX - 1` or `roomX + 1`) when it physically walks across `x <= 2` or `x >= COARSE_W - 3`!
+      const isLocalKeeper = p.wanderMode === "local";
+      const speed = isLocalKeeper ? 0.055 : 0.065;
+      if (Math.abs((p.targetX || 50) - p.x) < 1.8) {
+        if (isLocalKeeper) {
+          p.targetX = 18 + ((tick * 7 + i * 43) % (COARSE_W - 36));
+        } else {
+          // 82% of targets stay inside the current room; 18% walk to a border to cross into an adjacent room
+          const borderRoll = (tick + i * 31) % 6;
+          if (borderRoll === 0) {
+            p.targetX = (tick + i) % 2 === 0 ? 1.5 : COARSE_W - 2.5;
+          } else {
+            p.targetX = 14 + ((tick * 11 + i * 47) % (COARSE_W - 28));
+          }
+        }
+      }
+
       const dir = Math.sign((p.targetX || 50) - p.x);
-      p.vx = dir * 0.11;
-      p.x = Math.max(10, Math.min(COARSE_W - 11, p.x + p.vx));
+      p.vx = dir * speed;
+      p.x += p.vx;
+
+      if (!isLocalKeeper && p.x <= 2.0) {
+        p.roomX = (p.roomX || 0) - 1;
+        p.x = COARSE_W - 3.5;
+        p.targetX = COARSE_W - 28 - ((tick * 5) % 45);
+      } else if (!isLocalKeeper && p.x >= COARSE_W - 3.0) {
+        p.roomX = (p.roomX || 0) + 1;
+        p.x = 3.5;
+        p.targetX = 28 + ((tick * 5) % 45);
+      } else {
+        p.x = Math.max(2, Math.min(COARSE_W - 3, p.x));
+      }
+
+      // If not in the player's currently viewed room, don't run local terrain-array edits on `world.Blocks`
+      if (p.roomX !== curSx) {
+        p._nativeRect = null;
+        continue;
+      }
+
       const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(p.x)));
       const groundH = Math.max(seaLevel + 1, blocks[col] || 18);
       p.y += (groundH - p.y) * 0.25;
 
       // Periodically co-edit the shared world via DRIFT-MESH/1.0 CRDT envelopes!
-      if (tick % 210 === (i * 70 + 45) % 210) {
+      if (tick % 240 === (i * 80 + 45) % 240) {
         const editCol = Math.max(8, Math.min(COARSE_W - 9, Math.round(p.x + (dir || 1) * 5)));
         p.editTargetX = editCol;
         p.editTargetY = Math.max(seaLevel + 1, blocks[editCol] || 18);
@@ -7604,15 +8154,18 @@
             world,
             false
           );
+          if (global.SlopesGeneticFlora && typeof global.SlopesGeneticFlora.onCivilizationEditGenome === "function") {
+            global.SlopesGeneticFlora.onCivilizationEditGenome(editCol, "bioluminescent", world);
+          }
         } else {
           p.lastEditOp = `CRDT:CIV_SYNC(${p.driftBranch})`;
         }
 
-        if (p.chatTimer <= 0 && (tick + i * 31) % 420 < 210) {
+        if (p.chatTimer <= 0 && (tick + i * 31) % 480 < 180) {
           const autoChats = [
-            `[${p.driftBranch}] Co-editing col ${editCol} via DRIFT-MESH/1.0 (${p.codeHash})`,
-            `Sharing world state from my drifted fork — click me or type 'chat hi' to talk!`,
-            `Applying CRDT ${p.lastEditOp} to our shared valley!`,
+            `[${p.peerType}] Tending Sector (${p.roomX},0) col ${editCol} — click me or press C to chat!`,
+            `Sharing world state from ${p.driftBranch} — click me to talk!`,
+            `Applying CRDT ${p.lastEditOp} in Sector (${p.roomX},0)!`,
           ];
           p.chatBubble = autoChats[(tick + i) % autoChats.length];
           p.chatTimer = 175;
@@ -7629,7 +8182,10 @@
 
     for (let i = 0; i < mesh.peers.length; i++) {
       const p = mesh.peers[i];
-      if (p.roomX !== curSx) continue;
+      if (p.roomX !== curSx) {
+        p._nativeRect = null;
+        continue;
+      }
 
       const cx = Math.round(p.x * SCALE);
       const groundPy = Math.round((COARSE_H - p.y) * SCALE);
@@ -7655,22 +8211,16 @@
             primeRenderer.fillNativeRect(bx, by, 2, 2, hi[0], hi[1], hi[2], 0.92);
           }
         }
-        // Impact spark ring at co-edit target
         primeRenderer.fillNativeRect(tx - 3, ty - 2, 7, 3, hi[0], hi[1], hi[2], 0.9);
         primeRenderer.fillNativeRect(tx - 1, ty - 4, 3, 5, 255, 255, 255, 0.95);
       }
 
       // 2. Render Mostly-White Monolith Body with Distinct Hue Highlight Borders & Core Vein!
-      // Outer hue-highlighted aura/rim (1px)
       primeRenderer.fillNativeRect(mx - 1, my - 1, mw + 2, mh + 2, hi[0], hi[1], hi[2], 0.92);
-      // Mostly-White Alabaster Monolith Slab (`rgb(246, 250, 255)`)
       primeRenderer.fillNativeRect(mx, my, mw, mh, wh[0], wh[1], wh[2], 0.98);
-      // Pure brilliant white inner sheen
       primeRenderer.fillNativeRect(mx + 2, my + 2, mw - 4, mh - 4, 255, 255, 255, 1.0);
-      // Distinct Hue-Highlighted Crown & Vertical Resonance Slit so you can tell each white Monolith apart!
       primeRenderer.fillNativeRect(mx + 1, my + 1, mw - 2, 3, hi[0], hi[1], hi[2], 1.0);
       primeRenderer.fillNativeRect(cx - 1, my + 6, 2, mh - 12, hi[0], hi[1], hi[2], 0.95);
-      // Floating white + hue halo crystal above the Monolith
       const bob = Math.round(Math.sin(tick * 0.08 + i * 1.7) * 2);
       primeRenderer.fillNativeRect(cx - 2, my - 6 + bob, 5, 3, 255, 255, 255, 1.0);
       primeRenderer.fillNativeRect(cx - 1, my - 5 + bob, 3, 1, hi[0], hi[1], hi[2], 1.0);
@@ -8969,7 +9519,8 @@
       ctx.restore();
     }
 
-    // 1a-2. Render Compact 1:1 Device-Pixel Labels & Chat Bubbles for Other Monoliths in the Shared World!
+    // 1a-2. Render Compact 1:1 Device-Pixel Labels & Chat Bubbles for Other Monoliths in the Shared World,
+    //       plus the Player's own Chat Bubble & Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`)!
     const mesh = ensureSharedMonolithMesh(state.lastWorldContext);
     if (mesh && Array.isArray(mesh.peers)) {
       for (let pi = 0; pi < mesh.peers.length; pi++) {
@@ -8980,7 +9531,10 @@
         const pnr = peer._nativeRect;
         const pcx = Math.round((pnr.cx / NATIVE_W) * devW);
         const pmy = Math.round((pnr.my / NATIVE_H) * devH);
-        const tagTxt = isPeerHov ? `◈ ${peer.id} (${peer.handle} · ${peer.driftBranch})` : `◈ ${peer.id}`;
+        const roleBadge = peer.peerType || "AI PILGRIM";
+        const tagTxt = isPeerHov
+          ? `◈ ${peer.id} [${roleBadge}] (${peer.handle} · click or press C to chat)`
+          : `◈ ${peer.id} [${roleBadge}]`;
         const tw = tagTxt.length * charW + 10;
         const tx = Math.max(6, Math.min(devW - tw - 6, Math.round(pcx - tw / 2)));
         const ty = Math.max(42, pmy - lineH - 6);
@@ -8988,7 +9542,7 @@
         R.drawCanvasText(ctx, tagTxt, tx + 5, ty + 1, "#0b1720", fontKey, 1, 0);
 
         if (peer.chatTimer > 0 && peer.chatBubble) {
-          const chatStr = `"${String(peer.chatBubble).slice(0, 34)}"`;
+          const chatStr = `"${String(peer.chatBubble).slice(0, 52)}"`;
           const cw = chatStr.length * charW + 10;
           const cx0 = Math.max(6, Math.min(devW - cw - 6, Math.round(pcx - cw / 2)));
           const cy0 = Math.max(38, ty - lineH - 4);
@@ -8996,6 +9550,38 @@
           R.drawCanvasText(ctx, chatStr, cx0 + 5, cy0 + 1, peer.highlightHex, fontKey, 1, 0);
         }
       }
+    }
+
+    // Render Player's own overhead chat bubble when they just sent a message
+    if (mesh && mesh.localChatTimer > 0 && mesh.localChatBubble && state.lastWorldContext) {
+      const pl = state.lastWorldContext.P || state.lastWorldContext.Player;
+      if (pl && typeof pl.x === "number") {
+        const plCx = Math.round(((pl.x * SCALE) / NATIVE_W) * devW);
+        const plCy = Math.round((((COARSE_H - (pl.y || 20)) * SCALE - 40) / NATIVE_H) * devH);
+        const youStr = `YOU: "${String(mesh.localChatBubble).slice(0, 48)}"`;
+        const yw = youStr.length * charW + 10;
+        const yx = Math.max(6, Math.min(devW - yw - 6, Math.round(plCx - yw / 2)));
+        const yy = Math.max(42, plCy - lineH - 6);
+        R.drawHairlineRect(ctx, yx, yy, yw, lineH + 2, "#ffd43b", "rgba(12, 24, 32, 0.94)");
+        R.drawCanvasText(ctx, youStr, yx + 5, yy + 1, "#ffd43b", fontKey, 1, 0);
+      }
+    }
+
+    // Render Live On-Screen Monolith Chat Input Bar when `state.monolithChatOpen` is active!
+    if (state.monolithChatOpen) {
+      const barW = Math.min(devW - 24, Math.max(460, charW * 64));
+      const barH = lineH * 2 + 12;
+      const barX = Math.round((devW - barW) / 2);
+      const barY = devH - barH - 12;
+      R.drawHairlineRect(ctx, barX, barY, barW, barH, "#38d9f5", "rgba(6, 16, 24, 0.95)");
+      const lastChat = mesh && mesh.chatLog && mesh.chatLog.length > 0 ? mesh.chatLog[mesh.chatLog.length - 1] : null;
+      const topInfo = lastChat
+        ? `${lastChat.from}: "${String(lastChat.text).slice(0, 48)}"`
+        : `◈ MONOLITH CHAT (${state.monolithChatTarget || "SHARED WORLD"} · Live Players + AI Pilgrims · ESC to close)`;
+      R.drawCanvasText(ctx, topInfo.slice(0, Math.floor((barW - 16) / charW)), barX + 8, barY + 3, "#78ead4", fontKey, 1, 0);
+      const cursorCh = ((state.tickCount >> 3) & 1) === 0 ? "█" : "_";
+      const promptStr = `CHAT> ${state.monolithChatBuffer || ""}${cursorCh}`;
+      R.drawCanvasText(ctx, promptStr.slice(0, Math.floor((barW - 16) / charW)), barX + 8, barY + 5 + lineH, "#ffffff", fontKey, 1, 0);
     }
 
     // 1b. Render Physical In-World `TE-307` Mainframe Tower's Exposed 1:1 Device-Pixel `h12x26` Screen,
@@ -11044,9 +11630,7 @@
           } else if (hb.action === "nav-room") {
             navigateRoomByDelta(hb.dx || 0, hb.dy || 0);
           } else if (hb.action === "chat-monolith" || hb.id === "CHAT-MESH") {
-            executeMainframeCommand("chat Hello fellow Monoliths! Co-editing this valley via DRIFT-MESH/1.0!");
-            state.selectedTabId = "TE-307";
-            state.terminalOpen = true;
+            openMonolithChatInput("ALL MONOLITHS");
           } else if (hb.id === "+TAB") {
             spawnTabForm();
             state.terminalOpen = true;
@@ -11079,8 +11663,9 @@
       if (clickedTabId) {
         ev.stopPropagation();
         ev.preventDefault();
-        if (clickedTabId.startsWith("MONOLITH-")) {
-          executeMainframeCommand(`chat Hey ${clickedTabId}, let's co-edit this slope via DRIFT-MESH/1.0!`);
+        if (clickedTabId.startsWith("MONOLITH-") || clickedTabId.startsWith("PLAYER-")) {
+          openMonolithChatInput(clickedTabId);
+          sendMonolithChat(`Hey ${clickedTabId}, are you a live player or AI pilgrim? Let's co-edit this valley!`);
           return;
         }
         if (clickedTabId === "AIRSHIP") {
@@ -11115,9 +11700,43 @@
       }
     });
 
-    // Keyboard input for toggling (`F` or `` ` `` / `~` for `TE-307`) and typing commands into the focused shell!
+    // Keyboard input for toggling (`F` or `` ` `` / `~` for `TE-307`, `C` for Monolith Chat) and typing commands!
     window.addEventListener("keydown", (ev) => {
       if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+
+      // If the Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`) is open, capture typing!
+      if (state.monolithChatOpen) {
+        ev.stopPropagation();
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          state.monolithChatOpen = false;
+          return;
+        }
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          const msg = (state.monolithChatBuffer || "").trim();
+          state.monolithChatBuffer = "";
+          if (msg) {
+            sendMonolithChat(msg);
+          } else {
+            state.monolithChatOpen = false;
+          }
+          return;
+        }
+        if (ev.key === "Backspace") {
+          ev.preventDefault();
+          state.monolithChatBuffer = (state.monolithChatBuffer || "").slice(0, -1);
+          return;
+        }
+        if (ev.key && ev.key.length === 1 && !ev.metaKey && !ev.ctrlKey) {
+          ev.preventDefault();
+          state.monolithChatBuffer = ((state.monolithChatBuffer || "") + ev.key).slice(0, 78);
+          if (global.SlopesAudio && typeof global.SlopesAudio.playDumbtermTypeClick === "function") {
+            global.SlopesAudio.playDumbtermTypeClick(ev.key.charCodeAt(0));
+          }
+        }
+        return;
+      }
 
       // Backquote (`` ` `` or `~`) opens/toggles the In-World `TE-307` Mainframe TUI inside Hardcore-Tab!
       if ((ev.code === "Backquote" || ev.key === "`" || ev.key === "~") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
@@ -11137,6 +11756,11 @@
       }
 
       if (!state.terminalOpen) {
+        if ((ev.key === "c" || ev.key === "C") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+          ev.preventDefault();
+          openMonolithChatInput("ALL MONOLITHS");
+          return;
+        }
         if ((ev.key === "f" || ev.key === "F") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
           ev.preventDefault();
           state.terminalOpen = true;
@@ -11383,9 +12007,12 @@
     onDimensionRotate,
     executeMainframeAction: executeMainframeCommand,
     ensureAirshipCastleVillage,
+    onAirshipPlayerControl,
+    scrollWorldEntitiesBeneathAirship,
     ensureMassCivilizationBattle,
     ensureSharedMonolithMesh,
     sendMonolithChat,
+    openMonolithChatInput,
     toggleFollowTabForm,
     navigateRoomByDelta,
     openMainframeTui() {

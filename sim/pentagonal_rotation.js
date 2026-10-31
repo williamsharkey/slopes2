@@ -347,10 +347,22 @@
     }
 
     if (wb.P && snapshot.P) {
-      wb.P.x = clampCol(snapshot.P.x);
-      wb.P.y = Number.isFinite(snapshot.P.y) ? snapshot.P.y : (wb.Blocks ? wb.Blocks[wb.P.x] : 20);
-      if (snapshot.P.facing !== undefined) wb.P.facing = snapshot.P.facing;
-      wb.P.onAirship = null;
+      const tfState = global.SlopesTabForms && global.SlopesTabForms.state;
+      const as = tfState && tfState.airshipVillage;
+      if (as && as.riding) {
+        // When rotating the 5-fold world while aboard the Airship Castle-Village,
+        // keep the player anchored to the Airship deck/rope and preserve airship flight!
+        wb.P.x = clampCol(Math.round(as.x));
+        wb.P.y = (as.y || 50) - 1.5 - (as.playerRopeDrop || 0);
+        wb.P.hopTimer = 0;
+        snapshot.P.x = wb.P.x;
+        snapshot.P.y = wb.P.y;
+      } else {
+        wb.P.x = clampCol(snapshot.P.x);
+        wb.P.y = Number.isFinite(snapshot.P.y) ? snapshot.P.y : (wb.Blocks ? wb.Blocks[wb.P.x] : 20);
+        if (snapshot.P.facing !== undefined) wb.P.facing = snapshot.P.facing;
+        wb.P.onAirship = null;
+      }
     }
 
     if (snapshot.worldEntities) {
@@ -1392,12 +1404,19 @@
       const wl = scene.worldLayer || 0;
       const wx = scene.worldX || 0;
 
-      // 1. Rotate all 120 terrain columns around center pivot (x_c = 59.5, z_c = 0)
+      // When riding the Airship Castle-Village, pivot the 5-fold 3D rotation around the Airship!
+      const tfState = global.SlopesTabForms && global.SlopesTabForms.state;
+      const as = tfState && tfState.airshipVillage;
+      const ridingAirship = Boolean(as && as.riding);
+      const pivX = ridingAirship ? clamp(as.x, 14, COARSE_W - 15) : PIVOT_X;
+      const pivY = ridingAirship ? clamp(COARSE_H - (as.y || 50), 12, COARSE_H - 12) : PIVOT_Y;
+
+      // 1. Rotate all 120 terrain columns around active pivot (pivX, z_c = 0)
       for (let x = 0; x < COARSE_W; x++) {
         const h = clamp(blocks[x] || 0, 0, COARSE_H - 2);
         const z_x = Math.sin((x / 119) * Math.PI) * 14 + (h - 20) * 0.45;
-        const dx = x - PIVOT_X;
-        const xPrime = PIVOT_X + dx * cosT - z_x * sinT;
+        const dx = x - pivX;
+        const xPrime = pivX + dx * cosT - z_x * sinT;
         const zPrime = dx * sinT + z_x * cosT;
         const perspScale = 1 / (1 + clamp(zPrime, -120, 120) * 0.004);
 
@@ -1413,18 +1432,19 @@
           wl,
           alpha: sceneAlpha,
           isIncoming,
+          pivY,
         });
       }
 
       // Helper to push a 3D-projected object
       function pushObj(kind, x0, yElev, z0, color, sizeCoarse, extra) {
         if (!Number.isFinite(x0) || !Number.isFinite(yElev)) return;
-        const dx = x0 - PIVOT_X;
-        const xPrime = PIVOT_X + dx * cosT - z0 * sinT;
+        const dx = x0 - pivX;
+        const xPrime = pivX + dx * cosT - z0 * sinT;
         const zPrime = dx * sinT + z0 * cosT;
         const scale = 1 / (1 + clamp(zPrime, -120, 120) * 0.004);
         const screenY = COARSE_H - yElev;
-        const yPrime = PIVOT_Y + (screenY - PIVOT_Y) * scale;
+        const yPrime = pivY + (screenY - pivY) * scale;
 
         objects.push({
           kind,
@@ -1544,11 +1564,21 @@
         }
       }
 
+      // Airship Castle-Village (if present in sector)
+      if (as && (ridingAirship || as.roomX === wx)) {
+        const zAs = ridingAirship ? 0 : 18;
+        pushObj("airshipCastle", as.x || 60, as.y || 50, zAs, [140, 235, 225], 8, as);
+      }
+
       // Player Monolith (TACHIMA-307)
       if (scene.P) {
-        const px = clampCol(scene.P.x);
-        const py = Number.isFinite(scene.P.y) ? scene.P.y : (blocks[px] || 18);
-        const zP = computeEntityDepthZ(scene.P, 0, 1, wx, wl);
+        const px = ridingAirship ? clampCol(Math.round(as.x)) : clampCol(scene.P.x);
+        const py = ridingAirship
+          ? (as.y || 50) - 1.5 - (as.playerRopeDrop || 0)
+          : Number.isFinite(scene.P.y)
+          ? scene.P.y
+          : blocks[px] || 18;
+        const zP = ridingAirship ? 0 : computeEntityDepthZ(scene.P, 0, 1, wx, wl);
         pushObj("player", px, py + 3, zP, [110, 250, 255], 2, scene.P);
       }
 
@@ -1605,9 +1635,14 @@
       const allCols = outPrims.columns.concat(inPrims.columns);
       allCols.sort((a, b) => b.zPrime - a.zPrime);
 
+      const tfState = global.SlopesTabForms && global.SlopesTabForms.state;
+      const as = tfState && tfState.airshipVillage;
+      const ridingAirship = Boolean(as && as.riding);
+      const activePivX = ridingAirship ? clamp(as.x, 14, COARSE_W - 15) : PIVOT_X;
+
       // Draw subtle 3D rotating Pentagonal Horizon Ring behind terrain
       if (typeof primeRenderer.nativeLine7 === "function") {
-        const ringCx = Math.round(PIVOT_X * SCALE);
+        const ringCx = Math.round(activePivX * SCALE);
         const ringCy = Math.round(24 * SCALE);
         const rx = 240;
         const ry = 36;
@@ -1627,6 +1662,7 @@
         const col = allCols[i];
         if (col.alpha <= 0.02) continue;
 
+        const cPivY = col.pivY !== undefined ? col.pivY : PIVOT_Y;
         const px = Math.round(col.xPrime * SCALE);
         const pw = Math.max(4, Math.round(SCALE * col.scale) + 1);
         if (px + pw < 0 || px >= NATIVE_W) continue;
@@ -1636,8 +1672,8 @@
 
         // Sea / Magma column in background
         if (col.seaLevel > 0 && col.h < col.seaLevel) {
-          const seaTopCoarse = PIVOT_Y + (COARSE_H - col.seaLevel - PIVOT_Y) * col.scale;
-          const seaBotCoarse = PIVOT_Y + (COARSE_H - PIVOT_Y) * col.scale;
+          const seaTopCoarse = cPivY + (COARSE_H - col.seaLevel - cPivY) * col.scale;
+          const seaBotCoarse = cPivY + (COARSE_H - cPivY) * col.scale;
           const sy0 = clamp(Math.round(seaTopCoarse * SCALE), 0, NATIVE_H - 1);
           const sy1 = clamp(Math.round(seaBotCoarse * SCALE), 0, NATIVE_H);
           if (sy1 > sy0) {
@@ -1656,11 +1692,11 @@
 
         // Solid terrain column
         if (col.h > 0) {
-          const topCoarse = PIVOT_Y + (COARSE_H - col.h - PIVOT_Y) * col.scale;
+          const topCoarse = cPivY + (COARSE_H - col.h - cPivY) * col.scale;
           const botCoarse =
             col.wl > 0 && col.islandBase > 0
-              ? PIVOT_Y + (COARSE_H - col.islandBase - PIVOT_Y) * col.scale
-              : PIVOT_Y + (COARSE_H - PIVOT_Y) * col.scale;
+              ? cPivY + (COARSE_H - col.islandBase - cPivY) * col.scale
+              : cPivY + (COARSE_H - cPivY) * col.scale;
           const py0 = clamp(Math.round(topCoarse * SCALE), 0, NATIVE_H - 1);
           const py1 = clamp(Math.round(botCoarse * SCALE), 0, NATIVE_H);
           if (py1 > py0) {
@@ -1706,7 +1742,17 @@
         const c = obj.color || [220, 245, 240];
         const a = clamp(obj.alpha * 0.95, 0.05, 1);
 
-        if (obj.kind === "player") {
+        if (obj.kind === "airshipCastle") {
+          // 3D perspective silhouette of the Airship Castle-Village envelope, hull & citadel keep
+          const envW = Math.max(24, unit * 18);
+          const envH = Math.max(10, unit * 5);
+          const hullW = Math.max(18, unit * 14);
+          const hullH = Math.max(6, unit * 3);
+          primeRenderer.fillNativeRect(px - Math.floor(envW / 2), py - envH - hullH - unit * 2, envW, envH, 36, 98, 108, a * 0.9);
+          primeRenderer.fillNativeRect(px - Math.floor(hullW / 2), py - hullH, hullW, hullH, 48, 86, 82, a);
+          primeRenderer.fillNativeRect(px - unit * 3, py - hullH - unit * 3, unit * 6, unit * 3, 64, 128, 122, a);
+          primeRenderer.fillNativeRect(px - unit, py - hullH - unit * 2, unit * 2, unit, 255, 215, 105, a);
+        } else if (obj.kind === "player") {
           // 6-pixel Monolith robot + glowing Aetherium chest + binary P.e tower in 3D perspective
           const bodyH = Math.max(8, unit * 6);
           primeRenderer.fillNativeRect(px, py - bodyH, unit, bodyH, 24, 52, 50, a);
@@ -1743,6 +1789,12 @@
             a
           );
         }
+      }
+
+      // If riding the Airship Castle-Village, also render the crisp live Airship Castle-Village at the pivot
+      // so the ship interior, rigging, and boarding rope remain seamless while the world rotates around it!
+      if (ridingAirship && global.SlopesTabForms && typeof global.SlopesTabForms.render === "function" && wb) {
+        global.SlopesTabForms.render(primeRenderer, wb, eco, cosmic);
       }
 
       // Draw crisp 7x7 sub-pixel Pentagonal Compass / Facet Indicator at top of screen

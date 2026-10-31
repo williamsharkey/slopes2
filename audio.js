@@ -40,23 +40,75 @@
   // ============================================================================
   const RAGA_WORLDS = [
     {
-      name: "RAGA YAMAN // COSMIC",
+      name: "NORDIC FELT // CHAMBER",
+      intervals: [-12, -10, -9, -7, -5, -4, -2, 0, 2, 3, 7],
+      midiRoot: 57, // A Aeolian / Add9 (Avril 14th / Nils Frahm chamber warmth)
+      arohana: [0, 2, 3, 5, 7, 8, 10, 12],
+      avarohana: [12, 10, 8, 7, 5, 3, 2, 0],
+      vadi: 2,
+      samvadi: 4,
+      chord: [0, 3, 7, 10, 14, 15],
+      progressions: [
+        // i(add9) -> VImaj9 -> III(add9) -> iv7 (Lyrical chamber felt-piano arc)
+        [
+          { root: 0,  tones: [0, 3, 7, 10, 14],     vowel: "o" },
+          { root: -4, tones: [-4, 0, 3, 7, 11],     vowel: "a" },
+          { root: 3,  tones: [3, 7, 10, 14, 17],    vowel: "u" },
+          { root: 5,  tones: [5, 8, 12, 15, 19],    vowel: "o" },
+        ],
+        // i9 -> iv11 -> bVII6/9 -> VImaj7#11
+        [
+          { root: 0,  tones: [0, 3, 7, 12, 14],     vowel: "u" },
+          { root: 5,  tones: [5, 8, 12, 15, 17],    vowel: "o" },
+          { root: -2, tones: [-2, 2, 5, 9, 14],     vowel: "a" },
+          { root: -4, tones: [-4, 0, 4, 7, 11],     vowel: "o" },
+        ],
+      ],
+    },
+    {
+      name: "MOON SAFARI // RHODES",
+      intervals: [-12, -10, -9, -7, -5, -3, -2, 0, 2, 3, 7],
+      midiRoot: 54, // F# Dorian (Air "La Femme d'Argent" / Rhodes & Fretless Bass)
+      arohana: [0, 2, 3, 5, 7, 9, 10, 12],
+      avarohana: [12, 10, 9, 7, 5, 3, 2, 0],
+      vadi: 4,
+      samvadi: 5,
+      chord: [0, 3, 7, 10, 14, 17],
+      progressions: [
+        // i11 -> IV9 (Dorian lift) -> bVIImaj9 -> III6/9
+        [
+          { root: 0,  tones: [0, 3, 7, 10, 14, 17], vowel: "o" },
+          { root: 5,  tones: [5, 9, 12, 15, 19],    vowel: "a" },
+          { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "u" },
+          { root: 3,  tones: [3, 7, 10, 14, 17],    vowel: "a" },
+        ],
+        // i9 -> ii7 -> III(maj9) -> IV9
+        [
+          { root: 0,  tones: [0, 3, 7, 10, 14],     vowel: "a" },
+          { root: 2,  tones: [2, 5, 9, 12, 16],     vowel: "o" },
+          { root: 3,  tones: [3, 7, 10, 14, 19],    vowel: "u" },
+          { root: 5,  tones: [5, 9, 12, 16, 19],    vowel: "o" },
+        ],
+      ],
+    },
+    {
+      name: "AIRDRAWNDAGGER // HORIZON",
       intervals: [-12, -10, -8, -5, -3, -1, 0, 2, 4, 6, 7],
-      midiRoot: 58, // Bb3 / Bb1 bass
-      arohana: [0, 2, 4, 6, 7, 9, 11, 12],   // Kalyan/Lydian: Ni Re Ga Ma# Dha Ni Sa
+      midiRoot: 51, // Eb Lydian / Suspended (Sasha & Charlie May progressive breakbeat)
+      arohana: [0, 2, 4, 6, 7, 9, 11, 12],
       avarohana: [12, 11, 9, 7, 6, 4, 2, 0],
-      vadi: 2,    // Ga (major 3rd)
-      samvadi: 6, // Ni (major 7th)
+      vadi: 4,
+      samvadi: 6,
       chord: [0, 4, 7, 11, 14, 18],
       progressions: [
-        // I(maj9#11) -> II7/I (Lydian lift) -> vim9 -> V7sus4 (Cosmic horizon)
+        // Imaj9#11 -> II6/9 -> vim11 -> Vsus4
         [
           { root: 0,  tones: [0, 4, 7, 11, 14, 18], vowel: "a" },
           { root: 2,  tones: [2, 6, 9, 12, 16, 19], vowel: "o" },
           { root: -3, tones: [-3, 0, 4, 7, 11, 14], vowel: "u" },
           { root: -5, tones: [-5, 0, 2, 7, 9, 14],  vowel: "a" },
         ],
-        // Imaj7 -> VII/I -> IVmaj7#11 -> V6/9 (Floating modal arc)
+        // Imaj7 -> VII/I -> IVmaj7#11 -> V6/9
         [
           { root: 0,  tones: [0, 4, 7, 11, 14],     vowel: "o" },
           { root: -1, tones: [-1, 2, 7, 11, 14],    vowel: "a" },
@@ -66,117 +118,91 @@
       ],
     },
     {
-      name: "RAGA BHAIRAV // DAWN",
-      intervals: [-12, -11, -8, -7, -5, -4, -1, 0, 1, 4, 7],
-      midiRoot: 60, // C
-      arohana: [0, 1, 4, 5, 7, 8, 11, 12],   // Double harmonic: Sa re Ga Ma Pa dha Ni Sa
-      avarohana: [12, 11, 8, 7, 5, 4, 1, 0],
-      vadi: 5,    // dha (flat 6th)
-      samvadi: 1, // re (flat 2nd)
-      chord: [0, 4, 7, 11, 13, 17],
-      progressions: [
-        // Raga Bhairav pulse: I -> bII(maj7) -> fm6/I -> V7(b9)
-        [
-          { root: 0,  tones: [0, 4, 7, 11, 13],     vowel: "a" },
-          { root: 1,  tones: [1, 5, 8, 12, 16],     vowel: "o" },
-          { root: 5,  tones: [5, 8, 12, 14, 17],    vowel: "u" },
-          { root: 7,  tones: [7, 11, 14, 17, 20],   vowel: "a" },
-        ],
-        // Chromatic mediant trance: I -> bVImaj7 -> iv -> Vsus4 -> V
-        [
-          { root: 0,  tones: [0, 4, 7, 12, 16],     vowel: "o" },
-          { root: -4, tones: [-4, 0, 3, 7, 12],     vowel: "u" },
-          { root: 5,  tones: [5, 8, 12, 17],        vowel: "a" },
-          { root: 7,  tones: [7, 11, 13, 17, 19],   vowel: "o" },
-        ],
-      ],
-    },
-    {
-      name: "RAGA BAGESHRI // NIGHT",
-      intervals: [-12, -10, -9, -7, -5, -3, -2, 0, 2, 3, 7],
-      midiRoot: 57, // A
-      arohana: [0, 2, 3, 5, 9, 10, 12],      // Dorian hexatonic/heptatonic night raga
-      avarohana: [12, 10, 9, 7, 5, 3, 2, 0],
-      vadi: 3,    // Ma (4th)
-      samvadi: 0, // Sa (root)
-      chord: [0, 3, 7, 10, 14, 17],
-      progressions: [
-        // Cosmic Dorian progression: i9 -> IV9 -> bVIImaj9 -> III6/9
-        [
-          { root: 0,  tones: [0, 3, 7, 10, 14, 17], vowel: "o" },
-          { root: 5,  tones: [5, 9, 12, 15, 19],    vowel: "a" },
-          { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "u" },
-          { root: 3,  tones: [3, 7, 10, 14, 17],    vowel: "a" },
-        ],
-        // Deep hypnotic cycle: i7 -> v9 -> bVI6/9 -> bVII9sus4
-        [
-          { root: 0,  tones: [0, 3, 7, 10, 14],     vowel: "u" },
-          { root: 7,  tones: [7, 10, 14, 17, 21],   vowel: "o" },
-          { root: -4, tones: [-4, 0, 3, 7, 10],     vowel: "a" },
-          { root: -2, tones: [-2, 3, 5, 10, 14],    vowel: "o" },
-        ],
-      ],
-    },
-    {
-      name: "RAGA MALKAUNS // DEEP",
+      name: "WARP IDM // QUARTAL",
       intervals: [-12, -9, -7, -4, -2, 0, 3, 5, 8, 10],
-      midiRoot: 55, // G
-      arohana: [0, 3, 5, 8, 10, 12],         // Ancient midnight pentatonic: Sa ga Ma dha ni Sa
-      avarohana: [12, 10, 8, 5, 3, 0],
-      vadi: 2,    // Ma (4th)
-      samvadi: 0, // Sa (root)
-      chord: [0, 3, 5, 8, 10, 15],
+      midiRoot: 53, // F Minor Pentatonic / Quartal (Boards of Canada / Aphex / Autechre)
+      arohana: [0, 3, 5, 7, 10, 12],
+      avarohana: [12, 10, 7, 5, 3, 0],
+      vadi: 2,
+      samvadi: 3,
+      chord: [0, 5, 10, 15, 19],
       progressions: [
-        // Midnight suspended modal shift: i(add4) -> bVImaj9 -> iv7 -> bVII11
+        // Quartal i(add4) -> bVImaj9 -> iv11 -> bVII6/9
         [
-          { root: 0,  tones: [0, 3, 5, 10, 15],     vowel: "u" },
+          { root: 0,  tones: [0, 5, 10, 14, 15],    vowel: "u" },
           { root: -4, tones: [-4, 0, 3, 7, 10],     vowel: "o" },
           { root: 5,  tones: [5, 8, 12, 15, 17],    vowel: "a" },
-          { root: -2, tones: [-2, 3, 5, 8, 12],     vowel: "u" },
+          { root: -2, tones: [-2, 3, 5, 9, 12],     vowel: "u" },
         ],
-        // Subterranean ascent: i -> bIII(add9) -> iv9 -> bVImaj7
+        // Nostalgic tape-drift cycle: i -> bIII(add9) -> bVImaj7 -> v7
         [
-          { root: 0,  tones: [0, 5, 8, 10, 15],     vowel: "o" },
-          { root: 3,  tones: [3, 8, 10, 15, 17],    vowel: "a" },
-          { root: 5,  tones: [5, 8, 12, 15],        vowel: "u" },
-          { root: 8,  tones: [8, 12, 15, 19],       vowel: "o" },
+          { root: 0,  tones: [0, 3, 7, 10, 14],     vowel: "o" },
+          { root: 3,  tones: [3, 7, 10, 14, 17],    vowel: "a" },
+          { root: 8,  tones: [8, 12, 15, 19],       vowel: "u" },
+          { root: 7,  tones: [7, 10, 14, 17],       vowel: "o" },
         ],
       ],
     },
     {
-      name: "RAGA CHARUKESHI // SEA",
+      name: "BLADE RUNNER // NOCTURNE",
       intervals: [-12, -10, -8, -7, -5, -4, -2, 0, 2, 4, 5, 7],
-      midiRoot: 58, // Bb
-      arohana: [0, 2, 4, 5, 7, 8, 10, 12],   // Major lower tetrachord + minor upper tetrachord (Mixolydian b6)
-      avarohana: [12, 10, 8, 7, 5, 4, 2, 0],
-      vadi: 4,    // Pa (5th)
-      samvadi: 0, // Sa (root)
+      midiRoot: 49, // C#m9 / Db Mediant (Vangelis CS-80 & Moog Taurus Sub Pedal)
+      arohana: [0, 2, 3, 5, 7, 8, 11, 12],
+      avarohana: [12, 10, 8, 7, 5, 3, 2, 0],
+      vadi: 4,
+      samvadi: 0,
+      chord: [0, 3, 7, 10, 14, 17],
+      progressions: [
+        // i9 -> bVImaj9#11 -> iv9 -> V7sus4
+        [
+          { root: 0,  tones: [0, 3, 7, 10, 14],     vowel: "o" },
+          { root: -4, tones: [-4, 0, 3, 7, 11, 14], vowel: "a" },
+          { root: 5,  tones: [5, 8, 12, 15, 19],    vowel: "u" },
+          { root: 7,  tones: [7, 12, 14, 17, 19],   vowel: "o" },
+        ],
+        // Chromatic mediant horizon: I -> bVImaj7 -> iv6 -> bVII9
+        [
+          { root: 0,  tones: [0, 4, 7, 11, 14],     vowel: "a" },
+          { root: 8,  tones: [8, 12, 15, 19],       vowel: "u" },
+          { root: 5,  tones: [5, 8, 12, 14, 17],    vowel: "o" },
+          { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "a" },
+        ],
+      ],
+    },
+    {
+      name: "ANTIKYTHERA // ACOUSTIC",
+      intervals: [-12, -10, -8, -7, -5, -3, -2, 0, 2, 4, 7],
+      midiRoot: 50, // D Mixolydian / Pastoral (BT This Binary Universe / Acoustic Guitar & Marimba)
+      arohana: [0, 2, 4, 5, 7, 9, 10, 12],
+      avarohana: [12, 10, 9, 7, 5, 4, 2, 0],
+      vadi: 4,
+      samvadi: 2,
       chord: [0, 4, 7, 10, 14, 17],
       progressions: [
-        // Bittersweet coastal sunset: I9 -> iv(maj7)/I -> bVImaj7#11 -> bVII9
+        // I(add9) -> bVIImaj9 -> IV(add9)/I -> v11
         [
-          { root: 0,  tones: [0, 4, 7, 10, 14],     vowel: "a" },
-          { root: 5,  tones: [5, 8, 12, 16, 19],    vowel: "u" },
-          { root: -4, tones: [-4, 0, 4, 7, 10],     vowel: "o" },
-          { root: -2, tones: [-2, 2, 5, 8, 12],     vowel: "a" },
+          { root: 0,  tones: [0, 4, 7, 11, 14],     vowel: "a" },
+          { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "o" },
+          { root: 5,  tones: [5, 9, 12, 16, 19],    vowel: "u" },
+          { root: 7,  tones: [7, 10, 14, 17, 21],   vowel: "a" },
         ],
-        // Cinematic major/minor interplay: I -> Vm9 -> bVI6/9 -> iv6
+        // Clockwork chamber minimalism: I6/9 -> ii11 -> vim9 -> IVmaj9
         [
-          { root: 0,  tones: [0, 4, 7, 12, 16],     vowel: "o" },
-          { root: 7,  tones: [7, 10, 14, 17, 21],   vowel: "u" },
-          { root: 8,  tones: [8, 12, 15, 19],       vowel: "a" },
-          { root: 5,  tones: [5, 8, 12, 14, 17],    vowel: "o" },
+          { root: 0,  tones: [0, 4, 7, 9, 14],      vowel: "o" },
+          { root: 2,  tones: [2, 5, 9, 12, 16],     vowel: "a" },
+          { root: -3, tones: [-3, 0, 4, 7, 11],     vowel: "u" },
+          { root: 5,  tones: [5, 9, 12, 16, 19],    vowel: "o" },
         ],
       ],
     },
     {
-      name: "PI-SHIFT // HORIZON",
+      name: "PI-SHIFT // COASTAL",
       intervals: [-12, -8.5, -18.5, -22, -5, 0, 3.5],
-      midiRoot: 56, // Ab
-      arohana: [0, 2, 4, 7, 9, 11, 12],      // Luminous major/pentatonic suspension
+      midiRoot: 56, // Ab Luminous Major / Suspended
+      arohana: [0, 2, 4, 7, 9, 11, 12],
       avarohana: [12, 11, 9, 7, 4, 2, 0],
-      vadi: 4,    // 5th
-      samvadi: 1, // 2nd (9th)
+      vadi: 4,
+      samvadi: 1,
       chord: [0, 4, 7, 11, 14, 19],
       progressions: [
         // Suspended cascade: Imaj9 -> IVmaj7/I -> vi11 -> V6/4
@@ -186,7 +212,7 @@
           { root: -3, tones: [-3, 2, 4, 7, 11, 14], vowel: "u" },
           { root: 7,  tones: [7, 11, 14, 16, 21],   vowel: "a" },
         ],
-        // Endless horizon: Imaj9 -> bVIImaj9 (Mixolydian shift) -> IVadd9 -> Vsus4
+        // Endless horizon: Imaj9 -> bVIImaj9 -> IVadd9 -> Vsus4
         [
           { root: 0,  tones: [0, 4, 7, 11, 14],     vowel: "o" },
           { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "a" },
@@ -195,9 +221,28 @@
         ],
       ],
     },
+    {
+      name: "RAGA BAGESHRI // MIDNIGHT",
+      intervals: [-12, -10, -9, -7, -5, -3, -2, 0, 2, 3, 7],
+      midiRoot: 58, // Bb Dorian Nocturne (kept as 1 of 8 worlds, never self-looped)
+      arohana: [0, 2, 3, 5, 9, 10, 12],
+      avarohana: [12, 10, 9, 7, 5, 3, 2, 0],
+      vadi: 3,
+      samvadi: 0,
+      chord: [0, 3, 7, 10, 14, 17],
+      progressions: [
+        [
+          { root: 0,  tones: [0, 3, 7, 10, 14, 17], vowel: "o" },
+          { root: 5,  tones: [5, 9, 12, 15, 19],    vowel: "a" },
+          { root: -2, tones: [-2, 2, 5, 9, 12],     vowel: "u" },
+          { root: 3,  tones: [3, 7, 10, 14, 17],    vowel: "a" },
+        ],
+      ],
+    },
   ];
 
-  let scaleIdx = 0;
+  // Randomize initial scaleIdx on startup (excluding Raga index 7 so we never start stuck in Raga!)
+  let scaleIdx = Math.floor(Math.random() * 7);
   let ctx = null;
   let master = null;
   let warmFilterNode = null;
@@ -1426,45 +1471,363 @@
   }
 
   // ============================================================================
-  // GHOSTS.GARDEN MONO·B / TB-303 MORPHING 24dB LADDER BASS SYNTHESIZER
-  // Ported from ghosts-garden/src/garden-panel-bass.js
+  // 7 DIVERSE BASS SYNTHESIS & PHYSICAL MODELLING ENGINES
+  //  0: UPRIGHT_CONTRABASS — Acoustic Pizzicato Double Bass (woody spruce/maple body modes)
+  //  1: FRETLESS_JACO_MWAH — Singing Fretless Electric Bass (Air "La Femme d'Argent" / Jaco mwah bloom)
+  //  2: FENDER_PBASS_MUTE  — Palm-Muted Fender Precision Bass with Felt Pick & Ampeg B-15 warmth
+  //  3: REESE_WARM_SUB     — Weightless Progressive / UKG Detuned Reese & Sine Sub-Bass
+  //  4: DX_FM_HOLLOW_WOOD  — 2-Op Chowning FM Hollow Woody / Log / Detroit Bass
+  //  5: MOOG_TAURUS_PEDAL  — Deep Moog Taurus / CS-80 Sub-Pedal Drone (zero acid resonance)
+  //  6: TB303_LADDER       — Classic Morphing 24dB Ladder Bass (rare accent color, never dominant)
   // ============================================================================
-  // Live morphing parameters (continuously modulated by slow LFOs & 8-bar/16-bar ragas)
+  const BASS_STYLES = [
+    { id: "UPRIGHT_CONTRABASS", name: "ACOUSTIC CONTRABASS", short: "CONTRABASS" },
+    { id: "FRETLESS_JACO_MWAH", name: "FRETLESS MWAH BASS",  short: "FRETLESS" },
+    { id: "FENDER_PBASS_MUTE",  name: "PALM-MUTED P-BASS",   short: "P-BASS" },
+    { id: "REESE_WARM_SUB",     name: "WARM REESE SUB",      short: "REESE-SUB" },
+    { id: "DX_FM_HOLLOW_WOOD",  name: "FM HOLLOW WOOD BASS", short: "FM-WOOD" },
+    { id: "MOOG_TAURUS_PEDAL",  name: "TAURUS SUB PEDAL",    short: "TAURUS" },
+    { id: "TB303_LADDER",       name: "RESONANT LADDER",     short: "LADDER" },
+  ];
+
+  // Start on a random non-303 bass style (0..5) so we never start with TB-303 acid bass!
+  let activeBassStyleIdx = Math.floor(Math.random() * 6);
+
   const bassParams = {
-    wave: 0.22,       // 0 = saw, 0.5 = square, 1.0 = narrow pulse
-    cutoff: 310,      // Base filter cutoff (Hz)
-    res: 0.42,        // 24dB dual-biquad ladder resonance (0..0.85)
-    envMod: 0.52,     // Filter envelope modulation depth (0..1)
-    decay: 0.26,      // Filter & amp decay time (s)
-    drive: 0.22,      // Tanh waveshaper saturation drive (0..0.75)
-    sub: 0.38,        // -1 octave square sub-oscillator level (0..0.8)
-    detune: 6.5,      // 2nd oscillator detune in cents
-    slideProb: 0.28,  // Probability of legato raga meend / 303 slide
+    wave: 0.22,
+    cutoff: 280,
+    res: 0.24,
+    envMod: 0.36,
+    decay: 0.28,
+    drive: 0.16,
+    sub: 0.44,
+    detune: 5.5,
+    slideProb: 0.22,
   };
 
-  let lastBassMidi = 46;
+  let lastBassMidi = 45;
 
-  function playMorphingBassNote(midiNote, opts = {}) {
+  // 0. Acoustic Upright Contrabass (Pizzicato & Warm Woody Body Resonance)
+  function playUprightContrabass(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const when = opts.when || c.currentTime;
+    const clampedMidi = clamp(Math.round(midiNote), 33, 60);
+    const f0 = mtof(clampedMidi);
+    const vel = (opts.vel || 0.20) * (opts.accent ? 1.18 : 1.0) * pitchAtten(f0);
+    const key = `uprightBass:${clampedMidi}:${opts.accent ? 1 : 0}`;
+
+    playBufferCached(
+      key,
+      (sr) => {
+        const dur = opts.accent ? 0.68 : 0.52;
+        const len = Math.floor(sr * dur);
+        const out = new Float32Array(len);
+        // Stretched gut/steel wound string partials + carved spruce/maple body cavity modes (96 Hz & 198 Hz)
+        const modes = [
+          { f: f0,         a: 1.15, t: dur * 0.92, g0: 1.018, g1: 1.0, gt: 0.024 },
+          { f: f0 * 2.001, a: 0.54, t: dur * 0.62 },
+          { f: f0 * 3.004, a: 0.26, t: dur * 0.38 },
+          { f: f0 * 4.010, a: 0.11, t: dur * 0.22 },
+          { f: 96,         a: 0.32, t: 0.085 }, // Helmholtz f-hole air mode
+          { f: 198,        a: 0.22, t: 0.055 }, // Top-plate wood resonance
+        ];
+        const exc = contactPulse(sr, 0.0042, true);
+        runComplexModes(out, exc, modes, sr);
+        applyBiquad(out, "lp", opts.accent ? 620 : 460, 0.72, sr);
+        return finishTake(out, sr, 0.84, 20);
+      },
+      vel,
+      true,
+      false,
+      when,
+      rnd(-0.08, 0.08)
+    );
+  }
+
+  // 1. Singing Fretless Electric Bass ("La Femme d'Argent" / Jaco Mwah Bloom)
+  function playFretlessMwahBass(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const t = opts.when || c.currentTime;
+    const slide = !!opts.slide;
+    const prevMidi = opts.prevMidi != null ? opts.prevMidi : lastBassMidi;
+    const fTarget = clamp(mtof(midiNote), 36, 360);
+    const fStart = slide ? clamp(mtof(prevMidi), 36, 360) : fTarget * 0.992;
+    const dur = (opts.decay || 0.42) + (slide ? 0.14 : 0.08);
+    const vel = (opts.vel || 0.19) * (opts.accent ? 1.15 : 1.0) * pitchAtten(fTarget);
+
+    // Bridge-pickup asymmetric pulse + warm chorus twin
+    const o1 = c.createOscillator();
+    const o2 = c.createOscillator();
+    const oSub = c.createOscillator();
+    o1.setPeriodicWave(bassWaveOf(c, 0.68));
+    o2.type = "sawtooth";
+    oSub.type = "sine";
+
+    o1.frequency.setValueAtTime(fStart, t);
+    o2.frequency.setValueAtTime(fStart * 1.0025, t);
+    oSub.frequency.setValueAtTime(fStart, t);
+    o1.frequency.exponentialRampToValueAtTime(fTarget, t + (slide ? 0.085 : 0.022));
+    o2.frequency.exponentialRampToValueAtTime(fTarget * 1.0025, t + (slide ? 0.085 : 0.022));
+    oSub.frequency.exponentialRampToValueAtTime(fTarget, t + (slide ? 0.085 : 0.022));
+
+    // Fretless fingerboard "mwah" vocal formant bloom (slow attack peak around 480 Hz)
+    const mwahFilter = c.createBiquadFilter();
+    mwahFilter.type = "lowpass";
+    mwahFilter.Q.value = 1.65;
+    mwahFilter.frequency.setValueAtTime(210, t);
+    mwahFilter.frequency.exponentialRampToValueAtTime(opts.accent ? 680 : 510, t + Math.min(0.14, dur * 0.42));
+    mwahFilter.frequency.exponentialRampToValueAtTime(240, t + dur);
+
+    const mix = c.createGain();
+    const gSub = c.createGain();
+    gSub.gain.value = 0.55;
+    o1.connect(mix);
+    o2.connect(mix);
+    oSub.connect(gSub);
+    gSub.connect(mix);
+    mix.connect(mwahFilter);
+
+    const vca = c.createGain();
+    vca.gain.setValueAtTime(0.0001, t);
+    vca.gain.linearRampToValueAtTime(vel * 0.55, t + 0.016);
+    vca.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    mwahFilter.connect(vca);
+    vca.connect(master);
+    if (reverb) {
+      const rSend = c.createGain();
+      rSend.gain.value = 0.16;
+      vca.connect(rSend);
+      rSend.connect(reverb);
+    }
+
+    o1.start(t);
+    o2.start(t);
+    oSub.start(t);
+    const stopT = t + dur + 0.07;
+    o1.stop(stopT);
+    o2.stop(stopT);
+    oSub.stop(stopT);
+  }
+
+  // 2. Palm-Muted Fender Precision Bass with Felt Pick & Warm Tube Amp
+  function playPalmMutedPBass(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const when = opts.when || c.currentTime;
+    const clampedMidi = clamp(Math.round(midiNote), 34, 60);
+    const f0 = mtof(clampedMidi);
+    const vel = (opts.vel || 0.20) * (opts.accent ? 1.2 : 1.0) * pitchAtten(f0);
+    const key = `pBassMute:${clampedMidi}:${opts.accent ? 1 : 0}`;
+
+    playBufferCached(
+      key,
+      (sr) => {
+        const dur = opts.accent ? 0.36 : 0.24;
+        const len = Math.floor(sr * dur);
+        const out = new Float32Array(len);
+        const modes = [
+          { f: f0,         a: 1.20, t: dur * 0.85, g0: 1.035, g1: 1.0, gt: 0.012 },
+          { f: f0 * 2.001, a: 0.68, t: dur * 0.48 },
+          { f: f0 * 3.003, a: 0.32, t: dur * 0.24 },
+          { f: f0 * 4.006, a: 0.14, t: dur * 0.12 },
+        ];
+        // Felt-pick transient + palm-mute damping
+        const exc = contactPulse(sr, 0.0022, true);
+        runComplexModes(out, exc, modes, sr);
+        for (let i = 0; i < len; i++) {
+          out[i] = Math.tanh(out[i] * 1.35);
+        }
+        applyBiquad(out, "lp", opts.accent ? 540 : 380, 0.75, sr);
+        return finishTake(out, sr, 0.84, 14);
+      },
+      vel,
+      false,
+      false,
+      when
+    );
+  }
+
+  // 3. Weightless Progressive / UKG Detuned Reese & Pure Sine Sub-Bass
+  function playReeseWarmSub(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const t = opts.when || c.currentTime;
+    const slide = !!opts.slide;
+    const prevMidi = opts.prevMidi != null ? opts.prevMidi : lastBassMidi;
+    const fTarget = clamp(mtof(midiNote), 34, 240);
+    const fStart = slide ? clamp(mtof(prevMidi), 34, 240) : fTarget;
+    const dur = Math.max(0.32, (opts.decay || 0.38) + (slide ? 0.12 : 0.06));
+    const vel = (opts.vel || 0.19) * (opts.accent ? 1.15 : 1.0) * pitchAtten(fTarget);
+
+    const oSub = c.createOscillator();
+    const oL = c.createOscillator();
+    const oR = c.createOscillator();
+    oSub.type = "sine";
+    oL.type = "triangle";
+    oR.type = "sawtooth";
+
+    oSub.frequency.setValueAtTime(fStart, t);
+    oL.frequency.setValueAtTime(fStart, t);
+    oR.frequency.setValueAtTime(fStart, t);
+    if (slide && fStart !== fTarget) {
+      oSub.frequency.exponentialRampToValueAtTime(fTarget, t + 0.09);
+      oL.frequency.exponentialRampToValueAtTime(fTarget, t + 0.09);
+      oR.frequency.exponentialRampToValueAtTime(fTarget, t + 0.09);
+    }
+    oL.detune.setValueAtTime(-11, t);
+    oR.detune.setValueAtTime(11, t);
+
+    const gSub = c.createGain();
+    const gMid = c.createGain();
+    gSub.gain.value = 0.68;
+    gMid.gain.value = 0.28;
+
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = 0.85;
+    lp.frequency.setValueAtTime(opts.accent ? 280 : 210, t);
+
+    const vca = c.createGain();
+    vca.gain.setValueAtTime(0.0001, t);
+    vca.gain.linearRampToValueAtTime(vel * 0.65, t + 0.022);
+    vca.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.06);
+
+    oSub.connect(gSub);
+    oL.connect(gMid);
+    oR.connect(gMid);
+    gSub.connect(vca);
+    gMid.connect(lp);
+    lp.connect(vca);
+    vca.connect(master);
+
+    oSub.start(t);
+    oL.start(t);
+    oR.start(t);
+    const stopT = t + dur + 0.08;
+    oSub.stop(stopT);
+    oL.stop(stopT);
+    oR.stop(stopT);
+  }
+
+  // 4. 2-Operator Chowning FM Hollow Wood / Log / Detroit Bass
+  function playDxFmHollowBass(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const t = opts.when || c.currentTime;
+    const f = clamp(mtof(midiNote), 36, 320);
+    const dur = clamp(opts.decay || 0.26, 0.14, 0.48);
+    const vel = (opts.vel || 0.18) * (opts.accent ? 1.18 : 1.0) * pitchAtten(f);
+
+    const car = c.createOscillator();
+    const mod = c.createOscillator();
+    const modGain = c.createGain();
+    car.type = "sine";
+    mod.type = "sine";
+    car.frequency.setValueAtTime(f, t);
+    // 1:2 hollow woody ratio (or 1:3 on accents)
+    const ratio = opts.accent ? 3.0 : 2.0;
+    mod.frequency.setValueAtTime(f * ratio, t);
+
+    modGain.gain.setValueAtTime(f * (opts.accent ? 2.1 : 1.45), t);
+    modGain.gain.exponentialRampToValueAtTime(f * 0.12, t + dur * 0.45);
+
+    mod.connect(modGain);
+    modGain.connect(car.frequency);
+
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 680;
+    lp.Q.value = 0.7;
+
+    const vca = c.createGain();
+    vca.gain.setValueAtTime(0.0001, t);
+    vca.gain.linearRampToValueAtTime(vel * 0.62, t + 0.004);
+    vca.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.03);
+
+    car.connect(lp);
+    lp.connect(vca);
+    vca.connect(master);
+
+    car.start(t);
+    mod.start(t);
+    const stopT = t + dur + 0.05;
+    car.stop(stopT);
+    mod.stop(stopT);
+  }
+
+  // 5. Deep Moog Taurus / CS-80 Brass-Sub Pedal Drone (Zero Acid Squelch)
+  function playMoogTaurusPedal(midiNote, opts = {}) {
+    const c = ensureCtx();
+    if (!c || muted) return;
+    const t = opts.when || c.currentTime;
+    const f = clamp(mtof(midiNote), 32, 220);
+    const dur = Math.max(0.45, (opts.decay || 0.48) * 1.35);
+    const vel = (opts.vel || 0.18) * pitchAtten(f);
+
+    const o1 = c.createOscillator();
+    const o2 = c.createOscillator();
+    const oFifth = c.createOscillator();
+    o1.type = "sawtooth";
+    o2.type = "triangle";
+    oFifth.type = "sine";
+    o1.frequency.setValueAtTime(f * 0.998, t);
+    o2.frequency.setValueAtTime(f * 1.002, t);
+    oFifth.frequency.setValueAtTime(f * 1.498, t);
+
+    const gFifth = c.createGain();
+    gFifth.gain.value = 0.18;
+    oFifth.connect(gFifth);
+
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = 0.65; // Silky non-resonant pedal warmth
+    lp.frequency.setValueAtTime(160, t);
+    lp.frequency.exponentialRampToValueAtTime(opts.accent ? 360 : 260, t + dur * 0.45);
+    lp.frequency.exponentialRampToValueAtTime(150, t + dur + 0.08);
+
+    const vca = c.createGain();
+    vca.gain.setValueAtTime(0.0001, t);
+    vca.gain.linearRampToValueAtTime(vel * 0.52, t + 0.045);
+    vca.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.10);
+
+    o1.connect(lp);
+    o2.connect(lp);
+    gFifth.connect(lp);
+    lp.connect(vca);
+    vca.connect(master);
+
+    o1.start(t);
+    o2.start(t);
+    oFifth.start(t);
+    const stopT = t + dur + 0.12;
+    o1.stop(stopT);
+    o2.stop(stopT);
+    oFifth.stop(stopT);
+  }
+
+  // 6. Classic Morphing 24dB Ladder Synth (toned down Q & envelope so it's warm, never harsh)
+  function playAcidLadder303(midiNote, opts = {}) {
     const c = ensureCtx();
     if (!c || muted) return;
     const t = opts.when || c.currentTime;
     const accent = !!opts.accent;
     const slide = !!opts.slide;
     const prevMidi = opts.prevMidi != null ? opts.prevMidi : lastBassMidi;
-    lastBassMidi = midiNote;
 
-    const fTarget = clamp(mtof(midiNote), 36, 520);
-    const fStart = slide ? clamp(mtof(prevMidi), 36, 520) : fTarget;
+    const fTarget = clamp(mtof(midiNote), 36, 420);
+    const fStart = slide ? clamp(mtof(prevMidi), 36, 420) : fTarget;
     const glideTime = slide ? 0.068 : 0.004;
 
-    const waveMorph = clamp(opts.wave != null ? opts.wave : bassParams.wave, 0, 1);
-    const cutBase = clamp(opts.cutoff != null ? opts.cutoff : bassParams.cutoff, 90, 1150);
-    const res = clamp(opts.res != null ? opts.res : bassParams.res, 0.08, 0.76);
-    const envDepth = clamp(opts.envMod != null ? opts.envMod : bassParams.envMod, 0.05, 0.95);
-    const dec = clamp(opts.decay != null ? opts.decay : bassParams.decay, 0.10, 0.68);
-    const drive = clamp(opts.drive != null ? opts.drive : bassParams.drive, 0.02, 0.65);
-    const subLvl = clamp(opts.sub != null ? opts.sub : bassParams.sub, 0.05, 0.75);
-    const vel = (opts.vel || 0.20) * (accent ? 1.24 : 1.0) * pitchAtten(fTarget);
+    const waveMorph = clamp(opts.wave != null ? opts.wave : bassParams.wave, 0, 0.75);
+    const cutBase = clamp(opts.cutoff != null ? opts.cutoff : bassParams.cutoff, 90, 620);
+    const res = clamp((opts.res != null ? opts.res : bassParams.res) * 0.62, 0.08, 0.42);
+    const envDepth = clamp((opts.envMod != null ? opts.envMod : bassParams.envMod) * 0.68, 0.05, 0.58);
+    const dec = clamp(opts.decay != null ? opts.decay : bassParams.decay, 0.12, 0.55);
+    const drive = clamp(opts.drive != null ? opts.drive : bassParams.drive, 0.02, 0.38);
+    const subLvl = clamp(opts.sub != null ? opts.sub : bassParams.sub, 0.15, 0.75);
+    const vel = (opts.vel || 0.18) * (accent ? 1.16 : 1.0) * pitchAtten(fTarget);
 
     const w = bassWaveOf(c, waveMorph);
     const o1 = c.createOscillator();
@@ -1490,31 +1853,28 @@
     const g1 = c.createGain();
     const g2 = c.createGain();
     const gSub = c.createGain();
-    g1.gain.value = 0.52;
-    g2.gain.value = 0.34;
-    gSub.gain.value = subLvl * 0.52;
+    g1.gain.value = 0.48;
+    g2.gain.value = 0.32;
+    gSub.gain.value = subLvl * 0.55;
 
-    // Pre-filter tanh soft clipper (from garden-panel-bass.js)
     const preDrive = c.createGain();
-    preDrive.gain.value = drvGain(drive + (accent ? 0.14 : 0));
+    preDrive.gain.value = drvGain(drive);
     const shaper = c.createWaveShaper();
     shaper.curve = tanhCurve(c);
 
-    // Dual cascaded 24 dB/oct resonant lowpass ladder filter (f1 -> f2)
     const f1 = c.createBiquadFilter();
     const f2 = c.createBiquadFilter();
     f1.type = "lowpass";
     f2.type = "lowpass";
-    const qVal = resQ(res + (accent ? 0.08 : 0));
+    const qVal = resQ(res);
     f1.Q.setValueAtTime(qVal, t);
-    f2.Q.setValueAtTime(qVal * 0.65, t);
+    f2.Q.setValueAtTime(qVal * 0.55, t);
 
-    // Filter envelope contour: fc -> pk -> sustain floor
-    const fc = Math.max(95, Math.min(1200, cutBase * (fTarget / 110)));
-    const envOctaves = envDepth * (accent ? 3.1 : 2.3);
-    const pk = Math.min(1850, fc * Math.pow(2, envOctaves));
-    const sf = Math.max(75, fc * 0.72);
-    const fDecay = accent ? dec * 0.68 : dec;
+    const fc = Math.max(85, Math.min(680, cutBase * (fTarget / 110)));
+    const envOctaves = envDepth * (accent ? 2.1 : 1.6);
+    const pk = Math.min(1150, fc * Math.pow(2, envOctaves));
+    const sf = Math.max(70, fc * 0.72);
+    const fDecay = accent ? dec * 0.72 : dec;
 
     for (const flt of [f1, f2]) {
       flt.frequency.setValueAtTime(slide ? pk * 0.75 : fc, t);
@@ -1524,7 +1884,7 @@
 
     const vca = c.createGain();
     const dur = dec + (slide ? 0.10 : 0.05);
-    const peakGain = vel * resComp(res) * (0.62 / Math.sqrt(drvGain(drive)));
+    const peakGain = vel * resComp(res) * (0.58 / Math.sqrt(drvGain(drive)));
     vca.gain.setValueAtTime(0.0001, t);
     vca.gain.linearRampToValueAtTime(peakGain, t + (slide ? 0.012 : 0.004));
     vca.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -1541,14 +1901,6 @@
     f2.connect(vca);
     vca.connect(master);
 
-    // Subtle send to cosmic delay on high-env accented notes
-    if (accent || envDepth > 0.62) {
-      const dSend = c.createGain();
-      dSend.gain.value = 0.14;
-      vca.connect(dSend);
-      dSend.connect(delay);
-    }
-
     o1.start(t);
     o2.start(t);
     oSub.start(t);
@@ -1558,10 +1910,38 @@
     oSub.stop(stopTime);
   }
 
-  // Keep backwards-compatible playCricketBass wrapper routed through the morphing ladder synth
+  // Unified Bass Dispatcher: routes bass notes to the active Bass Style (0..6)
+  // so the soundtrack enjoys upright acoustic contrabass, fretless mwah bass,
+  // palm-muted P-bass, warm Reese sub, hollow FM wood bass, and Moog Taurus pedals!
+  function playMorphingBassNote(midiNote, opts = {}) {
+    const prev = lastBassMidi;
+    lastBassMidi = midiNote;
+    const mergedOpts = Object.assign({ prevMidi: prev }, opts);
+    const styleIdx =
+      opts.bassStyle != null
+        ? ((opts.bassStyle % BASS_STYLES.length) + BASS_STYLES.length) % BASS_STYLES.length
+        : activeBassStyleIdx;
+
+    if (styleIdx === 0) return playUprightContrabass(midiNote, mergedOpts);
+    if (styleIdx === 1) return playFretlessMwahBass(midiNote, mergedOpts);
+    if (styleIdx === 2) return playPalmMutedPBass(midiNote, mergedOpts);
+    if (styleIdx === 3) return playReeseWarmSub(midiNote, mergedOpts);
+    if (styleIdx === 4) return playDxFmHollowBass(midiNote, mergedOpts);
+    if (styleIdx === 5) return playMoogTaurusPedal(midiNote, mergedOpts);
+    return playAcidLadder303(midiNote, mergedOpts);
+  }
+
+  function cycleBassStyle() {
+    activeBassStyleIdx = (activeBassStyleIdx + 1) % BASS_STYLES.length;
+    const sc = getLiveSonicContext();
+    playMorphingBassNote(sc.chordRootMidi - 12, { accent: true, vel: 0.22 });
+    return BASS_STYLES[activeBassStyleIdx].name;
+  }
+
+  // Keep backwards-compatible playCricketBass wrapper routed through the styled bass dispatcher
   function playCricketBass(midiNote, cutoffMult = 2.6, vel = 0.2) {
     playMorphingBassNote(midiNote, {
-      cutoff: clamp(140 * cutoffMult, 140, 950),
+      cutoff: clamp(140 * cutoffMult, 140, 750),
       vel,
       accent: cutoffMult > 3.0,
     });
@@ -2147,89 +2527,99 @@
   }
 
   // ============================================================================
-  // GENERATIVE RAGA / COSMIC ITALO / ALEATORIC COMPOSER ENGINE
+  // GENERATIVE MULTI-STYLE COMPOSER & MARKOV STYLE-TRANSITION GRAPH ANALYZER
   //
   // Structure:
-  //  - 16 steps per bar (16th-note resolution at ~115 BPM -> ~130ms per step)
-  //  - Every 2 bars (32 steps): Chord advances within the active 4-chord progression
-  //    (making each 4-chord cycle a lush 8-bar harmonic phrase!)
-  //  - Every 8 bars (128 steps): Morphs the harmonic movement (switches progression
-  //    family, regenerates the aleatoric bass archetype & cosmic arp pattern, and
-  //    transitions the arrangement arc between Build, Peak, Groove, and Breakdown)
-  //  - Every 16 bars (256 steps): Morphs to a new Raga World (Charanjit Singh /
-  //    Lindstrøm / BT modal modulation) with a pivot chord swell & micro-harp cascade!
+  //  - 6 Distinct Bass Groove Archetypes (Walking Contrabass, Fretless Mwah,
+  //    Progressive 2-Step Sub Glide, Palm-Mute Lounge Pocket, IDM Polyrhythmic
+  //    FM Bounce, Taurus Pedal Cathedral Breath — NO 16th-note 303 disco lock!)
+  //  - 8-Node Directed Style-Transition Graph pairing Modality, Harmonic World,
+  //    Bass Engine (`activeBassStyleIdx`), Bass Groove (`bassArchIdx`), and Arc.
+  //  - Graph Analyzer monitors node visit entropy, enforces a 3-node tabu history,
+  //    has 0 self-loop weight, starts at a random node on startup, and transitions
+  //    every 6 bars so the music never gets stuck in any single style or raga!
   // ============================================================================
   const BASS_ARCHETYPES = [
-    // 0: Hypnotic octave-jumping disco-raga bass
+    // 0: Acoustic Chamber Walking Contrabass (warm quarter/eighth walking line)
     {
-      name: "OCTAVE RAGA PULSE",
-      gates:   [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-      octaves: [0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1],
-      accents: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0],
-      slides:  [0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1],
-      degMode: "ragaWalk",
+      name: "CHAMBER WALKING CONTRABASS",
+      gates:   [1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0],
+      octaves: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      accents: [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0],
+      slides:  [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+      degMode: "walkingJazz",
+      preferredBassStyle: 0, // Upright Contrabass
     },
-    // 1: Chugging cosmic 16th pulse
+    // 1: Singing Fretless Mwah 5th/9th Pocket (Mick Karn / Jaco / Air expressive glides)
     {
-      name: "COSMIC HORIZON PULSE",
-      gates:   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-      octaves: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0],
-      accents: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
-      slides:  [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0],
-      degMode: "chordFifths",
-    },
-    // 2: Syncopated broken-beat / aleatoric deep bass
-    {
-      name: "SYNCOPATED BREAK",
-      gates:   [1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0],
-      octaves: [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0],
+      name: "FRETLESS MWAH SYNCOPATION",
+      gates:   [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
+      octaves: [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0],
       accents: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
-      slides:  [0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
-      degMode: "ragaVadi",
+      slides:  [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
+      degMode: "chordFifths",
+      preferredBassStyle: 1, // Fretless Mwah
     },
-    // 3: Winding Raga Meend (melodic ascending Arohana / descending Avarohana ornaments)
+    // 2: Progressive 2-Step Sub Glide (Sasha / Burial weightless broken-beat sub)
     {
-      name: "RAGA MEEND WINDING",
-      gates:   [1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-      octaves: [0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1],
-      accents: [1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0],
-      slides:  [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1],
-      degMode: "arohanaWave",
-    },
-    // 4: Minimal spacious subterranean pulse (for atmospheric breakdown / dawn sections)
-    {
-      name: "SUBTERRANEAN BREATH",
+      name: "BREAKBEAT SUB GLIDE",
       gates:   [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
-      octaves: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-      accents: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      octaves: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+      accents: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
       slides:  [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
       degMode: "rootFifth",
+      preferredBassStyle: 3, // Reese Warm Sub
+    },
+    // 3: Palm-Muted Felt-Pick Lounge Groove (Moon Safari / Khruangbin laid-back pocket)
+    {
+      name: "PALM-MUTE LOUNGE POCKET",
+      gates:   [1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0],
+      octaves: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0],
+      accents: [1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+      slides:  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+      degMode: "chordFifths",
+      preferredBassStyle: 2, // Palm-Muted P-Bass
+    },
+    // 4: IDM Polyrhythmic FM Woody Bounce (Warp / Autechre / Plaid syncopated FM)
+    {
+      name: "IDM POLYRHYTHM FM BOUNCE",
+      gates:   [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+      octaves: [0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+      accents: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+      slides:  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+      degMode: "quartalLeap",
+      preferredBassStyle: 4, // DX FM Hollow Bass
+    },
+    // 5: Taurus Pedal Cathedral Breath (Vangelis / CS-80 long sustained sub-pedals)
+    {
+      name: "TAURUS PEDAL BREATH",
+      gates:   [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+      octaves: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      accents: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+      slides:  [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+      degMode: "rootFifth",
+      preferredBassStyle: 5, // Moog Taurus Pedal
     },
   ];
 
   // Arrangement Arcs: forever building up and breaking down
-  // 0: AMBIENT DAWN (Lush pads, nylon guitar/koto, soft bass breath)
-  // 1: RAGA AWAKENING (Winding bass + Bessel tabla + cosmic arp shimmer)
-  // 2: CHARANJIT / LINDSTRØM DRIVE (Full dynamic acid-raga bass + CR-78 + cosmic Italo chords)
-  // 3: WELTANSCHAUUNG PEAK (Lush string ensemble + cascading arpeggios + expressive resonant bass)
-  // 4: COASTAL BREAKDOWN (Drums drop out -> floating choir + micro-harp cascade + deep sub slide)
   const ARC_PHASES = [
-    { name: "DAWN",      bassDens: 0.45, arpDens: 0.35, drumDens: 0.15, padDens: 0.85 },
-    { name: "AWAKENING", bassDens: 0.78, arpDens: 0.58, drumDens: 0.55, padDens: 0.65 },
-    { name: "COSMIC",    bassDens: 0.95, arpDens: 0.82, drumDens: 0.85, padDens: 0.78 },
-    { name: "EUPHORIA",  bassDens: 1.00, arpDens: 0.94, drumDens: 0.92, padDens: 0.95 },
-    { name: "BREAKDOWN", bassDens: 0.52, arpDens: 0.68, drumDens: 0.22, padDens: 0.92 },
+    { name: "DAWN",      bassDens: 0.45, arpDens: 0.35, drumDens: 0.18, padDens: 0.88 },
+    { name: "AWAKENING", bassDens: 0.72, arpDens: 0.58, drumDens: 0.55, padDens: 0.70 },
+    { name: "HORIZON",   bassDens: 0.85, arpDens: 0.78, drumDens: 0.78, padDens: 0.80 },
+    { name: "EUPHORIA",  bassDens: 0.92, arpDens: 0.88, drumDens: 0.86, padDens: 0.94 },
+    { name: "SANCTUARY", bassDens: 0.50, arpDens: 0.64, drumDens: 0.24, padDens: 0.92 },
   ];
 
   let step16 = 0;               // 16th-note counter
-  let barCount = 0;             // Bar counter (1 bar = 16 steps)
-  let progFamilyIdx = 0;        // Which chord progression in current Raga
-  let chordIdx = 0;             // Current chord index (0..3) in 4-chord progression
-  let bassArchIdx = 1;          // Current bassline archetype (0..4)
-  let arcPhaseIdx = 1;          // Current arrangement build/breakdown phase (0..4)
-  let ragaAscending = true;     // Direction of raga scale traversal (Arohana vs Avarohana)
-  let ragaScaleCursor = 0;      // Current degree cursor along Arohana/Avarohana
-  let arpPattern = [0, 1, 2, 3, 4, 2, 3, 1]; // Permuted on 8-bar boundaries
+  let barCount = Math.floor(Math.random() * 64); // Randomized initial bar offset
+  let progFamilyIdx = Math.floor(Math.random() * 2); // Randomized chord progression family
+  let chordIdx = Math.floor(Math.random() * 4);      // Randomized initial chord index (0..3)
+  let bassArchIdx = Math.floor(Math.random() * BASS_ARCHETYPES.length);
+  let arcPhaseIdx = Math.floor(Math.random() * ARC_PHASES.length);
+  let ragaAscending = true;
+  let ragaScaleCursor = 0;
+  let arpPattern = [0, 2, 1, 3, 4, 2, 3, 1];
 
   // Live game state updated by slopes2.js
   let liveGameState = {
@@ -2251,35 +2641,25 @@
     const tarBoost = clamp((liveGameState.tarPressure || 0) * 0.12, 0, 0.35);
     const elevNorm = clamp((liveGameState.playerY || 12) / 55, 0, 1);
 
-    // 7 incommensurable sine waves morph the bass synthesizer parameters over time
     const w1 = 0.5 + 0.5 * Math.sin(lfoPhase * 0.31);
     const w2 = 0.5 + 0.5 * Math.sin(lfoPhase * 0.53 + 1.4);
     const w3 = 0.5 + 0.5 * Math.sin(lfoPhase * 0.19 + 2.8);
     const w4 = 0.5 + 0.5 * Math.sin(lfoPhase * 0.71 + 4.1);
     const w5 = 0.5 + 0.5 * Math.sin(lfoPhase * 0.13 + 0.7);
 
-    // Wave morphs smoothly from warm saw (0.05) -> square (0.5) -> acid pulse (0.9)
-    bassParams.wave = clamp(0.08 + w1 * 0.78, 0.05, 0.92);
-
-    // Cutoff breathes with arrangement arc, LFOs, and subterranean ember pressure
+    bassParams.wave = clamp(0.08 + w1 * 0.65, 0.05, 0.78);
     bassParams.cutoff = clamp(
-      145 + w2 * 380 + arc.bassDens * 180 + tarBoost * 240 - (1 - elevNorm) * 40,
-      130,
-      820
+      140 + w2 * 310 + arc.bassDens * 140 + tarBoost * 180 - (1 - elevNorm) * 35,
+      125,
+      680
     );
-
-    // Resonance rises into vocal TB-303 territory during raga meends & cosmic peaks
-    bassParams.res = clamp(0.20 + w3 * 0.44 + tarBoost * 0.12, 0.18, 0.72);
-
-    // Filter envelope depth & decay morph inversely at times for tight pluck vs liquid sweep
-    bassParams.envMod = clamp(0.24 + w4 * 0.52 + arc.bassDens * 0.12, 0.20, 0.86);
-    bassParams.decay = clamp(0.14 + (1 - w4 * 0.65) * 0.34, 0.12, 0.52);
-
-    // Tanh saturation drive & sub-octave balance
-    bassParams.drive = clamp(0.10 + w5 * 0.28 + tarBoost * 0.15, 0.08, 0.48);
-    bassParams.sub = clamp(0.24 + (1 - w1 * 0.5) * 0.38, 0.20, 0.66);
-    bassParams.detune = 3.5 + w3 * 8.5;
-    bassParams.slideProb = clamp(0.18 + w2 * 0.38, 0.15, 0.58);
+    bassParams.res = clamp(0.14 + w3 * 0.32 + tarBoost * 0.10, 0.12, 0.52);
+    bassParams.envMod = clamp(0.20 + w4 * 0.42 + arc.bassDens * 0.10, 0.18, 0.72);
+    bassParams.decay = clamp(0.16 + (1 - w4 * 0.55) * 0.34, 0.14, 0.54);
+    bassParams.drive = clamp(0.08 + w5 * 0.22 + tarBoost * 0.12, 0.06, 0.38);
+    bassParams.sub = clamp(0.28 + (1 - w1 * 0.45) * 0.36, 0.22, 0.68);
+    bassParams.detune = 3.2 + w3 * 7.5;
+    bassParams.slideProb = clamp(0.14 + w2 * 0.32, 0.12, 0.48);
   }
 
   // Regenerate aleatoric arp contour & harmonic movement every 8 bars
@@ -2287,18 +2667,18 @@
     const raga = RAGA_WORLDS[scaleIdx];
     progFamilyIdx = (progFamilyIdx + 1) % raga.progressions.length;
 
-    // Advance arrangement arc (Dawn -> Awakening -> Cosmic -> Euphoria -> Breakdown -> Awakening...)
     const nextArcOrder = [1, 2, 3, 4, 0, 1, 2, 4, 3];
     arcPhaseIdx = nextArcOrder[Math.floor(bar / 8) % nextArcOrder.length];
 
-    // Pick a bass archetype suited to the new arc phase
-    if (arcPhaseIdx === 0 || arcPhaseIdx === 4) {
-      bassArchIdx = Math.random() < 0.5 ? 4 : 2;
+    // Pick a contrasting bass archetype and matching bass instrument style
+    bassArchIdx = (bassArchIdx + 1 + Math.floor(Math.random() * (BASS_ARCHETYPES.length - 1))) % BASS_ARCHETYPES.length;
+    const arch = BASS_ARCHETYPES[bassArchIdx];
+    if (arch && arch.preferredBassStyle != null && Math.random() < 0.8) {
+      activeBassStyleIdx = arch.preferredBassStyle;
     } else {
-      bassArchIdx = Math.floor(Math.random() * 4);
+      activeBassStyleIdx = (activeBassStyleIdx + 1 + Math.floor(Math.random() * 4)) % 6; // 0..5 non-303 styles
     }
 
-    // Generate a fresh cosmic arpeggiator permutation
     const len = 8;
     arpPattern = Array.from({ length: len }, (_, i) => {
       if (i === 0) return 0;
@@ -2306,71 +2686,44 @@
     });
   }
 
-  // Morph into a new Raga / Modal World every 16 bars
+  // Morph into a new Harmonic World every 16 bars
   function morphSixteenBarRaga() {
-    // Choose a next raga world (preferring adjacent/smooth modal transition)
-    const offset = Math.random() < 0.7 ? 1 : 2;
+    const offset = 1 + Math.floor(Math.random() * (RAGA_WORLDS.length - 2));
     scaleIdx = (scaleIdx + offset) % RAGA_WORLDS.length;
     const raga = RAGA_WORLDS[scaleIdx];
     const prog = raga.progressions[progFamilyIdx % raga.progressions.length];
     const chordObj = prog[0];
-
-    // Herald the new raga world with a gentle BT micro-harp cascade
     playMicroHarpCascade(raga.midiRoot, chordObj.tones, 5, 70, 0.10);
   }
 
-  // Compute the next bass MIDI note using the active Raga's Arohana/Avarohana & current chord
+  // Compute the next bass MIDI note using the active Harmonic World & Bass Archetype
   function pickBassMidi(raga, chordObj, stepInBar, arch) {
-    const baseRoot = raga.midiRoot - 12; // Deep bass register (e.g. G2..C3)
-    const chordRoot = baseRoot + chordObj.root;
+    const baseRoot = raga.midiRoot - 12; // Deep bass register (e.g. F2..C3)
     const scale = ragaAscending ? raga.arohana : raga.avarohana;
-
     let semitoneOffset = chordObj.root;
 
     if (stepInBar === 0 || stepInBar === 8) {
-      // Anchor beat 1 & beat 3 on the current chord root or vadi
       semitoneOffset = chordObj.root;
+    } else if (arch.degMode === "walkingJazz") {
+      // Acoustic contrabass walking line through chord tones & chromatic approach notes
+      const walkIdx = (stepInBar >> 2) % chordObj.tones.length;
+      semitoneOffset = chordObj.tones[walkIdx];
     } else if (arch.degMode === "chordFifths") {
-      // Lindstrøm cosmic disco alternating root, 5th, octave, and 7th of current chord
       const cTones = chordObj.tones;
-      const pick = cTones[(stepInBar >> 1) % Math.min(4, cTones.length)];
-      semitoneOffset = pick;
-    } else if (arch.degMode === "ragaVadi") {
-      // Emphasize Vadi (king) and Samvadi (queen) degrees of the Raga
-      if (stepInBar % 4 === 2) {
-        semitoneOffset = raga.arohana[raga.vadi % raga.arohana.length];
-      } else if (stepInBar % 4 === 3) {
-        semitoneOffset = raga.arohana[raga.samvadi % raga.arohana.length];
-      } else {
-        semitoneOffset = chordObj.tones[stepInBar % 3];
-      }
-    } else if (arch.degMode === "arohanaWave") {
-      // Walk up Arohana and down Avarohana like Charanjit Singh's TB-303 raga lines
-      ragaScaleCursor += ragaAscending ? 1 : -1;
-      if (ragaScaleCursor >= scale.length - 1) {
-        ragaScaleCursor = scale.length - 1;
-        ragaAscending = false;
-      } else if (ragaScaleCursor <= 0) {
-        ragaScaleCursor = 0;
-        ragaAscending = true;
-      }
-      semitoneOffset = raga.arohana[clamp(ragaScaleCursor, 0, raga.arohana.length - 1)];
+      semitoneOffset = cTones[(stepInBar >> 1) % Math.min(4, cTones.length)];
+    } else if (arch.degMode === "quartalLeap") {
+      // Warp IDM fourths/fifths leap
+      const qTones = [chordObj.root, chordObj.root + 5, chordObj.root + 7, chordObj.tones[2] || 7];
+      semitoneOffset = qTones[(stepInBar + barCount) % qTones.length];
     } else if (arch.degMode === "rootFifth") {
-      semitoneOffset = stepInBar % 6 === 0 ? chordObj.root : chordObj.tones[Math.min(2, chordObj.tones.length - 1)];
+      semitoneOffset = stepInBar % 6 === 0 ? chordObj.root : chordObj.tones[Math.min(1, chordObj.tones.length - 1)];
     } else {
-      // "ragaWalk": blend current chord tones with adjacent raga scale steps
-      if (Math.random() < 0.62) {
-        semitoneOffset = chordObj.tones[stepInBar % Math.min(4, chordObj.tones.length)];
-      } else {
-        const idx = (stepInBar + barCount) % raga.arohana.length;
-        semitoneOffset = raga.arohana[idx];
-      }
+      ragaScaleCursor = (ragaScaleCursor + 1) % scale.length;
+      semitoneOffset = scale[ragaScaleCursor];
     }
 
     const octShift = arch.octaves[stepInBar] ? 12 : 0;
-    // Occasional high-octave Charanjit 303 leap on offbeats
-    const extraOct = (stepInBar % 4 === 3 && Math.random() < 0.16) ? 12 : 0;
-    return clamp(baseRoot + semitoneOffset + octShift + extraOct, 36, 64);
+    return clamp(baseRoot + semitoneOffset + octShift, 34, 60);
   }
 
   // ============================================================================
@@ -3300,19 +3653,19 @@
   }
 
   // ============================================================================
-  // 5 COHERENT MUSICAL MODALITIES & TEMPLATED SUITE ENGINE
-  //  0: RAGA // COSMIC MODAL
-  //  1: GLITCH PIANO & BELE KIDS (Polyrhythms + ghosts.garden Swing Map)
-  //  2: FILTER PHASER // RHODES ODYSSEY (Long-Form Filter-Phaser & Rhodes)
-  //  3: CSOUND // ANTIKYTHERA SUITE (Embedded Csound Orchestra Suite)
-  //  4: MODE V: PROGRESSIVE BREAKS // HORIZON (2-Step Breakbeat & Pads)
+  // 5 COHERENT MUSICAL MODALITIES & MARKOV STYLE-TRANSITION GRAPH ANALYZER
+  //  0: CHAMBER // ACOUSTIC HORIZON (Upright Contrabass + Felt Piano + Nylon Guitar)
+  //  1: GLITCH PIANO & BELE KIDS (Polyrhythms + ghosts.garden Swing Map + FM Wood Bass)
+  //  2: FILTER PHASER // RHODES ODYSSEY (Moon Safari Palm-Mute P-Bass & Rhodes)
+  //  3: CSOUND // ANTIKYTHERA SUITE (Embedded Csound Orchestra + Fretless/Taurus Bass)
+  //  4: MODE V: PROGRESSIVE BREAKS // HORIZON (2-Step Breakbeat, Reese Sub & Pads)
   // ============================================================================
   const MUSIC_MODALITIES = [
     {
-      id: "RAGA_ITALO",
-      name: "MODE I: RAGA // COSMIC MODAL",
-      shortName: "I: RAGA // COSMIC",
-      desc: "Resonant Ladder Ragas + Cosmic Arpeggiator + Bessel Tabla",
+      id: "CHAMBER_HORIZON",
+      name: "MODE I: CHAMBER // ACOUSTIC HORIZON",
+      shortName: "I: CHAMBER // HORIZON",
+      desc: "Upright Contrabass + Nylon Guitar + Felt Piano + Brushed Rosewood",
     },
     {
       id: "GLITCH_PIANO_SWING",
@@ -3324,7 +3677,7 @@
       id: "FRENCH_HOUSE_AIR",
       name: "MODE III: FILTER PHASER & RHODES",
       shortName: "III: FILTER // PHASER",
-      desc: "Long-Form Filter-Phaser Chord Waves + Sidechain Pump + Rhodes/Wurlitzer & Vocoder",
+      desc: "Long-Form Filter-Phaser Chord Waves + Palm-Muted P-Bass + Rhodes/Wurlitzer",
     },
     {
       id: "BT_BINARY_CSOUND",
@@ -3336,7 +3689,7 @@
       id: "SASHA_AIRDRAWNDAGGER",
       name: "MODE V: PROGRESSIVE BREAKS // HORIZON",
       shortName: "V: PROG // BREAKS",
-      desc: "Weightless 2-Step Progressive Breakbeats, Breathing Pads & Acoustic Guitar/Rhodes",
+      desc: "Weightless 2-Step Progressive Breakbeats, Reese Sub & Acoustic Guitar/Rhodes",
     },
   ];
 
@@ -3358,15 +3711,246 @@
     { name: "V. PROGRESSIVE HORIZON BREAKS",    bars: 4, weep: 0.68 },
   ];
 
-  let modalityIdx = 0;          // Current active macro-modality (0..4)
-  let autoCycleModalities = true; // Coherent multi-modal suite progression across bars
-  let polyMeterIdx = 0;         // Current polyrhythmic meter index
-  let swingMapX = 0.42;         // Current X on ghosts.garden 2D Swing Map
-  let swingMapY = 1 / 6;        // Current Y on ghosts.garden 2D Swing Map
-  let swingLandmarkIdx = 0;     // Target landmark on ghosts.garden Swing Map
-  let btMovementIdx = 0;        // Current movement in 5-movement templated form (0..4)
-  let frenchFilterPhase = 0;    // Long-form progressive filter-phaser sweep phase
-  let airdrawnPhase = 0;        // Progressive horizon sweep phase
+  // ============================================================================
+  // DIRECTED STYLE-TRANSITION GRAPH (8 Contrasting Song-Style Nodes)
+  // Prevents the soundtrack from ever locking into a single raga, modality, or
+  // TB-303 disco bassline. Every node pairs a Modality, Harmonic World, Bass
+  // Engine (`bassStyleIdx`), Bass Groove (`bassArchIdx`), and weighted edges to
+  // contrasting genres with 0 self-loop weight + visit-entropy balancing!
+  // ============================================================================
+  const STYLE_TRANSITION_GRAPH = [
+    {
+      id: "NORDIC_FELT_CHAMBER",
+      label: "NORDIC FELT & CONTRABASS",
+      modalityIdx: 1,
+      scaleIdx: 0,       // F Maj9 / D Aeolian Chamber
+      bassStyleIdx: 0,   // Upright Contrabass
+      bassArchIdx: 0,    // Chamber Walking Contrabass
+      arcPhaseIdx: 1,
+      btMovementIdx: 1,
+      edges: [
+        { to: 2, w: 0.32 }, // -> Airdrawndagger Breaks
+        { to: 4, w: 0.28 }, // -> Antikythera Clockwork
+        { to: 1, w: 0.24 }, // -> Moon Safari Rhodes Lounge
+        { to: 6, w: 0.16 }, // -> Chant Cathedral Sanctuary
+      ],
+    },
+    {
+      id: "MOON_SAFARI_LOUNGE",
+      label: "MOON SAFARI RHODES & P-BASS",
+      modalityIdx: 2,
+      scaleIdx: 1,       // A Dorian Lounge
+      bassStyleIdx: 2,   // Palm-Muted P-Bass
+      bassArchIdx: 3,    // Palm-Mute Lounge Pocket
+      arcPhaseIdx: 2,
+      btMovementIdx: 0,
+      edges: [
+        { to: 3, w: 0.30 }, // -> Warp IDM Polyrhythm
+        { to: 5, w: 0.28 }, // -> Blade Runner Nocturne
+        { to: 7, w: 0.24 }, // -> Coastal Acoustic Dawn
+        { to: 0, w: 0.18 }, // -> Nordic Felt Chamber
+      ],
+    },
+    {
+      id: "AIRDRAWNDAGGER_BREAKS",
+      label: "AIRDRAWNDAGGER 2-STEP & REESE SUB",
+      modalityIdx: 4,
+      scaleIdx: 2,       // Eb Lydian / C Min9 Horizon
+      bassStyleIdx: 3,   // Reese Warm Sub
+      bassArchIdx: 2,    // Breakbeat Sub Glide
+      arcPhaseIdx: 2,
+      btMovementIdx: 4,
+      edges: [
+        { to: 1, w: 0.30 }, // -> Moon Safari Rhodes
+        { to: 3, w: 0.28 }, // -> Warp IDM Polyrhythm
+        { to: 6, w: 0.24 }, // -> Chant Cathedral Sanctuary
+        { to: 4, w: 0.18 }, // -> Antikythera Clockwork
+      ],
+    },
+    {
+      id: "WARP_IDM_POLYRHYTHM",
+      label: "WARP IDM QUARTAL & FM WOOD BASS",
+      modalityIdx: 1,
+      scaleIdx: 3,       // G Quartal / Suspended 9th
+      bassStyleIdx: 4,   // DX FM Hollow Bass
+      bassArchIdx: 4,    // IDM Polyrhythm FM Bounce
+      arcPhaseIdx: 3,
+      btMovementIdx: 1,
+      edges: [
+        { to: 5, w: 0.32 }, // -> Blade Runner Nocturne
+        { to: 2, w: 0.28 }, // -> Airdrawndagger Breaks
+        { to: 0, w: 0.22 }, // -> Nordic Felt Chamber
+        { to: 7, w: 0.18 }, // -> Coastal Acoustic Dawn
+      ],
+    },
+    {
+      id: "ANTIKYTHERA_CLOCKWORK",
+      label: "ANTIKYTHERA 7/8 & FRETLESS MWAH",
+      modalityIdx: 3,
+      scaleIdx: 5,       // D Mixolydian 9th Acoustic
+      bassStyleIdx: 1,   // Fretless Mwah Bass
+      bassArchIdx: 1,    // Fretless Mwah Syncopation
+      arcPhaseIdx: 1,
+      btMovementIdx: 0,
+      edges: [
+        { to: 2, w: 0.32 }, // -> Airdrawndagger Breaks
+        { to: 6, w: 0.28 }, // -> Chant Cathedral Sanctuary
+        { to: 1, w: 0.22 }, // -> Moon Safari Rhodes
+        { to: 3, w: 0.18 }, // -> Warp IDM Polyrhythm
+      ],
+    },
+    {
+      id: "BLADE_RUNNER_NOCTURNE",
+      label: "CS-80 NOCTURNE & TAURUS PEDAL",
+      modalityIdx: 3,
+      scaleIdx: 4,       // C# Melodic Minor / Lydian Augmented
+      bassStyleIdx: 5,   // Moog Taurus Pedal
+      bassArchIdx: 5,    // Taurus Pedal Breath
+      arcPhaseIdx: 4,
+      btMovementIdx: 3,
+      edges: [
+        { to: 0, w: 0.30 }, // -> Nordic Felt Chamber
+        { to: 2, w: 0.28 }, // -> Airdrawndagger Breaks
+        { to: 7, w: 0.24 }, // -> Coastal Acoustic Dawn
+        { to: 1, w: 0.18 }, // -> Moon Safari Rhodes
+      ],
+    },
+    {
+      id: "CHANT_CATHEDRAL_SANCTUARY",
+      label: "CSOUND CHANT CHOIR & CONTRABASS",
+      modalityIdx: 3,
+      scaleIdx: 6,       // E Add9 / B Min11 Coastal
+      bassStyleIdx: 0,   // Upright Contrabass
+      bassArchIdx: 0,    // Chamber Walking Contrabass
+      arcPhaseIdx: 4,
+      btMovementIdx: 2,
+      edges: [
+        { to: 1, w: 0.30 }, // -> Moon Safari Rhodes
+        { to: 3, w: 0.28 }, // -> Warp IDM Polyrhythm
+        { to: 5, w: 0.24 }, // -> Blade Runner Nocturne
+        { to: 2, w: 0.18 }, // -> Airdrawndagger Breaks
+      ],
+    },
+    {
+      id: "COASTAL_ACOUSTIC_DAWN",
+      label: "COASTAL GUITAR & FRETLESS MWAH",
+      modalityIdx: 0,
+      scaleIdx: 6,       // E Add9 / B Min11 Coastal
+      bassStyleIdx: 1,   // Fretless Mwah Bass
+      bassArchIdx: 1,    // Fretless Mwah Syncopation
+      arcPhaseIdx: 0,
+      btMovementIdx: 1,
+      edges: [
+        { to: 2, w: 0.32 }, // -> Airdrawndagger Breaks
+        { to: 0, w: 0.28 }, // -> Nordic Felt Chamber
+        { to: 4, w: 0.22 }, // -> Antikythera Clockwork
+        { to: 3, w: 0.18 }, // -> Warp IDM Polyrhythm
+      ],
+    },
+  ];
+
+  // Randomize initial starting node in the Style-Transition Graph so every
+  // session starts at a fresh, diverse song style (never locked in Raga/303!)
+  let currentStyleNodeIdx = Math.floor(Math.random() * STYLE_TRANSITION_GRAPH.length);
+  const initialStyleNode = STYLE_TRANSITION_GRAPH[currentStyleNodeIdx];
+  scaleIdx = initialStyleNode.scaleIdx % RAGA_WORLDS.length;
+  activeBassStyleIdx = initialStyleNode.bassStyleIdx % BASS_STYLES.length;
+  bassArchIdx = initialStyleNode.bassArchIdx % BASS_ARCHETYPES.length;
+  arcPhaseIdx = initialStyleNode.arcPhaseIdx % ARC_PHASES.length;
+
+  let modalityIdx = initialStyleNode.modalityIdx; // Randomized initial macro-modality
+  let autoCycleModalities = true;
+  let polyMeterIdx = Math.floor(Math.random() * POLYRHYTHM_METERS.length);
+  let swingMapX = 0.42;
+  let swingMapY = 1 / 6;
+  let swingLandmarkIdx = Math.floor(Math.random() * SWING_LANDMARKS.length);
+  let btMovementIdx = initialStyleNode.btMovementIdx;
+  let frenchFilterPhase = Math.random() * 6.28;
+  let airdrawnPhase = Math.random() * 6.28;
+
+  // Graph Analyzer state: tracks node visit counts, tabu history, and transition log
+  const styleVisitCounts = new Array(STYLE_TRANSITION_GRAPH.length).fill(0);
+  styleVisitCounts[currentStyleNodeIdx] = 1;
+  const styleNodeHistory = [currentStyleNodeIdx];
+  let barsInCurrentStyleNode = 0;
+  let styleTransitionCount = 0;
+
+  function analyzeAndTransitionStyleGraph(reason = "bar-cycle") {
+    const curNode = STYLE_TRANSITION_GRAPH[currentStyleNodeIdx];
+    const recentTabu = styleNodeHistory.slice(-3);
+
+    // Score each candidate outgoing edge with visit-count entropy balancing
+    // and strong tabu penalty so the graph never loops between 2 nodes or gets stuck!
+    const candidates = [];
+    let totalWeight = 0;
+    for (let i = 0; i < STYLE_TRANSITION_GRAPH.length; i++) {
+      if (i === currentStyleNodeIdx) continue; // Zero self-loop probability!
+      const candidateNode = STYLE_TRANSITION_GRAPH[i];
+      const explicitEdge = curNode.edges.find((e) => e.to === i);
+      let baseW = explicitEdge ? explicitEdge.w : 0.08; // Non-zero exploration floor for full graph ergodicity
+
+      // Penalize recently visited nodes (tabu memory of last 3 transitions)
+      if (recentTabu.includes(i)) {
+        baseW *= 0.12;
+      }
+      // Penalize candidate if it uses the same bass style as current node (enforce bass diversity!)
+      if (candidateNode.bassStyleIdx === activeBassStyleIdx) {
+        baseW *= 0.25;
+      }
+      // Favor unvisited or less-visited style nodes (entropy maximization)
+      const visits = styleVisitCounts[i] || 0;
+      const entropyBoost = 1.0 / (1.0 + visits * 0.85);
+      const w = baseW * entropyBoost;
+      candidates.push({ idx: i, w });
+      totalWeight += w;
+    }
+
+    let pickedIdx = (currentStyleNodeIdx + 1) % STYLE_TRANSITION_GRAPH.length;
+    if (totalWeight > 0) {
+      let r = Math.random() * totalWeight;
+      for (const c of candidates) {
+        r -= c.w;
+        if (r <= 0) {
+          pickedIdx = c.idx;
+          break;
+        }
+      }
+    }
+
+    currentStyleNodeIdx = pickedIdx;
+    const nextNode = STYLE_TRANSITION_GRAPH[currentStyleNodeIdx];
+    styleVisitCounts[currentStyleNodeIdx]++;
+    styleNodeHistory.push(currentStyleNodeIdx);
+    if (styleNodeHistory.length > 16) styleNodeHistory.shift();
+    barsInCurrentStyleNode = 0;
+    styleTransitionCount++;
+
+    scaleIdx = nextNode.scaleIdx % RAGA_WORLDS.length;
+    activeBassStyleIdx = nextNode.bassStyleIdx % BASS_STYLES.length;
+    bassArchIdx = nextNode.bassArchIdx % BASS_ARCHETYPES.length;
+    arcPhaseIdx = nextNode.arcPhaseIdx % ARC_PHASES.length;
+    btMovementIdx = nextNode.btMovementIdx % BT_MOVEMENTS.length;
+    polyMeterIdx = (polyMeterIdx + 1) % POLYRHYTHM_METERS.length;
+    progFamilyIdx = (progFamilyIdx + 1) % RAGA_WORLDS[scaleIdx].progressions.length;
+    setModality(nextNode.modalityIdx, reason === "manual");
+    return nextNode;
+  }
+
+  function getStyleGraphStatus() {
+    const node = STYLE_TRANSITION_GRAPH[currentStyleNodeIdx];
+    return {
+      currentNodeIdx: currentStyleNodeIdx,
+      currentNodeId: node.id,
+      currentNodeLabel: node.label,
+      modalityName: MUSIC_MODALITIES[modalityIdx].name,
+      harmonicWorld: RAGA_WORLDS[scaleIdx].name,
+      bassStyleName: BASS_STYLES[activeBassStyleIdx].name,
+      bassArchetypeName: BASS_ARCHETYPES[bassArchIdx % BASS_ARCHETYPES.length].name,
+      visitCounts: styleVisitCounts.slice(),
+      history: styleNodeHistory.slice(),
+      transitions: styleTransitionCount,
+    };
+  }
 
   function getActiveStepsPerBar() {
     if (modalityIdx === 1) {
@@ -3391,7 +3975,7 @@
     if (modalityIdx === 4) {
       return "4/4 PROGRESSIVE BREAK";
     }
-    return "4/4 RAGA PULSE";
+    return "4/4 CHAMBER HORIZON";
   }
 
   function advanceSwingTrajectory() {
@@ -3407,8 +3991,10 @@
   function setModality(idx, manual = false) {
     const next = ((idx % MUSIC_MODALITIES.length) + MUSIC_MODALITIES.length) % MUSIC_MODALITIES.length;
     modalityIdx = next;
+    // Also ensure each modality selects a signature non-303 bass voice when switched manually
     if (manual) {
-      // Pivot transition fanfare so manual mode switches also feel part of a coherent musical whole!
+      const modalityBassMap = [0, 4, 2, 1, 3]; // Contrabass, DX FM, Palm-Mute P-Bass, Fretless Mwah, Reese Sub
+      activeBassStyleIdx = modalityBassMap[modalityIdx] ?? 0;
       const raga = RAGA_WORLDS[scaleIdx];
       const prog = raga.progressions[progFamilyIdx % raga.progressions.length];
       const chordObj = prog[chordIdx % prog.length];
@@ -3435,7 +4021,8 @@
   }
 
   function cycleModality() {
-    return setModality(modalityIdx + 1, true);
+    analyzeAndTransitionStyleGraph("manual");
+    return MUSIC_MODALITIES[modalityIdx].name;
   }
 
   // ---- MODALITY 1 STEP: AUTECHRE / APHEX GLITCH DRUMS + BELE FELT PIANO + SWING MAP ----
@@ -3915,11 +4502,13 @@
 
     if (stepInBar === 0) {
       barCount++;
-      // Every 12 bars in auto-suite mode: smoothly transition to the next Musical Modality
-      // so Mode I (Raga/Italo) -> Mode II (Glitch Piano/Swing) -> Mode III (French House/Air) ->
-      // Mode IV (BT Csound Suite) -> Mode V (Sasha Airdrawndagger) form one coherent whole!
-      if (autoCycleModalities && barCount > 0 && barCount % 12 === 0) {
-        setModality((modalityIdx + 1) % MUSIC_MODALITIES.length, true);
+      barsInCurrentStyleNode++;
+
+      // Every 6 bars in auto-suite mode: analyze the Style-Transition Graph
+      // (visit entropy + 3-node tabu history + zero self-loop) and transition to a
+      // contrasting song style & bass engine so we NEVER get stuck in any single loop!
+      if (autoCycleModalities && barsInCurrentStyleNode >= 6) {
+        analyzeAndTransitionStyleGraph("bar-cycle");
       }
       // Rotate polyrhythmic time signature every 4 bars during Modality 1 (Autechre/Aphex Glitch Piano)
       if (modalityIdx === 1 && barCount % 4 === 0) {
@@ -3929,12 +4518,12 @@
       if (modalityIdx === 3 && barCount % 4 === 0) {
         btMovementIdx = (btMovementIdx + 1) % BT_MOVEMENTS.length;
       }
-      // Every 16 bars: morph to a new Raga world
-      if (barCount > 0 && barCount % 16 === 0) {
+      // Every 12 bars: morph to a new Harmonic World
+      if (barCount > 0 && barCount % 12 === 0) {
         morphSixteenBarRaga();
       }
-      // Every 8 bars: morph harmonic progression family, arrangement arc, and bass archetype
-      if (barCount > 0 && barCount % 8 === 0) {
+      // Every 6 bars: morph harmonic progression family, arrangement arc, and bass archetype
+      if (barCount > 0 && barCount % 6 === 0) {
         morphEightBarSection(barCount);
       }
       // Every 2 bars: advance chord in the 4-chord progression (8-bar full harmonic cycle)
@@ -3956,7 +4545,7 @@
       triggerClosedEyeSoulSoloStep(stepInBar, raga, chordObj, when);
     }
 
-    // Dispatch to the active Musical Modality while sharing the unified Raga/Harmonic progression state!
+    // Dispatch to the active Musical Modality while sharing the unified Harmonic progression state!
     if (modalityIdx === 1) {
       triggerGlitchPianoStep(stepInBar, stepsPerBar, raga, chordObj, when);
       return;
@@ -3974,86 +4563,81 @@
       return;
     }
 
+    // ---- MODALITY 0: CHAMBER // ACOUSTIC HORIZON (Upright Contrabass / Fretless + Felt Piano + Nylon Guitar) ----
     const arc = ARC_PHASES[arcPhaseIdx];
     const arch = BASS_ARCHETYPES[bassArchIdx % BASS_ARCHETYPES.length];
 
-    // ---- 1. LUSH COSMIC STRING PAD & VOWEL CHOIR (on 2-bar chord changes & 4-bar swells) ----
+    // 1. Lush Chamber String Voicing & Choir Swell (on 2-bar chord changes)
     if (stepInBar === 0 && barCount % 2 === 0) {
       if (Math.random() <= arc.padDens) {
         const padNotes = chordObj.tones.map((t) => raga.midiRoot + t);
         playCosmicStringVoicing(padNotes, 3.6, 0.068 * arc.padDens, when);
       }
       if (barCount % 4 === 0 && Math.random() <= arc.padDens * 0.85) {
-        playChoirPad(raga.midiRoot + chordObj.root, 2.8, chordObj.vowel || "o", 0.095, when);
+        playChoirPad(raga.midiRoot + chordObj.root, 2.8, chordObj.vowel || "o", 0.092, when);
       }
     }
 
-    // ---- 2. DYNAMIC MORPHING ACID-RAGA / COSMIC ITALO BASS ----
+    // 2. Diverse Acoustic/Electric Bass (Upright Contrabass, Fretless Mwah, Palm-Mute P-Bass, Reese, FM, Taurus)
     const gateOn = arch.gates[stepInBar] && (stepInBar % 4 === 0 || Math.random() <= arc.bassDens);
     if (gateOn) {
       const bassMidi = pickBassMidi(raga, chordObj, stepInBar, arch);
       const isAccent = !!arch.accents[stepInBar] || (stepInBar === 0 && barCount % 2 === 0);
-      const isSlide = !!arch.slides[stepInBar] || Math.random() < bassParams.slideProb;
+      const isSlide = !!arch.slides[stepInBar];
       playMorphingBassNote(bassMidi, {
         when,
         accent: isAccent,
         slide: isSlide,
+        bassStyle: arch.preferredBassStyle ?? activeBassStyleIdx,
         vel: 0.155 * (0.75 + arc.bassDens * 0.25),
       });
     }
 
-    // ---- 3. LINDSTRØM COSMIC ARPEGGIATOR & COASTAL TOWN GUITAR/BELLS ----
+    // 3. Acoustic Fingerpicked Nylon Guitar, Felt Piano & Rhodes Tine Counterpoint
     const townBonus = Math.min(0.25, (liveGameState.townCount || 0) * 0.05);
-    const effectiveArpDens = clamp(arc.arpDens + townBonus, 0.2, 0.98);
+    const effectiveArpDens = clamp(arc.arpDens + townBonus, 0.25, 0.96);
     if (Math.random() <= effectiveArpDens) {
       const patDeg = arpPattern[stepInBar % arpPattern.length];
       const tone = chordObj.tones[patDeg % chordObj.tones.length];
       const elevOct = (liveGameState.playerY > 36 && stepInBar % 4 === 2) ? 12 : 0;
       const arpMidi = raga.midiRoot + tone + elevOct;
 
-      if (arcPhaseIdx === 0 || (stepInBar % 4 === 0 && liveGameState.townCount > 0)) {
-        // Acoustic Karplus-Strong nylon guitar / koto pluck
-        if (stepInBar % 2 === 0) {
-          playGuitar(arpMidi, 2.1, 0.11, when);
-        }
-      } else if (stepInBar % 2 === 0 || arcPhaseIdx >= 2) {
-        // Cosmic Italo space arpeggiator with morphing timbre
-        const arpMorph = 0.25 + 0.65 * Math.sin(lfoPhase * 0.41 + stepInBar * 0.3);
-        playCosmicArp(arpMidi, stepInBar % 3 === 0 ? 0.34 : 0.19, 0.082, arpMorph, when);
+      if (stepInBar === 0 || stepInBar === 6 || stepInBar === 12) {
+        playGuitar(arpMidi, 2.2, 0.118, when);
+      } else if (stepInBar === 3 || stepInBar === 10) {
+        playGardenPiano(arpMidi + 12, 1.9, barCount % 2 === 0 ? "FELT" : "TINE", 0.115, when);
+      } else if (stepInBar % 2 === 0 && arcPhaseIdx >= 2) {
+        const arpMorph = 0.25 + 0.55 * Math.sin(lfoPhase * 0.41 + stepInBar * 0.3);
+        playCosmicArp(arpMidi, 0.28, 0.075, arpMorph, when);
       }
     }
 
-    // ---- 4. BT ALEATORIC MICRO-HARP CASCADES & TINE BELLS (on turnarounds) ----
+    // 4. Aleatoric Micro-Harp Cascades & Csound Singing Bowl (on turnarounds)
     if (stepInBar === 12 && barCount % 4 === 3 && Math.random() < 0.75) {
       playMicroHarpCascade(raga.midiRoot, chordObj.tones, 4, 62, 0.085);
     }
 
-    // ---- 5. CR-78 COMPU-RHYTHM & BESSEL TABLA GROOVE ----
+    // 5. Syncopated Broken-Beat / Brushed Chamber Percussion (NO 4-on-the-floor disco + tabla loop!)
     if (arc.drumDens > 0.2) {
-      // Four-on-the-floor or syncopated CR-78 soft analog kick
-      if ((stepInBar % 4 === 0 || (stepInBar === 14 && Math.random() < 0.35)) && Math.random() <= arc.drumDens) {
-        playCrKick(0.16 * arc.drumDens, when);
+      // Syncopated acoustic/CR kick on beat 1 and broken-beat step 6 or 10
+      if ((stepInBar === 0 || stepInBar === 6 || (stepInBar === 10 && barCount % 2 === 1)) && Math.random() <= arc.drumDens) {
+        playCrKick(0.155 * arc.drumDens, when);
       }
-      // Off-beat open/closed CR-78 brushed hi-hat whisper
-      if (stepInBar % 2 === 1 && Math.random() <= arc.drumDens) {
-        const isOpen = stepInBar === 6 || stepInBar === 14;
-        playCrHat(isOpen, 0.055 * arc.drumDens, when);
+      // Brushed hi-hat whisper
+      if (stepInBar % 2 === 1 && Math.random() <= arc.drumDens * 0.85) {
+        const isOpen = stepInBar === 11 || stepInBar === 15;
+        playCrHat(isOpen, 0.052 * arc.drumDens, when);
       }
-      // Syncopated CR-78 rimshot / clave
-      if ((stepInBar === 4 || stepInBar === 11 || stepInBar === 12) && Math.random() <= arc.drumDens * 0.65) {
-        playCrRim(0.065 * arc.drumDens, when);
+      // Rimshot & Rosewood Marimba syncopations
+      if ((stepInBar === 4 || stepInBar === 12) && Math.random() <= arc.drumDens * 0.72) {
+        playCrRim(0.068 * arc.drumDens, when);
       }
-      // Pitched Bessel-mode Tabla ("tun" on raga root/fifth, "ge" on low bayan)
-      if ((stepInBar === 3 || stepInBar === 7 || stepInBar === 10 || stepInBar === 15) && Math.random() <= arc.drumDens * 0.72) {
-        const stroke = stepInBar === 7 ? "ge" : stepInBar === 15 ? "na" : "tun";
-        const tablaMidi = stroke === "ge"
-          ? raga.midiRoot - 12
-          : raga.midiRoot + (stepInBar === 3 ? 0 : 7);
-        playTabla(tablaMidi, stroke, 0.11 * arc.drumDens, when);
+      if ((stepInBar === 3 || stepInBar === 9 || stepInBar === 14) && Math.random() <= arc.drumDens * 0.58) {
+        playBeleDrum((stepInBar + chordIdx) % 8, "ROSEWD", 0.095 * arc.drumDens, when, 1);
       }
     }
 
-    // ---- 6. GENTLE SEA TIDE SHIMMER (when near the coastal basin) ----
+    // 6. Gentle Sea Tide Shimmer (when near the coastal basin)
     if (stepInBar === 0 && barCount % 4 === 0 && liveGameState.nearSea) {
       noise(0.036, 950, 880);
     }
@@ -4456,16 +5040,25 @@
     get modalityIdx() { return modalityIdx; },
     get modalityName() { return MUSIC_MODALITIES[modalityIdx].name; },
     get modalityShortName() { return MUSIC_MODALITIES[modalityIdx].shortName; },
+    get bassStyleIdx() { return activeBassStyleIdx; },
+    get bassStyleName() { return BASS_STYLES[activeBassStyleIdx].name; },
+    get bassStyleShortName() { return BASS_STYLES[activeBassStyleIdx].shortName; },
     get timeSigLabel() { return getActiveTimeSigLabel(); },
     get swingLabel() { return GhostsGardenSwingMap.describe(swingMapX, swingMapY); },
     get bassParams() { return bassParams; },
     getLiveSonicContext,
+    getStyleGraphStatus,
+    analyzeAndTransitionStyleGraph,
+    STYLE_TRANSITION_GRAPH,
+    BASS_STYLES,
+    BASS_ARCHETYPES,
     MUSIC_MODALITIES,
     BT_MOVEMENTS,
     GhostsGardenSwingMap,
     DUMBTERM_PRESETS,
     cycleScale,
     cycleModality,
+    cycleBassStyle,
     setModality,
     playClick,
     playDumbtermTypeClick,

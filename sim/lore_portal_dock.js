@@ -244,6 +244,40 @@
     };
   }
 
+  function scrollCivWorldBy(deltaCols) {
+    if (!deltaCols) return;
+    const shiftX = -deltaCols;
+    const wrapRange = COARSE_W + 56;
+    const minX = -28;
+    const wrapCoord = (val) => {
+      let v = val + shiftX;
+      while (v < minX) v += wrapRange;
+      while (v >= minX + wrapRange) v -= wrapRange;
+      return v;
+    };
+    for (let i = 0; i < civState.megastructures.length; i++) {
+      civState.megastructures[i].x = wrapCoord(civState.megastructures[i].x);
+    }
+    for (let i = 0; i < civState.factories.length; i++) {
+      civState.factories[i].x = wrapCoord(civState.factories[i].x);
+    }
+    for (let i = 0; i < civState.wasteSites.length; i++) {
+      civState.wasteSites[i].x = wrapCoord(civState.wasteSites[i].x);
+    }
+    for (let i = 0; i < civState.abandonedLoot.length; i++) {
+      civState.abandonedLoot[i].x = wrapCoord(civState.abandonedLoot[i].x);
+    }
+    for (let i = 0; i < civState.actors.length; i++) {
+      civState.actors[i].x = wrapCoord(civState.actors[i].x);
+      if (typeof civState.actors[i].targetX === "number") {
+        civState.actors[i].targetX = wrapCoord(civState.actors[i].targetX);
+      }
+    }
+    for (let i = 0; i < civState.lavaSparks.length; i++) {
+      civState.lavaSparks[i].x += shiftX;
+    }
+  }
+
   function populateCivStructuresForScreen(world) {
     const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
     const seaLevel = (world && world.seaLevel) || 12;
@@ -733,14 +767,20 @@
     // ------------------------------------------------------------------------
     for (let i = 0; i < civState.megastructures.length; i++) {
       const m = civState.megastructures[i];
-      const centerCol = Math.max(8, Math.min(COARSE_W - 9, Math.round(m.x)));
+      const halfSpanPx = Math.round((m.span * SCALE) / 2);
+      const trueCenterPx = centerPx(m.x);
+      const trueLeftPx = trueCenterPx - halfSpanPx;
+      const trueRightPx = trueCenterPx + halfSpanPx;
+      if (trueRightPx < 0 || trueLeftPx >= NATIVE_W) continue;
+
+      const centerCol = Math.max(0, Math.min(COARSE_W - 1, Math.round(m.x)));
       const baseElev = blocks[centerCol] || 18;
       const basePy = Math.round((COARSE_H - baseElev) * SCALE);
-      const halfSpanPx = Math.round((m.span * SCALE) / 2);
       const heightPx = Math.round(m.height * SCALE * Math.min(1.25, 0.45 + m.buildProgress * 0.55));
-      const leftPx = Math.max(4, centerPx(m.x) - halfSpanPx);
-      const rightPx = Math.min(NATIVE_W - 4, centerPx(m.x) + halfSpanPx);
-      const widthPx = Math.max(20, rightPx - leftPx);
+      const trueWidthPx = Math.max(20, trueRightPx - trueLeftPx);
+      const leftPx = Math.max(0, trueLeftPx);
+      const rightPx = Math.min(NATIVE_W - 1, trueRightPx);
+      const widthPx = trueWidthPx;
 
       const isAbandoned = !!m.abandoned;
       const ribStep = Math.max(6, (m.ribSpacing || 5) * 2);
@@ -759,7 +799,7 @@
 
         // Render parabolic/geodesic dome arch columns & translucent glass panes
         for (let px = leftPx; px <= rightPx; px++) {
-          const u = (px - leftPx) / Math.max(1, widthPx) * 2 - 1; // -1 .. +1
+          const u = ((px - trueLeftPx) / Math.max(1, trueWidthPx)) * 2 - 1; // -1 .. +1
           const colIdx = Math.max(0, Math.min(COARSE_W - 1, Math.floor(px / SCALE)));
           const localGroundPy = Math.round((COARSE_H - (blocks[colIdx] || baseElev)) * SCALE);
           const archRise = Math.round(heightPx * Math.pow(Math.max(0, 1 - u * u), m.domeProfile || 0.65));
@@ -774,11 +814,11 @@
               primeRenderer.fillNativeRect(px, domeTopPy + 2, 1, 2, 240, 255, 255, 0.85);
             }
             // Geodesic diagonal/vertical structural ribs every `ribStep` pixels
-            if ((px - leftPx) % ribStep === 0) {
+            if ((px - trueLeftPx) % ribStep === 0) {
               primeRenderer.fillNativeRect(px, domeTopPy, 1, Math.max(1, localGroundPy - domeTopPy), frameRgb[0], frameRgb[1], frameRgb[2], isAbandoned ? 0.35 : 0.55);
             }
             // Internal Hydroponic Crop Terraces & Bioshelter Trees inside the Glass Dome!
-            if (!isAbandoned && (px - leftPx) % 7 === 2 && archRise > 14) {
+            if (!isAbandoned && (px - trueLeftPx) % 7 === 2 && archRise > 14) {
               const cropH = 3 + Math.round(m.cropDensity * 5);
               primeRenderer.fillNativeRect(px, localGroundPy - cropH, 3, cropH, 95, 225, 115, 0.9);
               primeRenderer.fillNativeRect(px + 1, localGroundPy - cropH - 2, 2, 2, 255, 215, 85, 0.95);
@@ -788,8 +828,8 @@
 
         // Secondary Upper Cupola Tier if evolved (`tierCount >= 2`)
         if (m.tierCount >= 2 && !isAbandoned) {
-          const cupW = Math.round(widthPx * 0.36);
-          const cupX = leftPx + Math.round((widthPx - cupW) / 2);
+          const cupW = Math.round(trueWidthPx * 0.36);
+          const cupX = trueLeftPx + Math.round((trueWidthPx - cupW) / 2);
           const cupTop = Math.max(12, basePy - heightPx - 12);
           primeRenderer.fillNativeRect(cupX, cupTop, cupW, 10, glassR, glassG, glassB, 0.24);
           primeRenderer.fillNativeRect(cupX, cupTop, cupW, 1, 255, 215, 90, 0.95);
@@ -798,14 +838,14 @@
       } else if (m.archType === "MYCELIAL_ARCOLOGY") {
         // 2. Cervus Bioluminescent Mycelial-Crystal Canopy Cathedral
         for (let px = leftPx; px <= rightPx; px += 2) {
-          const u = (px - leftPx) / Math.max(1, widthPx) * 2 - 1;
+          const u = ((px - trueLeftPx) / Math.max(1, trueWidthPx)) * 2 - 1;
           const colIdx = Math.max(0, Math.min(COARSE_W - 1, Math.floor(px / SCALE)));
           const localGroundPy = Math.round((COARSE_H - (blocks[colIdx] || baseElev)) * SCALE);
           const canopyH = Math.round(heightPx * (0.6 + 0.4 * Math.cos(u * Math.PI)));
           const topPy = Math.max(18, localGroundPy - canopyH);
           // Organic fungal-crystal pillars & glowing canopy membrane
           primeRenderer.fillNativeRect(px, topPy, 2, 3, 82, 245, 185, 0.92);
-          if ((px - leftPx) % 10 === 0) {
+          if ((px - trueLeftPx) % 10 === 0) {
             primeRenderer.fillNativeRect(px, topPy, 2, Math.max(2, localGroundPy - topPy), 45, 165, 130, 0.68);
             primeRenderer.fillNativeRect(px - 1, topPy + 4, 4, 4, 110, 255, 245, 0.9);
           }
@@ -844,8 +884,9 @@
     // ------------------------------------------------------------------------
     for (let i = 0; i < civState.factories.length; i++) {
       const fac = civState.factories[i];
+      if (fac.x < -4 || fac.x > COARSE_W + 4) continue;
       const fx = centerPx(fac.x);
-      const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(fac.x)));
+      const col = Math.max(0, Math.min(COARSE_W - 1, Math.round(fac.x)));
       const fy = Math.round((COARSE_H - (blocks[col] || 18)) * SCALE);
       const fCol =
         fac.faction === "orange"
@@ -867,8 +908,9 @@
 
     for (let i = 0; i < civState.wasteSites.length; i++) {
       const ws = civState.wasteSites[i];
+      if (ws.x < -4 || ws.x > COARSE_W + 4) continue;
       const wx = centerPx(ws.x);
-      const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(ws.x)));
+      const col = Math.max(0, Math.min(COARSE_W - 1, Math.round(ws.x)));
       const wy = Math.round((COARSE_H - (blocks[col] || 18)) * SCALE);
 
       if (ws.kind === "LANDFILL_MOUND") {
@@ -1003,10 +1045,13 @@
 
   function zoomInAt(nativeX, nativeY) {
     if (typeof nativeX === "number" && !isNaN(nativeX)) {
-      zoomState.focusX = Math.max(48, Math.min(NATIVE_W - 48, Math.round(nativeX)));
+      zoomState.focusX = Math.max(16, Math.min(NATIVE_W - 16, Math.round(nativeX)));
+      zoomState.customFocusFrames = 90;
+    } else {
+      zoomState.customFocusFrames = 0;
     }
     if (typeof nativeY === "number" && !isNaN(nativeY)) {
-      zoomState.focusY = Math.max(48, Math.min(NATIVE_H - 48, Math.round(nativeY)));
+      zoomState.focusY = Math.max(16, Math.min(NATIVE_H - 16, Math.round(nativeY)));
     }
     zoomState.totalZoomClicks++;
     if (zoomState.depth < 0) {
@@ -1032,10 +1077,13 @@
 
   function zoomOutAt(nativeX, nativeY) {
     if (typeof nativeX === "number" && !isNaN(nativeX)) {
-      zoomState.focusX = Math.max(48, Math.min(NATIVE_W - 48, Math.round(nativeX)));
+      zoomState.focusX = Math.max(16, Math.min(NATIVE_W - 16, Math.round(nativeX)));
+      zoomState.customFocusFrames = 90;
+    } else {
+      zoomState.customFocusFrames = 0;
     }
     if (typeof nativeY === "number" && !isNaN(nativeY)) {
-      zoomState.focusY = Math.max(48, Math.min(NATIVE_H - 48, Math.round(nativeY)));
+      zoomState.focusY = Math.max(16, Math.min(NATIVE_H - 16, Math.round(nativeY)));
     }
     if (zoomState.depth > 0) {
       zoomState.depth = zoomState.depth - 1;
@@ -1056,6 +1104,7 @@
     zoomState.targetZoom = 0;
     zoomState.continuousZoom = 0;
     zoomState.depth = 0;
+    zoomState.customFocusFrames = 0;
     updateChronosDomUI();
   }
 
@@ -1075,6 +1124,20 @@
       zoomState.targetZoom = 0;
       zoomState.depth = 0;
       updateChronosDomUI();
+    }
+
+    // Continuously track the Player Monolith's position so the Monolith never falls out of frame when zoomed in!
+    if (world && world.P) {
+      const pNativeX = Math.max(14, Math.min(NATIVE_W - 14, Math.round((world.P.x + 0.5) * SCALE)));
+      const pNativeY = Math.max(14, Math.min(NATIVE_H - 14, Math.round((COARSE_H - (world.P.y + 3)) * SCALE)));
+      if (zoomState.customFocusFrames && zoomState.customFocusFrames > 0) {
+        zoomState.customFocusFrames--;
+        zoomState.focusX = Math.round(zoomState.focusX * 0.9 + pNativeX * 0.1);
+        zoomState.focusY = Math.round(zoomState.focusY * 0.9 + pNativeY * 0.1);
+      } else {
+        zoomState.focusX = pNativeX;
+        zoomState.focusY = pNativeY;
+      }
     }
 
     if (Math.abs(zoomState.continuousZoom) < 0.008) return; // At exact 1x macro origin (0/5), no zoom warp needed!
@@ -1133,50 +1196,183 @@
     const mag = zMod <= 4.0 ? Math.pow(2.05, zMod) : Math.pow(2.05, 4.0 + (zMod - 4.0) * 0.8);
     const srcW = NATIVE_W / mag;
     const srcH = NATIVE_H / mag;
-    const sx = Math.max(0, Math.min(NATIVE_W - srcW, fx - (fx / NATIVE_W) * srcW));
-    const sy = Math.max(0, Math.min(NATIVE_H - srcH, fy - (fy / NATIVE_H) * srcH));
+    // Center the zoom viewport directly on (fx, fy) so the Monolith stays centered in frame!
+    const sx = Math.max(0, Math.min(NATIVE_W - srcW, fx - srcW * 0.5));
+    const sy = Math.max(0, Math.min(NATIVE_H - srcH, fy - srcH * 0.5));
+
+    // Helper to project unzoomed native coordinates (nx, ny) into zoomed screen coordinates
+    const toZoomX = (nx) => Math.round((nx - sx) * mag);
+    const toZoomY = (ny) => Math.round((ny - sy) * mag);
 
     mainCtx.save();
     mainCtx.imageSmoothingEnabled = false;
     mainCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
     mainCtx.drawImage(zoomState.snapCanvas, sx, sy, srcW, srcH, 0, 0, NATIVE_W, NATIVE_H);
 
-    // Render nested procedural micro-structures inside the zoomed locus so every zoom level is rich!
+    // =========================================================================
+    // WORLD-ANCHORED COHERENT SUB-PIXEL DETAIL IN ZOOMED MODES (Depth 1..4)
+    // =========================================================================
     const dInt = Math.floor(zMod);
-    const dFrac = zMod - dInt;
+    if (zMod >= 0.25 && zMod < 4.65 && world && world.Blocks) {
+      const colStart = Math.max(0, Math.floor(sx / SCALE) - 1);
+      const colEnd = Math.min(COARSE_W - 1, Math.ceil((sx + srcW) / SCALE) + 1);
+      const cellPx = Math.max(2, Math.round(SCALE * mag));
 
-    // Depth 1..3: Meso WFC interiors, Cellular Automata Vats, Mycelial-Crystal Conduits & Antikythera Micro-Gears
-    if (zMod >= 0.4 && zMod < 4.5) {
-      const gridStep = Math.max(14, Math.round(42 / Math.max(1, dInt)));
-      mainCtx.strokeStyle = dInt === 1 ? "rgba(120, 234, 212, 0.28)" : dInt === 2 ? "rgba(82, 245, 185, 0.34)" : "rgba(247, 226, 124, 0.36)";
-      mainCtx.lineWidth = 1;
+      // 1. Sub-pixel geological strata, surface grass/moss filaments, and mineral veins anchored to terrain
+      for (let col = colStart; col <= colEnd; col++) {
+        const h = world.Blocks[col] || 0;
+        if (h <= 0) continue;
+        const nextH = world.Blocks[Math.min(COARSE_W - 1, col + 1)] || h;
+        const prevH = world.Blocks[Math.max(0, col - 1)] || h;
+        const colLeft = toZoomX(col * SCALE);
+        const colRight = toZoomX((col + 1) * SCALE);
+        const colW = Math.max(1, colRight - colLeft);
+        const surfY = toZoomY((COARSE_H - h) * SCALE);
 
-      for (let gx = (fx % gridStep); gx < NATIVE_W; gx += gridStep) {
-        for (let gy = (fy % gridStep); gy < NATIVE_H; gy += gridStep) {
-          const cellHash = hash32(Math.round(gx * 17 + gy * 31 + dInt * 101));
-          if (dInt === 1 && (cellHash & 3) === 0) {
-            // Meso WFC interior window & lantern rooms inside zoomed blocks
-            mainCtx.fillStyle = "rgba(255, 195, 95, 0.38)";
-            mainCtx.fillRect(gx + 3, gy + 3, 6, 6);
-          } else if (dInt === 2 && (cellHash & 3) <= 1) {
-            // Cellular Automata Vat micro-cells & glowing mycelial synapses
-            const alive = ((cellHash + (tick >> 2)) & 3) === 0;
-            if (alive) {
-              mainCtx.fillStyle = "rgba(82, 245, 185, 0.52)";
-              mainCtx.fillRect(gx + 2, gy + 2, 5, 5);
-            }
-          } else if (dInt >= 3 && (cellHash & 7) === 0) {
-            // Quantum Prime-Harmonic & Antikythera clockwork micro-rings
-            mainCtx.strokeRect(gx + 2, gy + 2, 10, 10);
-            mainCtx.fillStyle = "rgba(247, 226, 124, 0.65)";
-            mainCtx.fillRect(gx + 6, gy + 6, 2, 2);
+        // Smooth sub-pixel slope interpolation & grass/moss micro-blades along the ridge crest
+        const subSteps = Math.min(24, Math.max(4, Math.round(mag * 3)));
+        for (let s = 0; s < subSteps; s++) {
+          const frac = s / subSteps;
+          const interpH = h + (frac < 0.5 ? (prevH - h) * (0.5 - frac) * 0.45 : (nextH - h) * (frac - 0.5) * 0.45);
+          const gx = colLeft + Math.round(frac * colW);
+          const gy = toZoomY((COARSE_H - interpH) * SCALE);
+          if (gx < 0 || gx >= NATIVE_W || gy < -16 || gy >= NATIVE_H + 16) continue;
+
+          const bladeHash = hash32(col * 131 + s * 37);
+          const windSway = Math.round(Math.sin(tick * 0.06 + col * 0.4 + s * 0.3) * Math.min(3, mag * 0.4));
+          const bladeH = Math.max(2, Math.round(((bladeHash & 3) + 1) * Math.min(3.5, mag * 0.55)));
+          mainCtx.fillStyle = (bladeHash & 1) ? "rgba(120, 234, 198, 0.55)" : "rgba(76, 188, 164, 0.48)";
+          mainCtx.fillRect(gx + windSway, gy - bladeH, 1, bladeH + 1);
+        }
+
+        // Subterranean sedimentary strata hairlines & crystalline micro-geodes inside zoomed rock columns
+        const maxDepthRows = Math.min(28, h);
+        for (let dy = 1; dy < maxDepthRows; dy++) {
+          const rowY = toZoomY((COARSE_H - h + dy) * SCALE);
+          if (rowY < 0 || rowY >= NATIVE_H) continue;
+          const strataHash = hash32(col * 73 + dy * 19 + dInt * 41);
+
+          // 1px horizontal sedimentary bedding planes
+          if ((dy + (col & 1)) % 2 === 0) {
+            mainCtx.fillStyle = dy < 4 ? "rgba(110, 210, 195, 0.24)" : "rgba(18, 48, 56, 0.38)";
+            mainCtx.fillRect(colLeft, rowY, colW, 1);
+          }
+
+          // Depth >= 1: Root capillaries & mycelial threads in upper soil
+          if (dy <= 6 && (strataHash & 3) === 0) {
+            const rx = colLeft + (strataHash % Math.max(1, colW));
+            mainCtx.fillStyle = "rgba(155, 225, 175, 0.36)";
+            mainCtx.fillRect(rx, rowY, 1, Math.min(8, Math.round(mag * 1.8)));
+          }
+
+          // Depth >= 2: Embedded quartz/aetherium micro-crystals & fossilized clockwork teeth in deep strata
+          if (zMod >= 1.4 && dy >= 4 && (strataHash & 15) === 0) {
+            const cx = colLeft + ((strataHash >> 4) % Math.max(1, colW - 3));
+            const cy = rowY + ((strataHash >> 8) % Math.max(1, Math.round(cellPx * 0.6)));
+            mainCtx.fillStyle = (strataHash & 16) ? "rgba(120, 242, 255, 0.68)" : "rgba(245, 210, 115, 0.62)";
+            mainCtx.fillRect(cx, cy, 2, 2);
+            mainCtx.fillRect(cx + 1, cy - 1, 1, 4);
           }
         }
+      }
+
+      // 2. Coherent Sub-Pixel Detail on Nearby World Structures (Towns, Caves, Crystals)
+      if (Array.isArray(world.Towns)) {
+        for (let i = 0; i < world.Towns.length; i++) {
+          const t = world.Towns[i];
+          const th = world.Blocks[t.x] || 15;
+          const tx = toZoomX((t.x + 0.5) * SCALE);
+          const ty = toZoomY((COARSE_H - th) * SCALE);
+          if (tx < -60 || tx > NATIVE_W + 60 || ty < -60 || ty > NATIVE_H + 60) continue;
+          const w = Math.max(6, Math.round(3 * SCALE * mag));
+          const h = Math.max(6, Math.round(3 * SCALE * mag));
+          // Crisp 1px timber-and-stone courses & mullioned lantern window panes
+          mainCtx.strokeStyle = "rgba(120, 234, 212, 0.55)";
+          mainCtx.lineWidth = 1;
+          mainCtx.strokeRect(tx - Math.floor(w * 0.5) + 0.5, ty - h + 0.5, w, h);
+          const winW = Math.max(3, Math.round(w * 0.28));
+          const winH = Math.max(3, Math.round(h * 0.32));
+          const winX = tx - Math.floor(winW * 0.5);
+          const winY = ty - Math.floor(h * 0.65);
+          mainCtx.fillStyle = "rgba(255, 215, 110, 0.85)";
+          mainCtx.fillRect(winX, winY, winW, winH);
+          // Window mullions (crossbars)
+          mainCtx.fillStyle = "rgba(22, 54, 62, 0.9)";
+          mainCtx.fillRect(winX + Math.floor(winW * 0.5), winY, 1, winH);
+          mainCtx.fillRect(winX, winY + Math.floor(winH * 0.5), winW, 1);
+        }
+      }
+
+      if (Array.isArray(world.Crystals)) {
+        for (let i = 0; i < world.Crystals.length; i++) {
+          const cr = world.Crystals[i];
+          const ch = world.Blocks[cr.x] || 15;
+          const cx = toZoomX((cr.x + 0.5) * SCALE);
+          const cy = toZoomY((COARSE_H - ch - 2) * SCALE);
+          if (cx < -40 || cx > NATIVE_W + 40 || cy < -40 || cy > NATIVE_H + 40) continue;
+          const rad = Math.max(4, Math.round(SCALE * mag * 0.9));
+          mainCtx.strokeStyle = "rgba(135, 248, 255, 0.78)";
+          mainCtx.lineWidth = 1;
+          mainCtx.beginPath();
+          mainCtx.moveTo(cx, cy - rad);
+          mainCtx.lineTo(cx + Math.round(rad * 0.65), cy);
+          mainCtx.lineTo(cx, cy + Math.round(rad * 0.75));
+          mainCtx.lineTo(cx - Math.round(rad * 0.65), cy);
+          mainCtx.closePath();
+          mainCtx.stroke();
+        }
+      }
+
+      // 3. Coherent Sub-Pixel Monolith Anatomy (`TACHIMA-307`) Centered at `(pZx, pZy)`!
+      if (world.P) {
+        const pLeft = toZoomX(world.P.x * SCALE);
+        const pTop = toZoomY((COARSE_H - Math.round(world.P.y) - 6) * SCALE);
+        const pW = Math.max(7, Math.round(SCALE * mag));
+        const pH = Math.max(42, Math.round(6 * SCALE * mag));
+        const pCx = pLeft + Math.floor(pW * 0.5);
+
+        // Crisp 1px beveled obsidian-basalt exo-chassis border & internal harmonic circuitry
+        mainCtx.strokeStyle = "rgba(165, 248, 235, 0.88)";
+        mainCtx.lineWidth = 1;
+        mainCtx.strokeRect(pLeft + 0.5, pTop + 0.5, pW - 1, pH - 1);
+
+        // Internal segmentation plates (head, torso core, drive legs)
+        const headH = Math.floor(pH * 0.18);
+        const chestY = pTop + Math.floor(pH * 0.36);
+        const hipY = pTop + Math.floor(pH * 0.68);
+        mainCtx.fillStyle = "rgba(120, 234, 212, 0.45)";
+        mainCtx.fillRect(pLeft + 1, pTop + headH, pW - 2, 1);
+        mainCtx.fillRect(pLeft + 1, hipY, pW - 2, 1);
+
+        // Scanning optical visor slit in head segment
+        const scanOff = Math.round(Math.sin(tick * 0.15) * Math.max(1, (pW - 6) * 0.35));
+        mainCtx.fillStyle = "rgba(230, 255, 248, 0.95)";
+        mainCtx.fillRect(pLeft + 2, pTop + Math.floor(headH * 0.45), Math.max(2, pW - 4), 2);
+        mainCtx.fillStyle = "#5ef2ff";
+        mainCtx.fillRect(pCx + scanOff - 1, pTop + Math.floor(headH * 0.45), 3, 2);
+
+        // Rotating Antikythera clockwork balance wheel & Aetherium levitation core in chest
+        const gearR = Math.max(3, Math.min(22, Math.floor(pW * 0.36)));
+        mainCtx.strokeStyle = world.P.aether > 0 ? "rgba(95, 245, 255, 0.92)" : "rgba(245, 208, 105, 0.82)";
+        mainCtx.beginPath();
+        mainCtx.arc(pCx, chestY, gearR, 0, Math.PI * 2);
+        mainCtx.stroke();
+        for (let spoke = 0; spoke < 6; spoke++) {
+          const ang = (spoke / 6) * Math.PI * 2 + tick * 0.08;
+          mainCtx.beginPath();
+          mainCtx.moveTo(pCx, chestY);
+          mainCtx.lineTo(pCx + Math.cos(ang) * gearR, chestY + Math.sin(ang) * gearR);
+          mainCtx.stroke();
+        }
+        // Fine 1px energy bus traces connecting head visor -> chest core -> drive feet
+        mainCtx.fillStyle = "rgba(110, 245, 235, 0.65)";
+        mainCtx.fillRect(pCx, pTop + headH, 1, chestY - gearR - (pTop + headH));
+        mainCtx.fillRect(pCx, chestY + gearR, 1, pTop + pH - 2 - (chestY + gearR));
       }
     }
 
     // Depth 3.2 -> 5.0: The Holonomic Self-Similar World Seed inside the locus!
-    // At Depth 4, you see the entire coastal world nested inside the quantum core at (fx, fy);
+    // At Depth 4, you see the entire coastal world nested inside the quantum core at the Monolith's chest;
     // on the 5th zoom (4 -> 5), this nested world expands to 840x525, returning you to Depth 0/5!
     if (zMod >= 3.15) {
       const seedT = Math.max(0, Math.min(1, (zMod - 3.15) / 1.85));
@@ -1184,8 +1380,10 @@
       const ease = seedT < 0.45 ? seedT * 0.55 : 0.2475 + ((seedT - 0.45) / 0.55) * 0.7525;
       const boxW = Math.round(NATIVE_W * ease);
       const boxH = Math.round(NATIVE_H * ease);
-      const boxX = Math.round(fx * (1 - ease));
-      const boxY = Math.round(fy * (1 - ease));
+      const centerZoomX = toZoomX(fx);
+      const centerZoomY = toZoomY(fy);
+      const boxX = Math.round(centerZoomX * (1 - ease));
+      const boxY = Math.round(centerZoomY * (1 - ease));
 
       if (boxW > 8 && boxH > 8) {
         // Draw the unzoomed macro world nested inside the quantum core!
@@ -1201,7 +1399,7 @@
     // Subtle HUD reticle at the recursive zoom locus
     const ht = global.HardcoreTab && global.HardcoreTab.HardcoreTabRenderer;
     if (ht) {
-      const label = `HOLONOMIC ZOOM ${ ((Math.round(zMod) % 5) + 5) % 5 }/5 @ (${Math.round(fx / SCALE)},${Math.round((NATIVE_H - fy) / SCALE)})`;
+      const label = `HOLONOMIC ZOOM ${ ((Math.round(zMod) % 5) + 5) % 5 }/5 (${mag.toFixed(1)}X) @ MONOLITH (${Math.round(fx / SCALE)},${Math.round((NATIVE_H - fy) / SCALE)})`;
       ht.drawMicroText(primeRenderer, 8, 28, label, 255, 212, 59, 0.95, 42);
     }
 
@@ -3228,6 +3426,7 @@
     recycleWasteBatch,
     runMacroEpochEvolution,
     renderMegastructuresAndEconomy,
+    scrollCivWorldBy,
     openArtifactModal,
     openDatPuter,
     toggleDatPuter,

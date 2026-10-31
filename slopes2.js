@@ -573,7 +573,7 @@
     canvas.style.backgroundColor = BIOME_PALETTES[currentBiome] || SKY_PALETTES[0];
     updateCachedBg();
 
-    // Seamlessly stitch entry terrain & compute exact entry (P.x, P.y) where the character hopped in from!
+    // Seamlessly stitch entry terrain & compute physically accurate entry (P.x, P.y) across frame borders!
     if (entryDir === "left" || entryDir === "right") {
       if (!wasVisited && worldLayer <= 0) {
         // Blend the entry edge of a fresh screen toward prevGroundH so the horizon slope is continuous
@@ -596,13 +596,13 @@
         }
       }
       const entryGround = Blocks[P.x] > 0 ? Blocks[P.x] : Math.max(12, Math.round(prevY));
-      P.y = Math.max(entryGround, Math.min(H - 7, entryGround + airOffset));
+      P.y = Math.max(entryGround, Math.min(H - 4, entryGround + airOffset));
       if (airOffset > 0 || prevHopTimer > 0) {
-        P.hopTimer = Math.max(prevHopTimer, 10);
+        P.hopTimer = Math.max(prevHopTimer, 14);
       }
     } else if (entryDir === "down") {
-      // Entered from ABOVE (dropped out of sky or drilled down through floor):
-      // Carve an entry skylight shaft in the ceiling at P.x and start at the TOP of the new screen!
+      // Entered from ABOVE (dug/drilled down through floor or dropped out of sky):
+      // Carve an entry skylight shaft in the ceiling at P.x and appear at the VERY TOP of the screen below!
       if (worldLayer < 0) {
         for (let dx = -2; dx <= 2; dx++) {
           const cx = Math.max(2, Math.min(W - 3, P.x + dx));
@@ -615,12 +615,13 @@
       if (worldLayer <= 0 && Blocks[P.x] < 14) {
         Blocks[P.x] = 16;
       }
-      // Start near the TOP of the screen at P.x (where the character dropped/drilled in from) and glide down!
-      P.y = Math.max((Blocks[P.x] || 16) + 4, H - 9);
-      P.hopTimer = 24;
+      // Appear right at the top border of the new screen (y = H - 3 = 72) and descend smoothly to the ground!
+      P.y = H - 3;
+      P.hopTimer = 140;
+      P.descendingFromAbove = true;
     } else if (entryDir === "up") {
-      // Entered from BELOW (hopped/climbed up out of the top of the lower screen):
-      // Start near the BOTTOM of the upper screen at the exact same P.x!
+      // Entered from BELOW (climbed/flew up out of the top of the lower screen):
+      // Appear at the VERY BOTTOM of the upper screen (y = 2) at the exact same P.x and rise onto the ledge!
       if (worldLayer > 0) {
         const entryLedgeH = 10;
         for (let dx = -3; dx <= 3; dx++) {
@@ -633,11 +634,11 @@
         if (!Shafts.some((s) => Math.abs(s.x - P.x) <= 3)) {
           Shafts.push({ x: P.x, dir: "down" });
         }
-        P.y = Blocks[P.x] || entryLedgeH;
-        P.hopTimer = 10;
+        P.y = 2;
+        P.hopTimer = 24;
       } else {
-        P.y = Math.max(8, Blocks[P.x] || 16);
-        P.hopTimer = 10;
+        P.y = 2;
+        P.hopTimer = 24;
       }
     } else if (entryDir === "init") {
       P.x = 56;
@@ -1240,6 +1241,12 @@
   function moveHorizontal(dir) {
     if (paused) return;
     P.facing = dir;
+
+    // If riding the Airship Castle Village, Left/Right steers the Airship!
+    if (tabForms && tabForms.onAirshipPlayerControl && tabForms.onAirshipPlayerControl(dir < 0 ? "left" : "right", getWorldBundle())) {
+      return;
+    }
+
     const nx = P.x + dir;
 
     // Horizontal screen transition!
@@ -1266,7 +1273,7 @@
     }
 
     P.x = nx;
-    if (P.hopTimer <= 0 && !P.onAirship && Blocks[P.x] > 0) {
+    if (P.hopTimer <= 0 && !P.onAirship && !P.descendingFromAbove && Blocks[P.x] > 0 && P.y <= Blocks[P.x] + 1.5) {
       P.y = Blocks[P.x];
     }
     if (window.SlopesAudio) {
@@ -1315,8 +1322,28 @@
   function digAction() {
     if (paused) return;
 
+    // 0. If riding the Airship Castle Village, pressing Down lowers you down the rope ladder
+    //    (and slowly guides the Airship downward to meet you, or lets you off onto the ground!)
+    if (tabForms && tabForms.onAirshipPlayerControl && tabForms.onAirshipPlayerControl("down", getWorldBundle())) {
+      return;
+    }
+
     // 1. Check if harvesting an Aetherium Crystal right beside us
     checkCrystalHarvest(P.x, P.y);
+
+    // 1b. If the player is still descending through the air from the top of the screen
+    //     (e.g. just dug down from the screen above), pressing Down accelerates downward descent
+    //     rather than snapping P.y straight to the ground below!
+    const groundHere = Blocks[P.x] || 2;
+    if (P.y > groundHere + 1.5) {
+      P.y = Math.max(groundHere, P.y - 2.6);
+      if (P.y <= groundHere + 0.5) {
+        P.descendingFromAbove = false;
+        P.hopTimer = 0;
+      }
+      return;
+    }
+    P.descendingFromAbove = false;
 
     // 2. Check if standing inside a Spooky Cave entrance or at bottom bedrock -> DRILL DOWN!
     const inCaveHere = Caves.some(
@@ -1385,6 +1412,11 @@
   // UP (W): Build dirt/cloud column, climb out of caverns, or ASCEND into the Sky Worlds!
   function buildAction() {
     if (paused) return;
+
+    // If riding the Airship Castle Village, pressing Up climbs the rope or steers the Airship higher!
+    if (tabForms && tabForms.onAirshipPlayerControl && tabForms.onAirshipPlayerControl("up", getWorldBundle())) {
+      return;
+    }
 
     // If near the top of the screen, check if we can ascend to worldLayer + 1!
     const topThreshold = worldLayer < 0 ? H - Math.max(4, Ceiling[P.x]) - 8 : H - 13;
@@ -1688,6 +1720,9 @@
   // I (TRIANGLE): Jet Hop / Aetherium Levitation Flight / Ascend into Clouds!
   function hopAndCallAction() {
     if (paused) return;
+    if (tabForms && tabForms.onAirshipPlayerControl && tabForms.onAirshipPlayerControl("up", getWorldBundle())) {
+      return;
+    }
     P.onAirship = null;
 
     const hasFlight = P.aether > 0 || P.wings || P.raptorPet || currentBiome === "underwater";
@@ -1971,13 +2006,21 @@
 
     // --- Player Vertical Physics (Ground, Mushroom Bounce, Underwater Bubble Lift, Sky Glide) ---
     if (!P.onAirship) {
+      const targetGround = Blocks[P.x] || 0;
       if (P.hopTimer > 0) {
         P.hopTimer--;
-        // Gentle Aetherium / Underwater glide descent
-        if (P.y > Blocks[P.x] && frameCount % 2 === 0) {
-          P.y = Math.max(Blocks[P.x], P.y - 1);
+        // Smooth physical descent from top of screen (when digging down) or hop apex,
+        // or smooth physical ascent from bottom of screen (when climbing up)!
+        if (P.y > targetGround) {
+          const descStep = P.descendingFromAbove ? 0.65 : (frameCount % 2 === 0 ? 1 : 0);
+          P.y = Math.max(targetGround, P.y - descStep);
+          if (P.y <= targetGround + 0.5) {
+            P.descendingFromAbove = false;
+          }
+        } else if (P.y < targetGround) {
+          P.y = Math.min(targetGround, P.y + 0.85);
         }
-      } else if (worldLayer > 0 && Blocks[P.x] === 0) {
+      } else if (worldLayer > 0 && targetGround === 0) {
         // Stepping over an open cloud gap in a Sky World!
         const fallRate = (P.aether > 0 || P.wings || P.raptorPet) ? 0.45 : 1.0;
         P.y -= fallRate;
@@ -1986,8 +2029,17 @@
           transitionToWorld(worldX, worldLayer - 1, "down");
           return;
         }
+      } else if (P.y > targetGround + 0.75) {
+        // Never snap from mid-air straight to the ground when hopTimer expires!
+        P.y = Math.max(targetGround, P.y - 0.85);
+        if (P.y <= targetGround + 0.5) {
+          P.descendingFromAbove = false;
+        }
+      } else if (P.y < targetGround - 0.75) {
+        P.y = Math.min(targetGround, P.y + 0.9);
       } else {
-        P.y = Blocks[P.x];
+        P.y = targetGround;
+        P.descendingFromAbove = false;
       }
     }
 
@@ -2253,7 +2305,26 @@
         }
       }
 
-      if (r.x < 1 || r.x >= W - 1 || r.y <= 0 || (groundH < seaLevel - 1 && Math.abs(r.vx) < 0.03)) {
+      // Physically accurate frame transitions for rolling/falling Round Rocks!
+      if (r.x < 1) {
+        const leftSaved = visitedWorlds.get(worldKey(worldX - 1, worldLayer));
+        if (leftSaved && Array.isArray(leftSaved.Rocks) && leftSaved.Rocks.length < 8) {
+          leftSaved.Rocks.push(Object.assign({}, r, { x: W - 2.2 }));
+        }
+        Rocks.splice(i, 1);
+      } else if (r.x >= W - 1) {
+        const rightSaved = visitedWorlds.get(worldKey(worldX + 1, worldLayer));
+        if (rightSaved && Array.isArray(rightSaved.Rocks) && rightSaved.Rocks.length < 8) {
+          rightSaved.Rocks.push(Object.assign({}, r, { x: 2.2 }));
+        }
+        Rocks.splice(i, 1);
+      } else if (r.y <= 0) {
+        const belowSaved = visitedWorlds.get(worldKey(worldX, worldLayer - 1));
+        if (belowSaved && Array.isArray(belowSaved.Rocks) && belowSaved.Rocks.length < 8) {
+          belowSaved.Rocks.push(Object.assign({}, r, { y: H - 3 }));
+        }
+        Rocks.splice(i, 1);
+      } else if (groundH < seaLevel - 1 && Math.abs(r.vx) < 0.03) {
         Rocks.splice(i, 1);
       }
     }
@@ -2443,6 +2514,16 @@
       if (cl.x < -10) cl.x = W + 10;
     });
 
+    // 8B. Step Procedural Genetic Flora/Fauna, Dynamic Sunlight/Shadow, Hydrology & Wind Simulation
+    if (window.SlopesGeneticFlora && typeof window.SlopesGeneticFlora.step === "function") {
+      window.SlopesGeneticFlora.step(
+        getWorldBundle(),
+        ecology ? ecology.eco : null,
+        cosmic ? cosmic.cosmic : null,
+        frameCount
+      );
+    }
+
     // 9. Step Generative Raga / Cosmic Italo / Aleatoric Soundtrack
     if (frameCount % 12 === 0 && window.SlopesAudio) {
       const activeTar = TarVeins.reduce((acc, v) => acc + (v.erupted ? 2 : v.progress), 0);
@@ -2474,6 +2555,15 @@
       );
       ctx.putImageData(screen, 0, 0);
       return;
+    }
+
+    // 0. Multi-Layer Parallax Dither Gradients (Deep Zenith, Distant Mountain Ranges, Mid-ground Hills & Atmospheric Fog)
+    if (
+      primeRenderer &&
+      window.SlopesParallaxDitherArt &&
+      typeof window.SlopesParallaxDitherArt.renderBackgroundParallaxDither === "function"
+    ) {
+      window.SlopesParallaxDitherArt.renderBackgroundParallaxDither(primeRenderer, getWorldBundle(), frameCount);
     }
 
     // 1. Twinkling sky stars / subterranean crystal motes
@@ -2573,6 +2663,30 @@
       if (worldLayer > 0 && botY < H && (x + Math.floor(frameCount / 10)) % 7 === 0) {
         pix(screen, x, botY - 1, 95, 235, 255, 0.85);
       }
+    }
+
+    // 6B. Semi-Transparent Surface Dither Screens (Geological Strata, Water Caustics, Mossy Cliff Overhangs)
+    if (
+      primeRenderer &&
+      window.SlopesParallaxDitherArt &&
+      typeof window.SlopesParallaxDitherArt.renderSurfaceDitherScreens === "function"
+    ) {
+      window.SlopesParallaxDitherArt.renderSurfaceDitherScreens(primeRenderer, getWorldBundle(), frameCount);
+    }
+
+    // 6C. Procedural Genetic Flora & Fauna Engine (Trees, Willows, Bonsai, Flowers, Shrubs, Moss, Vines, Fruit/Veg, Cloud-Kelp, Sea-Flora, Sun Shadows & Wind Sway)
+    if (
+      primeRenderer &&
+      window.SlopesGeneticFlora &&
+      typeof window.SlopesGeneticFlora.render === "function"
+    ) {
+      window.SlopesGeneticFlora.render(
+        primeRenderer,
+        getWorldBundle(),
+        ecology ? ecology.eco : null,
+        cosmic ? cosmic.cosmic : null,
+        frameCount
+      );
     }
 
     // 7. Underwater Kelp Forests & Rising Bubble Streams
@@ -2953,6 +3067,21 @@
       }
       b = b >> 1;
       p++;
+    }
+
+    // 23B. Hyper-Detailed 1:1 Device-Pixel World Art Overhaul (Towns, Caves, Crystals, Mushrooms, Dwarves, Castles, Raptors, Worms, Relics, Vermuna, Rocks & TACHIMA-307)
+    if (
+      primeRenderer &&
+      window.SlopesParallaxDitherArt &&
+      typeof window.SlopesParallaxDitherArt.renderDetailedWorldObjects === "function"
+    ) {
+      window.SlopesParallaxDitherArt.renderDetailedWorldObjects(
+        primeRenderer,
+        getWorldBundle(),
+        ecology ? ecology.eco : null,
+        cosmic ? cosmic.cosmic : null,
+        frameCount
+      );
     }
 
     // 24. Subtle Pixel Health Bar + Attachment Indicator Diodes at top-left
