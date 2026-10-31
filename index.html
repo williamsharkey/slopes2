@@ -89,7 +89,7 @@ body.fullscreen-mode #minimap-canvas:hover{
   opacity:0.95;
 }
 #social-tui-canvas{
-  position:fixed;z-index:4;cursor:pointer;touch-action:none;display:block;
+  position:fixed;z-index:5;cursor:pointer;touch-action:none;display:block;
   background:transparent;
   transition:opacity 0.4s ease;
 }
@@ -99,6 +99,20 @@ body.fullscreen-mode #social-tui-canvas{
 body.fullscreen-mode #social-tui-canvas:hover{
   opacity:0.95;
 }
+#mobile-bottom-input{
+  position:fixed;z-index:6;display:none;
+  background:rgba(6,18,24,0.94);color:#e8fffb;
+  border:1px solid #366874;border-radius:0;
+  padding:0 8px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:16px; /* >=16px prevents iOS Safari auto-zoom on focus */
+  line-height:1.2;
+  outline:none;
+  -webkit-user-select:text;user-select:text;
+  touch-action:manipulation;
+}
+#mobile-bottom-input::placeholder{color:#5e8e96}
+#mobile-bottom-input:focus{border-color:#ffd43b;background:rgba(10,28,36,0.98)}
 #dlg{
   position:fixed;inset:0;z-index:10;display:none;place-items:center;
   background:rgba(4,9,12,0.78);
@@ -142,26 +156,27 @@ body.fullscreen-mode #social-tui-canvas:hover{
 <canvas id="minimap-canvas" title="World Radar & Pocket Micro-Scope (Click to cycle mode)"></canvas>
 <canvas id="fullscreen-btn"></canvas>
 <canvas id="osd"></canvas>
-<canvas id="social-tui-canvas" title="Hardcore Hairline Social Mesh, Claude Agents (<user>.cc.<selfname>), Group/DM Chat & Code Drift Hot-Reload"></canvas>
+<canvas id="social-tui-canvas" title="Hardcore Hairline Social Mesh, Claude Agents (<user>.cc.<selfname>), Group/DM Chat, Terminal & Controller Switcher"></canvas>
+<input id="mobile-bottom-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" />
 
 <div id="dlg">
   <canvas id="dlg-canvas"></canvas>
 </div>
 
-<script src="font.js?v=26"></script>
-<script src="audio.js?v=26"></script>
-<script src="sim/wasm_bridge.js?v=26"></script>
-<script src="sim/ecology_design.js?v=26"></script>
-<script src="sim/cosmic_engine.js?v=26"></script>
-<script src="sim/pentagonal_rotation.js?v=26"></script>
-<script src="sim/hardcore_tab.js?v=26"></script>
-<script src="sim/real_tabcomputer_bridge.js?v=26"></script>
-<script src="sim/tabform_lifeforms.js?v=26"></script>
-<script src="sim/genetic_flora_engine.js?v=26"></script>
-<script src="sim/parallax_dither_art.js?v=26"></script>
-<script src="slopes2.js?v=26"></script>
-<script src="sim/ai_interface.js?v=26"></script>
-<script src="sim/lore_portal_dock.js?v=26"></script>
+<script src="font.js?v=27"></script>
+<script src="audio.js?v=27"></script>
+<script src="sim/wasm_bridge.js?v=27"></script>
+<script src="sim/ecology_design.js?v=27"></script>
+<script src="sim/cosmic_engine.js?v=27"></script>
+<script src="sim/pentagonal_rotation.js?v=27"></script>
+<script src="sim/hardcore_tab.js?v=27"></script>
+<script src="sim/real_tabcomputer_bridge.js?v=27"></script>
+<script src="sim/tabform_lifeforms.js?v=27"></script>
+<script src="sim/genetic_flora_engine.js?v=27"></script>
+<script src="sim/parallax_dither_art.js?v=27"></script>
+<script src="slopes2.js?v=27"></script>
+<script src="sim/ai_interface.js?v=27"></script>
+<script src="sim/lore_portal_dock.js?v=27"></script>
 <script>
 (() => {
   "use strict";
@@ -927,9 +942,11 @@ body.fullscreen-mode #social-tui-canvas:hover{
     renderOsd();
   });
 
-  // --- Hardcore Hairline Social Mesh, Claude Agents (<username>.cc.<selfname>), Group/DM Chat & Code Drift Hot-Reload TUI (#social-tui-canvas) ---
+  // --- Hardcore Hairline Social Mesh, Claude Agents (<username>.cc.<selfname>), Group/DM Chat, Terminal & 3-Mode Mobile Switcher (#social-tui-canvas) ---
   const socialCanvas = document.getElementById("social-tui-canvas");
+  const mobileBottomInput = document.getElementById("mobile-bottom-input");
   const socialState = {
+    bottomMode: "controller", // "controller" | "chat" | "terminal"
     username: (function () {
       try {
         return (
@@ -951,6 +968,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
     selectedPeerId: "claude:TAB-01",
     chatInputFocused: false,
     chatDraft: "",
+    termInputDraft: "",
     activeDriftFork: "0:main",
     hotReloadCount: 0,
     lastHotReloadMsg: "",
@@ -1214,7 +1232,108 @@ body.fullscreen-mode #social-tui-canvas:hover{
       }
     }
     socialState.chatDraft = "";
+    if (mobileBottomInput && socialState.bottomMode === "chat") {
+      mobileBottomInput.value = "";
+    }
     renderSocialTuiCanvas();
+  }
+
+  function getActiveBottomTermUnit() {
+    const tfApi = window.SlopesTabForms;
+    if (!tfApi) return null;
+    const st = tfApi.state || {};
+    const selId = st.selectedTabId || "TAB-01";
+    if (selId === "TE-307" && st.worldMainframe) return st.worldMainframe;
+    const forms = Array.isArray(tfApi.tabForms) ? tfApi.tabForms : [];
+    return forms.find((t) => t.id === selId) || forms[0] || null;
+  }
+
+  function submitBottomTerminalCommand(rawCmd) {
+    const cmd = String(rawCmd || "").trim();
+    const tfApi = window.SlopesTabForms;
+    const unit = getActiveBottomTermUnit();
+    const execStr = cmd || (unit && unit.id === "TE-307" ? "status" : "body status");
+    if (unit) {
+      const bridgeReady = Boolean(
+        window.RealTabComputerBridge &&
+          window.RealTabComputerBridge.state &&
+          (window.RealTabComputerBridge.state.signedInAccount || window.RealTabComputerBridge.state.booted)
+      );
+      if (execStr === "login" || execStr === "claude login") {
+        if (window.RealTabComputerBridge) {
+          window.RealTabComputerBridge.openClaudeSignInModal(unit.id !== "TE-307" ? unit.id : "TAB-01");
+        }
+      } else if (unit.id !== "TE-307" && (unit.realTabActive || bridgeReady) && window.RealTabComputerBridge) {
+        unit.realTabActive = true;
+        unit.autoMode = false;
+        window.RealTabComputerBridge.sendCommandToRealTabComputer(unit.id, execStr);
+      } else if (unit.shell && typeof unit.shell.execute === "function") {
+        unit.shell.execute(execStr);
+      } else if (tfApi && typeof tfApi.executeCommand === "function") {
+        tfApi.executeCommand(execStr);
+      }
+    } else if (tfApi && typeof tfApi.executeCommand === "function") {
+      tfApi.executeCommand(execStr);
+    }
+    socialState.termInputDraft = "";
+    if (mobileBottomInput && socialState.bottomMode === "terminal") {
+      mobileBottomInput.value = "";
+    }
+    renderSocialTuiCanvas();
+  }
+
+  function setBottomMode(mode) {
+    const clean = mode === "chat" || mode === "terminal" ? mode : "controller";
+    socialState.bottomMode = clean;
+    socialState.editingName = false;
+    if (clean === "terminal" && window.SlopesTabForms && window.SlopesTabForms.state) {
+      // Keep #screen above 100% uncovered when using the bottom-half Terminal mode!
+      window.SlopesTabForms.state.terminalOpen = false;
+    }
+    if (mobileBottomInput) {
+      if (clean === "chat") {
+        mobileBottomInput.value = socialState.chatDraft || "";
+      } else if (clean === "terminal") {
+        mobileBottomInput.value = socialState.termInputDraft || "";
+      } else {
+        mobileBottomInput.blur();
+        mobileBottomInput.style.display = "none";
+      }
+    }
+    if (typeof solve === "function") {
+      solve();
+    } else {
+      renderSocialTuiCanvas();
+    }
+  }
+
+  function stripAnsiSimple(str) {
+    return String(str || "").replace(/\x1b\[[0-9;]*m/g, "");
+  }
+
+  function wrapTextToCols(text, maxCols) {
+    const clean = String(text || "");
+    if (clean.length <= maxCols) return [clean];
+    const words = clean.split(" ");
+    const lines = [];
+    let cur = "";
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (!cur) {
+        cur = w;
+      } else if (cur.length + 1 + w.length <= maxCols) {
+        cur += " " + w;
+      } else {
+        lines.push(cur);
+        cur = w;
+      }
+      while (cur.length > maxCols) {
+        lines.push(cur.slice(0, maxCols));
+        cur = cur.slice(maxCols);
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
   }
 
   function renderSocialTuiCanvas() {
@@ -1222,6 +1341,8 @@ body.fullscreen-mode #social-tui-canvas:hover{
     const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
     const cssW = parseInt(socialCanvas.style.width, 10) || 420;
     const cssH = parseInt(socialCanvas.style.height, 10) || 96;
+    const socLeft = parseInt(socialCanvas.style.left, 10) || 0;
+    const socTop = parseInt(socialCanvas.style.top, 10) || 0;
     const W = cssW * dpr;
     const H = cssH * dpr;
     if (socialCanvas.width !== W || socialCanvas.height !== H) {
@@ -1234,220 +1355,491 @@ body.fullscreen-mode #social-tui-canvas:hover{
     socialState.hitBoxes = [];
 
     const p = Math.max(1, dpr);
-    const f = dpr >= 2 && cssH >= 96 ? (HF.h12x26 || HF.t8x16) : (HF.t8x16 || HF.h12x26);
-    const fSmall = HF.t8x16 || f;
-    if (!f) return;
+    const mode = socialState.bottomMode || "controller";
+    const isExpanded = mode === "chat" || mode === "terminal";
 
-    // Default opacity 0.60 Hardcore Hairline TUI background + 1px hairline border
-    ctx.fillStyle = "rgba(6, 15, 20, 0.60)";
+    // Pick crisp integer-scaled bitmap font so text is ~11-12px CSS in compact mode and ~13-15px CSS in expanded mode
+    function pickFontSpec(targetCssPx) {
+      const targetDev = targetCssPx * dpr;
+      const cands = [
+        { f: HF.t8x16, s: 1 },
+        { f: HF.t10x20, s: 1 },
+        { f: HF.h12x26, s: 1 },
+        { f: HF.t8x16, s: 2 },
+        { f: HF.t10x20, s: 2 },
+        { f: HF.h12x26, s: 2 },
+        { f: HF.t8x16, s: 3 },
+      ].filter((c) => c.f);
+      let best = cands[0] || { f: HF.t8x16 || HF.h12x26, s: 1 };
+      let bestDiff = 1e9;
+      for (let i = 0; i < cands.length; i++) {
+        const diff = Math.abs(cands[i].f.h * cands[i].s - targetDev);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = cands[i];
+        }
+      }
+      return {
+        f: best.f,
+        s: best.s,
+        w: best.f.w * best.s,
+        h: best.f.h * best.s,
+      };
+    }
+
+    const uiSpec = pickFontSpec(isExpanded ? 13 : 11);
+    const bodySpec = pickFontSpec(isExpanded ? 14 : 11);
+    if (!uiSpec.f) return;
+
+    const drawTxt = (str, x, y, col, spec) => {
+      const sp = spec || uiSpec;
+      return drawBitmapText(ctx, str, x, y, col, sp.f, sp.s, 0);
+    };
+    const measTxt = (str, spec) => {
+      const sp = spec || uiSpec;
+      return measureBitmapText(str, sp.f, sp.s, 0);
+    };
+
+    // Background + 1px hairline border
+    ctx.fillStyle = isExpanded ? "rgba(5, 13, 18, 0.96)" : "rgba(6, 15, 20, 0.72)";
     ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "#2b5864";
+    ctx.strokeStyle = mode === "chat" ? "#ffd43b" : mode === "terminal" ? "#78ead4" : "#2b5864";
     ctx.lineWidth = p;
     ctx.strokeRect(0.5 * p, 0.5 * p, W - p, H - p);
 
-    // Top Header Bar (y = 0 .. hdrH)
-    const hdrH = Math.max(fSmall.h + 6 * p, 20 * p);
-    ctx.fillStyle = "rgba(10, 26, 34, 0.68)";
+    // =========================================================================
+    // ROW 1: 3-MODE FOCUS SWITCHER BAR (`[CTRL]` | `[CHAT]` | `[TERM]`) + CLAUDE AUTH
+    // =========================================================================
+    const hdrCssH = isExpanded ? 30 : 25;
+    const hdrH = hdrCssH * p;
+    ctx.fillStyle = "rgba(10, 26, 34, 0.90)";
     ctx.fillRect(p, p, W - 2 * p, hdrH);
     ctx.fillStyle = "#244a54";
     ctx.fillRect(p, p + hdrH, W - 2 * p, p);
 
-    let curX = 6 * p;
-    const hdrTextY = p + Math.max(1, Math.floor((hdrH - fSmall.h) / 2));
+    const hdrTextY = p + Math.max(1, Math.floor((hdrH - uiSpec.h) / 2));
+    let curX = 4 * p;
 
-    // Status LED
-    ctx.fillStyle = "#58d89c";
-    ctx.fillRect(curX, p + Math.floor((hdrH - 3 * p) / 2), 3 * p, 3 * p);
-    curX += 6 * p;
-
-    // 1. [NAME: <username>] interactive button
-    const nameStr = socialState.editingName
-      ? `[NAME: ${socialState.nameDraft}_]`
-      : `[NAME: ${socialState.username}]`;
-    const nameBtnW = measureBitmapText(nameStr, fSmall, 1, 0) + 8 * p;
-    ctx.fillStyle = socialState.editingName ? "rgba(42, 98, 88, 0.85)" : "rgba(18, 44, 54, 0.75)";
-    ctx.fillRect(curX, 2 * p, nameBtnW, hdrH - 2 * p);
-    ctx.strokeStyle = socialState.editingName ? "#78ead4" : "#366874";
-    ctx.strokeRect(curX + 0.5, 2 * p + 0.5, nameBtnW - 1, hdrH - 2 * p - 1);
-    drawBitmapText(ctx, nameStr, curX + 4 * p, hdrTextY, "#78ead4", fSmall, 1, 0);
-    socialState.hitBoxes.push({ id: "edit_name", x: curX, y: 0, w: nameBtnW, h: hdrH + 2 * p });
-    curX += nameBtnW + 4 * p;
-
-    // 2. Tabs: [#GROUP] [@DM] [DRIFT] + Direct [SIGN IN CLAUDE] button on right of header
     const claudeSignedIn = Boolean(
       window.RealTabComputerBridge &&
         window.RealTabComputerBridge.state &&
         window.RealTabComputerBridge.state.signedInAccount
     );
-    const claudeBtnLbl = claudeSignedIn ? "CLAUDE OK" : "SIGN IN CLAUDE";
-    const claudeBtnW = measureBitmapText(claudeBtnLbl, fSmall, 1, 0) + 8 * p;
+    const claudeBtnLbl = claudeSignedIn ? "CLAUDE OK" : cssW < 390 ? "CLAUDE" : "SIGN IN CLAUDE";
+    const claudeBtnW = measTxt(claudeBtnLbl, uiSpec) + 10 * p;
     const claudeBtnX = W - claudeBtnW - 4 * p;
-    ctx.fillStyle = claudeSignedIn ? "rgba(12, 46, 30, 0.90)" : "rgba(48, 36, 8, 0.92)";
-    ctx.fillRect(claudeBtnX, 2 * p, claudeBtnW, hdrH - 2 * p);
+    ctx.fillStyle = claudeSignedIn ? "rgba(12, 46, 30, 0.92)" : "rgba(52, 38, 8, 0.94)";
+    ctx.fillRect(claudeBtnX, 2 * p, claudeBtnW, hdrH - 3 * p);
     ctx.strokeStyle = claudeSignedIn ? "#69db7c" : "#ffd43b";
-    ctx.strokeRect(claudeBtnX + 0.5, 2 * p + 0.5, claudeBtnW - 1, hdrH - 2 * p - 1);
-    drawBitmapText(ctx, claudeBtnLbl, claudeBtnX + 4 * p, hdrTextY, claudeSignedIn ? "#69db7c" : "#ffd43b", fSmall, 1, 0);
-    socialState.hitBoxes.push({ id: "open_claude_signin", x: claudeBtnX - 2 * p, y: 0, w: claudeBtnW + 6 * p, h: hdrH + 4 * p });
+    ctx.strokeRect(claudeBtnX + 0.5, 2 * p + 0.5, claudeBtnW - 1, hdrH - 3 * p - 1);
+    drawTxt(claudeBtnLbl, claudeBtnX + 5 * p, hdrTextY, claudeSignedIn ? "#69db7c" : "#ffd43b", uiSpec);
+    socialState.hitBoxes.push({
+      id: "open_claude_signin",
+      x: claudeBtnX - 2 * p,
+      y: 0,
+      w: claudeBtnW + 6 * p,
+      h: hdrH + 4 * p,
+    });
+
+    // 3 Mode Switcher Buttons: `[CTRL]` | `[CHAT]` | `[TERM]`
+    const modeBtns = [
+      { id: "controller", label: mode === "controller" ? "● CTRL" : "CTRL", activeCol: "#58d89c", bgAct: "rgba(18, 58, 44, 0.92)" },
+      { id: "chat", label: mode === "chat" ? "● CHAT" : "CHAT ⤢", activeCol: "#ffd43b", bgAct: "rgba(58, 44, 12, 0.92)" },
+      { id: "terminal", label: mode === "terminal" ? "● TERM" : "TERM ⤢", activeCol: "#78ead4", bgAct: "rgba(14, 54, 64, 0.92)" },
+    ];
+    for (let i = 0; i < modeBtns.length; i++) {
+      const mb = modeBtns[i];
+      const isAct = mode === mb.id;
+      const bw = measTxt(mb.label, uiSpec) + 12 * p;
+      ctx.fillStyle = isAct ? mb.bgAct : "rgba(14, 32, 40, 0.82)";
+      ctx.fillRect(curX, 2 * p, bw, hdrH - 3 * p);
+      ctx.strokeStyle = isAct ? mb.activeCol : "#34626e";
+      ctx.strokeRect(curX + 0.5, 2 * p + 0.5, bw - 1, hdrH - 3 * p - 1);
+      drawTxt(mb.label, curX + 6 * p, hdrTextY, isAct ? mb.activeCol : "#b8dcd6", uiSpec);
+      socialState.hitBoxes.push({
+        id: `mode:${mb.id}`,
+        x: curX,
+        y: 0,
+        w: bw,
+        h: hdrH + 3 * p,
+      });
+      curX += bw + 4 * p;
+    }
+
+    // [NAME: <username>] button if space permits in Row 1
+    const nameStr = socialState.editingName
+      ? `NAME:${socialState.nameDraft}_`
+      : `@${socialState.username}`;
+    const nameBtnW = measTxt(nameStr, uiSpec) + 10 * p;
+    if (curX + nameBtnW <= claudeBtnX - 4 * p) {
+      ctx.fillStyle = socialState.editingName ? "rgba(42, 98, 88, 0.88)" : "rgba(18, 44, 54, 0.78)";
+      ctx.fillRect(curX, 2 * p, nameBtnW, hdrH - 3 * p);
+      ctx.strokeStyle = socialState.editingName ? "#78ead4" : "#366874";
+      ctx.strokeRect(curX + 0.5, 2 * p + 0.5, nameBtnW - 1, hdrH - 3 * p - 1);
+      drawTxt(nameStr, curX + 5 * p, hdrTextY, "#78ead4", uiSpec);
+      socialState.hitBoxes.push({ id: "edit_name", x: curX, y: 0, w: nameBtnW, h: hdrH + 2 * p });
+      curX += nameBtnW + 4 * p;
+    }
 
     const roster = getRosterEntries();
     const selPeer = roster.find((r) => r.id === socialState.selectedPeerId) || roster[0];
-    const tabs = [
-      { id: "group", label: "#GROUP" },
-      { id: "dm", label: selPeer ? `@DM:${selPeer.handle.slice(0, 10)}` : "@DM" },
-      { id: "drift", label: `DRIFT[${socialState.activeDriftFork.slice(0, 6)}]` },
-    ];
-    tabs.forEach((tb) => {
-      const active = socialState.activeTab === tb.id;
-      const tw = measureBitmapText(tb.label, fSmall, 1, 0) + 8 * p;
-      if (curX + tw > claudeBtnX - 4 * p) return;
-      ctx.fillStyle = active ? "rgba(34, 82, 92, 0.85)" : "rgba(12, 28, 36, 0.65)";
-      ctx.fillRect(curX, 2 * p, tw, hdrH - 2 * p);
-      ctx.strokeStyle = active ? "#ffd43b" : "#284c56";
-      ctx.strokeRect(curX + 0.5, 2 * p + 0.5, tw - 1, hdrH - 2 * p - 1);
-      drawBitmapText(ctx, tb.label, curX + 4 * p, hdrTextY, active ? "#ffd43b" : "#9ec8c2", fSmall, 1, 0);
-      socialState.hitBoxes.push({ id: `tab:${tb.id}`, x: curX, y: 0, w: tw, h: hdrH + 2 * p });
-      curX += tw + 4 * p;
-    });
 
-    // Body split: Left Roster (Online/Signed-off + <user>.cc.<selfname> Claudes) | Right Chat/Drift Viewport
-    const bodyY = hdrH + 2 * p;
-    const footerH = Math.max(fSmall.h + 6 * p, 19 * p);
-    const bodyH = Math.max(12 * p, H - bodyY - footerH - p);
-    const leftW = Math.min(Math.round(W * 0.43), 240 * p);
-    const rightX = leftW + 2 * p;
-    const rightW = W - rightX - 2 * p;
-
-    // Divider line
-    ctx.fillStyle = "#22444e";
-    ctx.fillRect(leftW, bodyY, p, bodyH);
-
-    // Left Roster: show signed-in Claudes (<username>.cc.<selfname>) + human peers (online & signed-off + drift badge)
-    const rowH = Math.max(fSmall.h + 2 * p, Math.floor(bodyH / Math.min(6, roster.length)));
-    const maxRosterRows = Math.max(1, Math.floor(bodyH / rowH));
-    for (let i = 0; i < Math.min(roster.length, maxRosterRows); i++) {
-      const r = roster[i];
-      const ry = bodyY + i * rowH;
-      const isSel = socialState.selectedPeerId === r.id;
-      if (isSel) {
-        ctx.fillStyle = "rgba(28, 66, 76, 0.62)";
-        ctx.fillRect(2 * p, ry, leftW - 3 * p, rowH);
-      }
-      // Online/offline dot
-      ctx.fillStyle = r.online ? (r.isClaude ? "#78ead4" : "#58d89c") : "#6c8288";
-      ctx.fillRect(5 * p, ry + Math.floor((rowH - 3 * p) / 2), 3 * p, 3 * p);
-
-      const statusBadge = r.isClaude
-        ? `[CC]`
-        : r.online
-        ? (r.driftFork !== "0:main" ? `[${r.driftFork.slice(0, 7)}]` : "[ON]")
-        : `[${r.signedOffAgo || "OFF"}]`;
-      const maxHandleChars = Math.max(8, Math.floor((leftW - 14 * p) / Math.max(6, fSmall.w)) - statusBadge.length - 1);
-      const dispHandle = r.handle.length > maxHandleChars ? r.handle.slice(0, maxHandleChars) : r.handle;
-      const lineStr = `${dispHandle} ${statusBadge}`;
-      drawBitmapText(
-        ctx,
-        lineStr,
-        10 * p,
-        ry + Math.max(0, Math.floor((rowH - fSmall.h) / 2)),
-        r.online ? r.accent || "#d8f4ee" : "#7a9a9e",
-        fSmall,
-        1,
-        0
-      );
-      socialState.hitBoxes.push({
-        id: `peer:${r.id}`,
-        peer: r,
-        x: 2 * p,
-        y: ry,
-        w: leftW - 3 * p,
-        h: rowH,
-      });
-    }
-
-    // Right Pane: #GROUP Chat, @DM Thread, or DRIFT Hot-Reload Inspector
-    const lineH = fSmall.h + 2 * p;
-    const maxLines = Math.max(1, Math.floor((bodyH - 2 * p) / lineH));
-    if (socialState.activeTab === "drift") {
-      const driftPeers = socialState.humanPeers;
-      for (let i = 0; i < Math.min(driftPeers.length, maxLines); i++) {
-        const dp = driftPeers[i];
-        const ly = bodyY + 2 * p + i * lineH;
-        const isCurrent = socialState.activeDriftFork === dp.driftFork;
-        const btnLbl = isCurrent ? "[ACTIVE]" : "[HOT-RELOAD]";
-        const btnW = measureBitmapText(btnLbl, fSmall, 1, 0) + 6 * p;
-        const btnX = W - btnW - 5 * p;
-        const infoStr = `${dp.handle} (${dp.online ? "ON" : dp.signedOffAgo}) ${dp.driftFork}`;
-        drawBitmapText(ctx, infoStr, rightX + 4 * p, ly, dp.accent || "#cde8e2", fSmall, 1, 0);
-
-        ctx.fillStyle = isCurrent ? "rgba(38, 92, 68, 0.82)" : "rgba(44, 72, 84, 0.82)";
-        ctx.fillRect(btnX, ly - p, btnW, fSmall.h + p);
-        ctx.strokeStyle = isCurrent ? "#69db7c" : "#ffd43b";
-        ctx.strokeRect(btnX + 0.5, ly - p + 0.5, btnW - 1, fSmall.h + p - 1);
-        drawBitmapText(ctx, btnLbl, btnX + 3 * p, ly, isCurrent ? "#69db7c" : "#ffd43b", fSmall, 1, 0);
-        socialState.hitBoxes.push({
-          id: "hot_reload_fork",
-          peer: dp,
-          x: btnX,
-          y: ly - p,
-          w: btnW,
-          h: fSmall.h + 2 * p,
-        });
-      }
-    } else {
+    // =========================================================================
+    // MODE 1: COMPACT CONTROLLER MODE (`mode === "controller"`)
+    // =========================================================================
+    if (mode === "controller") {
+      if (mobileBottomInput) mobileBottomInput.style.display = "none";
+      const bodyY = hdrH + 2 * p;
+      const bodyH = Math.max(10 * p, H - bodyY - p);
+      const lineH = uiSpec.h + 2 * p;
+      const maxLines = Math.max(1, Math.floor((bodyH - 2 * p) / lineH));
       const msgs =
         socialState.activeTab === "dm"
           ? socialState.dmThreads[socialState.selectedPeerId] || []
           : socialState.groupMessages;
       const slice = msgs.slice(-maxLines);
-      const maxChars = Math.max(18, Math.floor((rightW - 8 * p) / Math.max(6, fSmall.w)));
+      const maxChars = Math.max(20, Math.floor((W - 14 * p) / Math.max(6, uiSpec.w)));
       for (let i = 0; i < slice.length; i++) {
         const m = slice[i];
         const ly = bodyY + 2 * p + i * lineH;
         const rawLine = `${m.from}: ${m.text}`;
         const clipped = rawLine.length > maxChars ? rawLine.slice(0, maxChars - 1) + "…" : rawLine;
-        drawBitmapText(ctx, clipped, rightX + 4 * p, ly, m.color || "#cde8e2", fSmall, 1, 0);
+        drawTxt(clipped, 6 * p, ly, m.color || "#cde8e2", uiSpec);
       }
+      // Tapping anywhere in the compact message preview expands Chat mode!
+      socialState.hitBoxes.push({
+        id: "mode:chat",
+        x: 0,
+        y: bodyY,
+        w: W,
+        h: bodyH,
+      });
+      return;
     }
 
-    // Bottom Input Bar (y = H - footerH .. H - p)
-    const footY = H - footerH;
-    ctx.fillStyle = socialState.chatInputFocused ? "rgba(14, 38, 48, 0.82)" : "rgba(8, 22, 28, 0.72)";
-    ctx.fillRect(p, footY, W - 2 * p, footerH - p);
-    ctx.fillStyle = "#28505c";
-    ctx.fillRect(p, footY, W - 2 * p, p);
+    // =========================================================================
+    // MODE 2: EXPANDED FULL-BOTTOM CHAT MODE (`mode === "chat"`)
+    // =========================================================================
+    if (mode === "chat") {
+      const subRowCssH = 26;
+      const subRowH = subRowCssH * p;
+      const row2Y = hdrH + p;
 
-    const sendLbl = "[SEND]";
-    const sendW = measureBitmapText(sendLbl, fSmall, 1, 0) + 8 * p;
-    const sendX = W - sendW - 3 * p;
-    const promptPrefix =
-      socialState.activeTab === "dm" && selPeer
-        ? `DM @${selPeer.handle}> `
-        : `${socialState.username}@#GROUP> `;
-    const draftStr = socialState.chatDraft
-      ? `${promptPrefix}${socialState.chatDraft}${socialState.chatInputFocused ? "_" : ""}`
-      : `${promptPrefix}${socialState.chatInputFocused ? "_" : "(click to chat / DM .cc.<selfname> Claudes or peers)"}`;
-    const maxInputChars = Math.max(16, Math.floor((sendX - 8 * p) / Math.max(6, fSmall.w)));
-    const dispInput = draftStr.length > maxInputChars ? draftStr.slice(draftStr.length - maxInputChars) : draftStr;
-    const footTextY = footY + Math.max(1, Math.floor((footerH - fSmall.h) / 2));
-    drawBitmapText(
-      ctx,
-      dispInput,
-      6 * p,
-      footTextY,
-      socialState.chatDraft || socialState.chatInputFocused ? "#e8fffb" : "#6e9ea6",
-      fSmall,
-      1,
-      0
-    );
+      // Row 2: Sub-tabs (`#GROUP` | `@DM:<peer>` | `DRIFT` | `NAME`)
+      ctx.fillStyle = "rgba(8, 20, 26, 0.92)";
+      ctx.fillRect(p, row2Y, W - 2 * p, subRowH);
+      ctx.fillStyle = "#1e3e48";
+      ctx.fillRect(p, row2Y + subRowH, W - 2 * p, p);
 
-    ctx.fillStyle = "rgba(26, 72, 82, 0.85)";
-    ctx.fillRect(sendX, footY + 2 * p, sendW, footerH - 4 * p);
-    ctx.strokeStyle = "#78ead4";
-    ctx.strokeRect(sendX + 0.5, footY + 2 * p + 0.5, sendW - 1, footerH - 4 * p - 1);
-    drawBitmapText(ctx, sendLbl, sendX + 4 * p, footTextY, "#78ead4", fSmall, 1, 0);
+      const tabs = [
+        { id: "group", label: "#GROUP" },
+        { id: "dm", label: selPeer ? `@DM:${selPeer.handle.slice(0, 12)}` : "@DM" },
+        { id: "drift", label: `DRIFT[${socialState.activeDriftFork.slice(0, 6)}]` },
+      ];
+      let tx = 4 * p;
+      const tabTextY = row2Y + Math.max(1, Math.floor((subRowH - uiSpec.h) / 2));
+      for (let i = 0; i < tabs.length; i++) {
+        const tb = tabs[i];
+        const act = socialState.activeTab === tb.id;
+        const tw = measTxt(tb.label, uiSpec) + 12 * p;
+        ctx.fillStyle = act ? "rgba(38, 86, 96, 0.92)" : "rgba(14, 30, 38, 0.78)";
+        ctx.fillRect(tx, row2Y + 2 * p, tw, subRowH - 3 * p);
+        ctx.strokeStyle = act ? "#ffd43b" : "#2c5460";
+        ctx.strokeRect(tx + 0.5, row2Y + 2 * p + 0.5, tw - 1, subRowH - 3 * p - 1);
+        drawTxt(tb.label, tx + 6 * p, tabTextY, act ? "#ffd43b" : "#a8d8d0", uiSpec);
+        socialState.hitBoxes.push({ id: `tab:${tb.id}`, x: tx, y: row2Y, w: tw, h: subRowH });
+        tx += tw + 4 * p;
+      }
 
-    socialState.hitBoxes.push({ id: "focus_chat_input", x: 0, y: footY, w: sendX - 2 * p, h: footerH });
-    socialState.hitBoxes.push({ id: "send_chat", x: sendX, y: footY, w: sendW + 3 * p, h: footerH });
+      // Row 3: Tappable `.cc.<selfname>` Claudes & Peers Strip
+      const row3Y = row2Y + subRowH + p;
+      const chipRowH = 25 * p;
+      ctx.fillStyle = "rgba(6, 16, 22, 0.90)";
+      ctx.fillRect(p, row3Y, W - 2 * p, chipRowH);
+      ctx.fillStyle = "#1c3842";
+      ctx.fillRect(p, row3Y + chipRowH, W - 2 * p, p);
+
+      let cx = 4 * p;
+      const chipTextY = row3Y + Math.max(1, Math.floor((chipRowH - uiSpec.h) / 2));
+      for (let i = 0; i < roster.length; i++) {
+        const r = roster[i];
+        const isSel = socialState.selectedPeerId === r.id && socialState.activeTab === "dm";
+        const shortName = r.isClaude ? `.cc.${r.selfname}` : r.handle;
+        const cw = measTxt(shortName, uiSpec) + 14 * p;
+        if (cx + cw > W - 4 * p) break;
+        ctx.fillStyle = isSel ? "rgba(34, 78, 88, 0.92)" : "rgba(12, 28, 36, 0.80)";
+        ctx.fillRect(cx, row3Y + 2 * p, cw, chipRowH - 3 * p);
+        ctx.strokeStyle = isSel ? "#ffd43b" : r.online ? (r.accent || "#58d89c") : "#344e56";
+        ctx.strokeRect(cx + 0.5, row3Y + 2 * p + 0.5, cw - 1, chipRowH - 3 * p - 1);
+        ctx.fillStyle = r.online ? (r.accent || "#58d89c") : "#6c8288";
+        ctx.fillRect(cx + 4 * p, row3Y + Math.floor((chipRowH - 3 * p) / 2), 3 * p, 3 * p);
+        drawTxt(shortName, cx + 9 * p, chipTextY, r.online ? (r.accent || "#d8f4ee") : "#8aa4a8", uiSpec);
+        socialState.hitBoxes.push({ id: `peer:${r.id}`, peer: r, x: cx, y: row3Y, w: cw, h: chipRowH });
+        cx += cw + 4 * p;
+      }
+
+      // Main Full-Width Chat / DM / Drift Feed
+      const footerCssH = 38;
+      const footerH = footerCssH * p;
+      const feedY = row3Y + chipRowH + 2 * p;
+      const feedH = Math.max(20 * p, H - feedY - footerH - p);
+      const lineH = bodySpec.h + 3 * p;
+      const maxFeedLines = Math.max(1, Math.floor((feedH - 4 * p) / lineH));
+      const maxCols = Math.max(22, Math.floor((W - 16 * p) / Math.max(6, bodySpec.w)));
+
+      if (socialState.activeTab === "drift") {
+        const driftPeers = socialState.humanPeers;
+        const cardH = Math.max(lineH * 2 + 4 * p, Math.floor(feedH / Math.max(1, driftPeers.length)));
+        for (let i = 0; i < driftPeers.length; i++) {
+          const dp = driftPeers[i];
+          const cy = feedY + i * cardH;
+          if (cy + lineH > feedY + feedH) break;
+          const isCurrent = socialState.activeDriftFork === dp.driftFork;
+          const btnLbl = isCurrent ? "ACTIVE" : "HOT-RELOAD";
+          const btnW = measTxt(btnLbl, uiSpec) + 12 * p;
+          const btnX = W - btnW - 6 * p;
+          drawTxt(`${dp.handle} (${dp.online ? "ONLINE" : dp.signedOffAgo}) · ${dp.driftFork}`, 8 * p, cy + 2 * p, dp.accent || "#cde8e2", bodySpec);
+          if (cy + lineH + uiSpec.h <= feedY + feedH) {
+            drawTxt((dp.driftDesc || "").slice(0, maxCols), 8 * p, cy + lineH + 2 * p, "#8ab8b2", uiSpec);
+          }
+          ctx.fillStyle = isCurrent ? "rgba(38, 92, 68, 0.88)" : "rgba(48, 72, 24, 0.88)";
+          ctx.fillRect(btnX, cy + 2 * p, btnW, uiSpec.h + 6 * p);
+          ctx.strokeStyle = isCurrent ? "#69db7c" : "#ffd43b";
+          ctx.strokeRect(btnX + 0.5, cy + 2 * p + 0.5, btnW - 1, uiSpec.h + 6 * p - 1);
+          drawTxt(btnLbl, btnX + 6 * p, cy + 5 * p, isCurrent ? "#69db7c" : "#ffd43b", uiSpec);
+          socialState.hitBoxes.push({
+            id: "hot_reload_fork",
+            peer: dp,
+            x: btnX,
+            y: cy,
+            w: btnW,
+            h: uiSpec.h + 10 * p,
+          });
+        }
+      } else {
+        const msgs =
+          socialState.activeTab === "dm"
+            ? socialState.dmThreads[socialState.selectedPeerId] || []
+            : socialState.groupMessages;
+        const wrappedRows = [];
+        for (let i = 0; i < msgs.length; i++) {
+          const m = msgs[i];
+          const wLines = wrapTextToCols(`${m.from}: ${m.text}`, maxCols);
+          for (let j = 0; j < wLines.length; j++) {
+            wrappedRows.push({ text: wLines[j], color: m.color || "#cde8e2" });
+          }
+        }
+        const visibleRows = wrappedRows.slice(-maxFeedLines);
+        for (let i = 0; i < visibleRows.length; i++) {
+          const row = visibleRows[i];
+          drawTxt(row.text, 8 * p, feedY + 2 * p + i * lineH, row.color, bodySpec);
+        }
+      }
+
+      // Bottom Docked Input Bar (`y = H - footerH .. H`)
+      const footY = H - footerH;
+      ctx.fillStyle = "rgba(8, 22, 28, 0.96)";
+      ctx.fillRect(p, footY, W - 2 * p, footerH - p);
+      ctx.fillStyle = "#2b5864";
+      ctx.fillRect(p, footY, W - 2 * p, p);
+
+      const sendLbl = "SEND ↵";
+      const sendW = measTxt(sendLbl, uiSpec) + 14 * p;
+      const sendX = W - sendW - 4 * p;
+      const promptLbl =
+        socialState.activeTab === "dm" && selPeer
+          ? `@${selPeer.selfname || selPeer.handle.slice(0, 8)}>`
+          : `#GROUP>`;
+      const promptW = measTxt(promptLbl, uiSpec) + 8 * p;
+      const footTextY = footY + Math.max(1, Math.floor((footerH - uiSpec.h) / 2));
+      drawTxt(promptLbl, 6 * p, footTextY, "#ffd43b", uiSpec);
+
+      ctx.fillStyle = "rgba(26, 78, 88, 0.92)";
+      ctx.fillRect(sendX, footY + 4 * p, sendW, footerH - 8 * p);
+      ctx.strokeStyle = "#78ead4";
+      ctx.strokeRect(sendX + 0.5, footY + 4 * p + 0.5, sendW - 1, footerH - 8 * p - 1);
+      drawTxt(sendLbl, sendX + 7 * p, footTextY, "#78ead4", uiSpec);
+      socialState.hitBoxes.push({ id: "send_chat", x: sendX, y: footY, w: sendW + 4 * p, h: footerH });
+
+      if (mobileBottomInput && !isFullscreenMode) {
+        const inLeft = socLeft + Math.round(promptW / dpr) + 4;
+        const inTop = socTop + cssH - footerCssH + 4;
+        const inW = Math.max(80, cssW - Math.round(promptW / dpr) - Math.round(sendW / dpr) - 14);
+        const inH = footerCssH - 8;
+        mobileBottomInput.style.display = "block";
+        mobileBottomInput.style.left = inLeft + "px";
+        mobileBottomInput.style.top = inTop + "px";
+        mobileBottomInput.style.width = inW + "px";
+        mobileBottomInput.style.height = inH + "px";
+        mobileBottomInput.placeholder =
+          socialState.activeTab === "dm" && selPeer
+            ? `Message ${selPeer.handle}...`
+            : `Chat in #GROUP (or @${socialState.username}.cc.rover)...`;
+      }
+      return;
+    }
+
+    // =========================================================================
+    // MODE 3: EXPANDED FULL-BOTTOM TERMINAL MODE (`mode === "terminal"`)
+    // =========================================================================
+    if (mode === "terminal") {
+      const tfApi = window.SlopesTabForms;
+      const tfState = (tfApi && tfApi.state) || {};
+      const forms = (tfApi && Array.isArray(tfApi.tabForms) ? tfApi.tabForms : []).concat(
+        tfState.worldMainframe ? [tfState.worldMainframe] : []
+      );
+      const activeUnit = getActiveBottomTermUnit();
+      const activeId = (activeUnit && activeUnit.id) || tfState.selectedTabId || "TAB-01";
+
+      // Row 2: Embodied Unit / Tab Selector Bar (`TAB-01 .cc.rover` | `TAB-02 .cc.corvus` | `TAB-03 .cc.synth` | `TE-307`)
+      const row2Y = hdrH + p;
+      const tabRowH = 26 * p;
+      ctx.fillStyle = "rgba(8, 20, 26, 0.92)";
+      ctx.fillRect(p, row2Y, W - 2 * p, tabRowH);
+      ctx.fillStyle = "#1e3e48";
+      ctx.fillRect(p, row2Y + tabRowH, W - 2 * p, p);
+
+      let tx = 4 * p;
+      const tabTextY = row2Y + Math.max(1, Math.floor((tabRowH - uiSpec.h) / 2));
+      for (let i = 0; i < forms.length; i++) {
+        const tf = forms[i];
+        const isSel = tf.id === activeId;
+        const lbl = tf.id === "TE-307" ? "TE-307" : `${tf.id} .${tf.selfname || "cc"}`;
+        const tw = measTxt(lbl, uiSpec) + 12 * p;
+        if (tx + tw > W - 4 * p) break;
+        ctx.fillStyle = isSel ? "rgba(22, 68, 78, 0.94)" : "rgba(12, 28, 36, 0.80)";
+        ctx.fillRect(tx, row2Y + 2 * p, tw, tabRowH - 3 * p);
+        ctx.strokeStyle = isSel ? (tf.accentHex || "#78ead4") : "#2c5460";
+        ctx.strokeRect(tx + 0.5, row2Y + 2 * p + 0.5, tw - 1, tabRowH - 3 * p - 1);
+        drawTxt(lbl, tx + 6 * p, tabTextY, isSel ? (tf.accentHex || "#78ead4") : "#9ec8c2", uiSpec);
+        socialState.hitBoxes.push({ id: `term_tab:${tf.id}`, tabId: tf.id, x: tx, y: row2Y, w: tw, h: tabRowH });
+        tx += tw + 4 * p;
+      }
+
+      // Row 3: Quick One-Tap Embodied Actuator Command Chips
+      const row3Y = row2Y + tabRowH + p;
+      const chipRowH = 25 * p;
+      ctx.fillStyle = "rgba(6, 16, 22, 0.90)";
+      ctx.fillRect(p, row3Y, W - 2 * p, chipRowH);
+      ctx.fillStyle = "#1c3842";
+      ctx.fillRect(p, row3Y + chipRowH, W - 2 * p, p);
+
+      const quickCmds = [
+        { lbl: "claude --auto", cmd: "claude --auto" },
+        { lbl: "form", cmd: "body form cycle" },
+        { lbl: "dock/pole", cmd: "body dock toggle" },
+        { lbl: "tentacle", cmd: "tentacle grab human" },
+        { lbl: "status", cmd: "body status" },
+        { lbl: "drift", cmd: "drift fork" },
+      ];
+      let qx = 4 * p;
+      const qTextY = row3Y + Math.max(1, Math.floor((chipRowH - uiSpec.h) / 2));
+      for (let i = 0; i < quickCmds.length; i++) {
+        const qc = quickCmds[i];
+        const qw = measTxt(qc.lbl, uiSpec) + 10 * p;
+        if (qx + qw > W - 4 * p) break;
+        ctx.fillStyle = "rgba(14, 36, 44, 0.86)";
+        ctx.fillRect(qx, row3Y + 2 * p, qw, chipRowH - 3 * p);
+        ctx.strokeStyle = "#2e5e6c";
+        ctx.strokeRect(qx + 0.5, row3Y + 2 * p + 0.5, qw - 1, chipRowH - 3 * p - 1);
+        drawTxt(qc.lbl, qx + 5 * p, qTextY, "#b8ece4", uiSpec);
+        socialState.hitBoxes.push({ id: "term_quick_cmd", cmd: qc.cmd, x: qx, y: row3Y, w: qw, h: chipRowH });
+        qx += qw + 4 * p;
+      }
+
+      // Main Full-Width Live Terminal Output Stream
+      const footerCssH = 38;
+      const footerH = footerCssH * p;
+      const streamY = row3Y + chipRowH + 2 * p;
+      const streamH = Math.max(20 * p, H - streamY - footerH - p);
+      const lineH = bodySpec.h + 2 * p;
+      const maxTermLines = Math.max(1, Math.floor((streamH - 4 * p) / lineH));
+      const maxCols = Math.max(22, Math.floor((W - 16 * p) / Math.max(6, bodySpec.w)));
+
+      const rawLines = (activeUnit && activeUnit.shell && activeUnit.shell.lines) || [
+        `[${activeId}] Hardcore Embodied Shell ready. Type any bash or claude command below.`,
+      ];
+      const wrappedTerm = [];
+      const tailRaw = rawLines.slice(-Math.max(16, maxTermLines * 2));
+      for (let i = 0; i < tailRaw.length; i++) {
+        const raw = tailRaw[i];
+        const clean = stripAnsiSimple(raw);
+        let col = "#d8f4ee";
+        if (raw.includes("\x1b[95m") || clean.startsWith("● Claude")) col = "#e599f7";
+        else if (raw.includes("\x1b[96m") || clean.includes("@tabcomputer")) col = "#78ead4";
+        else if (raw.includes("\x1b[93m") || raw.includes("\x1b[38;2;255;212")) col = "#ffd43b";
+        else if (raw.includes("\x1b[92m")) col = "#69db7c";
+        else if (raw.includes("\x1b[90m") || clean.trim().startsWith("⎿")) col = "#88b4be";
+        const parts = wrapTextToCols(clean, maxCols);
+        for (let j = 0; j < parts.length; j++) {
+          wrappedTerm.push({ text: parts[j], color: col });
+        }
+      }
+      const visTerm = wrappedTerm.slice(-maxTermLines);
+      for (let i = 0; i < visTerm.length; i++) {
+        drawTxt(visTerm[i].text, 8 * p, streamY + 2 * p + i * lineH, visTerm[i].color, bodySpec);
+      }
+
+      // Bottom Docked Terminal Input Bar (`y = H - footerH .. H`)
+      const footY = H - footerH;
+      ctx.fillStyle = "rgba(6, 18, 24, 0.96)";
+      ctx.fillRect(p, footY, W - 2 * p, footerH - p);
+      ctx.fillStyle = (activeUnit && activeUnit.accentHex) || "#78ead4";
+      ctx.fillRect(p, footY, W - 2 * p, p);
+
+      const runLbl = "RUN ↵";
+      const runW = measTxt(runLbl, uiSpec) + 14 * p;
+      const runX = W - runW - 4 * p;
+      const promptLbl = `${activeId.toLowerCase()}$`;
+      const promptW = measTxt(promptLbl, uiSpec) + 8 * p;
+      const footTextY = footY + Math.max(1, Math.floor((footerH - uiSpec.h) / 2));
+      drawTxt(promptLbl, 6 * p, footTextY, (activeUnit && activeUnit.accentHex) || "#78ead4", uiSpec);
+
+      ctx.fillStyle = "rgba(22, 68, 78, 0.92)";
+      ctx.fillRect(runX, footY + 4 * p, runW, footerH - 8 * p);
+      ctx.strokeStyle = "#78ead4";
+      ctx.strokeRect(runX + 0.5, footY + 4 * p + 0.5, runW - 1, footerH - 8 * p - 1);
+      drawTxt(runLbl, runX + 7 * p, footTextY, "#78ead4", uiSpec);
+      socialState.hitBoxes.push({ id: "send_term_cmd", x: runX, y: footY, w: runW + 4 * p, h: footerH });
+
+      if (mobileBottomInput && !isFullscreenMode) {
+        const inLeft = socLeft + Math.round(promptW / dpr) + 4;
+        const inTop = socTop + cssH - footerCssH + 4;
+        const inW = Math.max(80, cssW - Math.round(promptW / dpr) - Math.round(runW / dpr) - 14);
+        const inH = footerCssH - 8;
+        mobileBottomInput.style.display = "block";
+        mobileBottomInput.style.left = inLeft + "px";
+        mobileBottomInput.style.top = inTop + "px";
+        mobileBottomInput.style.width = inW + "px";
+        mobileBottomInput.style.height = inH + "px";
+        mobileBottomInput.placeholder = `Command or Claude prompt for ${activeId}...`;
+      }
+      return;
+    }
+  }
+
+  if (mobileBottomInput) {
+    mobileBottomInput.addEventListener("input", () => {
+      if (socialState.bottomMode === "terminal") {
+        socialState.termInputDraft = mobileBottomInput.value;
+      } else {
+        socialState.chatDraft = mobileBottomInput.value;
+      }
+    });
+    mobileBottomInput.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (socialState.bottomMode === "terminal") {
+          submitBottomTerminalCommand(mobileBottomInput.value);
+        } else {
+          submitSocialChatMessage(mobileBottomInput.value);
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        mobileBottomInput.blur();
+      }
+    });
   }
 
   if (socialCanvas) {
@@ -1466,6 +1858,11 @@ body.fullscreen-mode #social-tui-canvas:hover{
       for (let i = socialState.hitBoxes.length - 1; i >= 0; i--) {
         const hb = socialState.hitBoxes[i];
         if (px >= hb.x && px <= hb.x + hb.w && py >= hb.y && py <= hb.y + hb.h) {
+          if (hb.id.startsWith("mode:")) {
+            const nextMode = hb.id.slice(5);
+            setBottomMode(nextMode);
+            return;
+          }
           if (hb.id === "open_claude_signin") {
             if (
               window.RealTabComputerBridge &&
@@ -1511,30 +1908,43 @@ body.fullscreen-mode #social-tui-canvas:hover{
             renderSocialTuiCanvas();
             return;
           }
+          if (hb.id.startsWith("term_tab:")) {
+            const tabId = hb.tabId || hb.id.slice(9);
+            if (window.SlopesTabForms && window.SlopesTabForms.state) {
+              window.SlopesTabForms.state.selectedTabId = tabId;
+            }
+            renderSocialTuiCanvas();
+            return;
+          }
+          if (hb.id === "term_quick_cmd" && hb.cmd) {
+            submitBottomTerminalCommand(hb.cmd);
+            return;
+          }
+          if (hb.id === "send_term_cmd") {
+            const val = (mobileBottomInput && mobileBottomInput.value) || socialState.termInputDraft || "";
+            submitBottomTerminalCommand(val);
+            return;
+          }
           if (hb.id === "hot_reload_fork" && hb.peer) {
             hotReloadIntoDriftFork(hb.peer);
             return;
           }
           if (hb.id === "focus_chat_input") {
             socialState.editingName = false;
-            if (isTouchMode) {
-              const targetLbl = socialState.activeTab === "dm" ? socialState.selectedPeerId : "#GROUP";
-              const msg = window.prompt(`Send message to ${targetLbl}:`, socialState.chatDraft || "");
-              if (msg !== null && msg.trim()) {
-                submitSocialChatMessage(msg);
-              }
+            if (mobileBottomInput && socialState.bottomMode !== "controller") {
+              mobileBottomInput.focus();
             } else {
-              socialState.chatInputFocused = true;
-              renderSocialTuiCanvas();
+              setBottomMode("chat");
+              if (mobileBottomInput) setTimeout(() => mobileBottomInput.focus(), 20);
             }
             return;
           }
           if (hb.id === "send_chat") {
-            if (socialState.chatDraft.trim()) {
-              submitSocialChatMessage(socialState.chatDraft);
-            } else if (isTouchMode) {
-              const msg = window.prompt("Send message:", "");
-              if (msg !== null && msg.trim()) submitSocialChatMessage(msg);
+            const val = (mobileBottomInput && mobileBottomInput.value) || socialState.chatDraft || "";
+            if (val.trim()) {
+              submitSocialChatMessage(val);
+            } else if (mobileBottomInput) {
+              mobileBottomInput.focus();
             }
             return;
           }
@@ -1593,6 +2003,8 @@ body.fullscreen-mode #social-tui-canvas:hover{
     state: socialState,
     render: renderSocialTuiCanvas,
     setUsername: applyUsernameChange,
+    setBottomMode,
+    getBottomMode: () => socialState.bottomMode,
     hotReloadIntoDriftFork,
     receiveClaudeSocialPost(pkt) {
       if (!pkt || !pkt.text) return;
@@ -1616,13 +2028,18 @@ body.fullscreen-mode #social-tui-canvas:hover{
     },
   };
 
-  // Sync initial owner username into SlopesTabForms once loaded
+  // Sync initial owner username into SlopesTabForms once loaded, and keep expanded bottom Terminal/Chat refreshed
   setTimeout(() => {
     if (window.SlopesTabForms && typeof window.SlopesTabForms.setOwnerUsername === "function") {
       window.SlopesTabForms.setOwnerUsername(socialState.username);
     }
     renderSocialTuiCanvas();
   }, 150);
+  setInterval(() => {
+    if (socialState.bottomMode === "terminal" || socialState.bottomMode === "chat") {
+      renderSocialTuiCanvas();
+    }
+  }, 240);
 
   // --- Teenage Engineering Style Procedural Hardware Pause Deck (#dlg-canvas) ---
   const dlg = document.getElementById("dlg");
@@ -2014,14 +2431,37 @@ body.fullscreen-mode #social-tui-canvas:hover{
     scr.style.width = Math.round(sw) + "px";
     scr.style.height = Math.round(sh) + "px";
 
+    const isExpandedBottom = !isFullscreenMode && (socialState.bottomMode === "chat" || socialState.bottomMode === "terminal");
+
+    if (padL) padL.style.display = isExpandedBottom ? "none" : "block";
+    if (padR) padR.style.display = isExpandedBottom ? "none" : "block";
+    if (shellCanvas) shellCanvas.style.display = (isFullscreenMode || isExpandedBottom) ? "none" : "block";
+
     // Position #social-tui-canvas directly below #screen!
+    // - In `chat` or `terminal` focus mode: expands edge-to-edge (`0..W`) from right below `#screen` (`sy + sh + 2`)
+    //   all the way to the very last pixel of the viewport (`H`) with zero reflow of top header or `#screen`.
+    // - In `controller` mode on portrait (`port`): spans edge-to-edge (`0..W`) between `#screen` and controller pads.
     if (socialCanvas) {
-      const socW = isFullscreenMode ? Math.min(520, W - 24) : Math.round(sw);
-      const socLeft = isFullscreenMode ? Math.round((W - socW) / 2) : Math.round(sx);
-      socialCanvas.style.left = socLeft + "px";
-      socialCanvas.style.top = Math.round(socialTop) + "px";
-      socialCanvas.style.width = socW + "px";
-      socialCanvas.style.height = Math.round(socialH) + "px";
+      if (isExpandedBottom) {
+        const expTop = Math.round(sy + sh + 2);
+        const expH = Math.max(120, H - expTop);
+        socialCanvas.style.left = "0px";
+        socialCanvas.style.top = expTop + "px";
+        socialCanvas.style.width = W + "px";
+        socialCanvas.style.height = expH + "px";
+      } else if (port && !isFullscreenMode) {
+        socialCanvas.style.left = "0px";
+        socialCanvas.style.top = Math.round(sy + sh + 3) + "px";
+        socialCanvas.style.width = W + "px";
+        socialCanvas.style.height = Math.round(socialH) + "px";
+      } else {
+        const socW = isFullscreenMode ? Math.min(520, W - 24) : Math.round(sw);
+        const socLeft = isFullscreenMode ? Math.round((W - socW) / 2) : Math.round(sx);
+        socialCanvas.style.left = socLeft + "px";
+        socialCanvas.style.top = Math.round(socialTop) + "px";
+        socialCanvas.style.width = socW + "px";
+        socialCanvas.style.height = Math.round(socialH) + "px";
+      }
       renderSocialTuiCanvas();
     }
 
@@ -2141,7 +2581,7 @@ body.fullscreen-mode #social-tui-canvas:hover{
     renderMinimapCanvas();
     lastLayout = { W, H, port, lCx, rCx, cy, R, btn };
     drawBackdrop(W, H);
-    if (!isFullscreenMode) drawShell(lastLayout);
+    if (!isFullscreenMode && !isExpandedBottom) drawShell(lastLayout);
     renderAllButtons();
     renderHudBar();
     renderOsd();
@@ -2172,6 +2612,11 @@ body.fullscreen-mode #social-tui-canvas:hover{
     }
 
     if (window.SlopesAudio) window.SlopesAudio.unlock();
+
+    if (k === "tabform" && lastLayout && lastLayout.port && !isFullscreenMode) {
+      setBottomMode(socialState.bottomMode === "terminal" ? "controller" : "terminal");
+      return;
+    }
 
     if (k === "dat") {
       if (window.SlopesDatPuter && typeof window.SlopesDatPuter.toggle === "function") {

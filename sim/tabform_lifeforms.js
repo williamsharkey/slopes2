@@ -10567,8 +10567,15 @@
 
     // 1a-2. Render Compact 1:1 Device-Pixel Labels & Chat Bubbles for Other Monoliths in the Shared World,
     //       plus the Player's own Chat Bubble & Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`)!
+    const zs = global.SlopesLorePortalDock && global.SlopesLorePortalDock.zoomState;
+    const rawZ = zs && typeof zs.depth === "number" ? Math.abs(zs.depth) : 0;
+    const zMod = ((rawZ % 5) + 5) % 5;
+    const unzoomedLabelAlpha = zMod < 0.35 ? Math.max(0, 1 - zMod / 0.35) : zMod > 4.65 ? Math.min(1, (zMod - 4.65) / 0.35) : 0;
+
     const mesh = ensureSharedMonolithMesh(state.lastWorldContext);
-    if (mesh && Array.isArray(mesh.peers)) {
+    if (unzoomedLabelAlpha > 0.02 && mesh && Array.isArray(mesh.peers)) {
+      ctx.save();
+      ctx.globalAlpha = unzoomedLabelAlpha;
       for (let pi = 0; pi < mesh.peers.length; pi++) {
         const peer = mesh.peers[pi];
         if (peer.roomX !== curSx0 || !peer._nativeRect) continue;
@@ -10596,6 +10603,7 @@
           R.drawCanvasText(ctx, chatStr, cx0 + 5, cy0 + 1, peer.highlightHex, fontKey, 1, 0);
         }
       }
+      ctx.restore();
     }
 
     // Render Player's own overhead chat bubble when they just sent a message

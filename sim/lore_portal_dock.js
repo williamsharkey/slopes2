@@ -1239,8 +1239,11 @@
     const p757 = Math.sin((tick * TAU) / 757);   // Warm terracotta-hearth ember cycle
     const p1103 = Math.sin((tick * TAU) / 1103); // Deep violet-mauve harmonic cycle
 
-    // Copy the unzoomed macro frame into scratchCanvas
-    scratchCtx.clearRect(0, 0, NATIVE_W, NATIVE_H);
+    // Copy the unzoomed macro frame into scratchCanvas WITH opaque sky background!
+    // (`mainCanvas` has alpha=0 sky pixels because the sky color comes from CSS background-color;
+    // filling `rgb(bgR, bgG, bgB)` first prevents transparent sky holes from showing gear-room moiré!)
+    scratchCtx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`;
+    scratchCtx.fillRect(0, 0, NATIVE_W, NATIVE_H);
     scratchCtx.drawImage(mainCanvas, 0, 0);
 
     // Exact homothety anchoring the 2x1 Gear-Room slot `[slotX..slotX+2, slotY..slotY+1]` to `[0..NATIVE_W, 0..NATIVE_H]`:
@@ -2554,48 +2557,193 @@
       // C. MULTIPLE MODIFIED / FLIPPED / PIXEL-AVERAGED RECURSIVE COPIES OF THE
       //    WORLD INSIDE DIFFERENT SECTIONS OF THE MONOLITH!
       // -----------------------------------------------------------------------
+      // Helper to draw a crisp miniature world into any slot (combining area-averaged
+      // `snapCanvas` downsampling with a 1-device-pixel miniature terrain/town/monolith pass
+      // so tiny slots show the actual recognizable world instead of dither-aliasing moiré!)
+      const renderMiniatureWorldIntoRect = (box, flipX, flipY, miniAlpha) => {
+        if (box.w < 2 || box.h < 1) return;
+        mainCtx.save();
+        mainCtx.beginPath();
+        mainCtx.rect(box.x, box.y, box.w, box.h);
+        mainCtx.clip();
+
+        // 1. Base live `snapCanvas` with high-quality area averaging when downscaled
+        mainCtx.save();
+        mainCtx.imageSmoothingEnabled = box.w < NATIVE_W * 0.65;
+        if (mainCtx.imageSmoothingEnabled) mainCtx.imageSmoothingQuality = "high";
+        if (flipX || flipY) {
+          mainCtx.translate(box.x + (flipX ? box.w : 0), box.y + (flipY ? box.h : 0));
+          mainCtx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+          mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, box.w, box.h);
+        } else {
+          mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, box.x, box.y, box.w, box.h);
+        }
+        mainCtx.restore();
+
+        // 2. Direct 1-device-pixel miniature world synthesis when the slot is tiny/mid-sized (`miniAlpha > 0.01`)
+        //    so the actual sky, ocean, mountain ridge, slope contour, towns, castles, trees & tiny Monolith
+        //    are 100% sharp and unmistakable at every small scale!
+        if (miniAlpha > 0.01 && blocks) {
+          mainCtx.save();
+          mainCtx.globalAlpha = miniAlpha;
+          if (flipX || flipY) {
+            mainCtx.translate(box.x + (flipX ? box.w : 0), box.y + (flipY ? box.h : 0));
+            mainCtx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+          }
+          const ox = flipX || flipY ? 0 : box.x;
+          const oy = flipX || flipY ? 0 : box.y;
+          const bw = box.w;
+          const bh = box.h;
+
+          // Sky gradient fill
+          mainCtx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`;
+          mainCtx.fillRect(ox, oy, bw, bh);
+          if (bh >= 6) {
+            mainCtx.fillStyle = `rgba(255, 248, 220, 0.14)`;
+            mainCtx.fillRect(ox, oy, bw, Math.max(1, Math.round(bh * 0.28)));
+          }
+
+          // Distant mountain silhouette
+          if (bh >= 8) {
+            mainCtx.fillStyle = `rgb(${Math.max(12, Math.round(bgR * 0.58))}, ${Math.max(20, Math.round(bgG * 0.64))}, ${Math.max(28, Math.round(bgB * 0.72))})`;
+            for (let dx = 0; dx < bw; dx++) {
+              const u = dx / Math.max(1, bw);
+              const mH = 0.34 + 0.14 * Math.sin(u * 9.0 + 0.7) + 0.07 * Math.cos(u * 21.0);
+              const my = oy + Math.round(mH * bh);
+              mainCtx.fillRect(ox + dx, my, 1, Math.max(1, oy + bh - my));
+            }
+          }
+
+          // Sea level water band
+          const seaY = oy + Math.round(((COARSE_H - seaLevel) / COARSE_H) * bh);
+          if (seaY < oy + bh) {
+            mainCtx.fillStyle = "rgb(26, 98, 128)";
+            mainCtx.fillRect(ox, Math.max(oy, seaY), bw, oy + bh - Math.max(oy, seaY));
+            mainCtx.fillStyle = "rgb(118, 224, 238)";
+            mainCtx.fillRect(ox, Math.max(oy, seaY), bw, 1);
+          }
+
+          // Crisp 1px terrain slope columns from live `world.Blocks`
+          for (let dx = 0; dx < bw; dx++) {
+            const coarseF = (dx / Math.max(1, bw)) * (COARSE_W - 1);
+            const c0 = Math.floor(coarseF);
+            const c1 = Math.min(COARSE_W - 1, c0 + 1);
+            const f = coarseF - c0;
+            const elev = (blocks[c0] || 0) * (1 - f) + (blocks[c1] || 0) * f;
+            const ty = oy + Math.max(0, Math.min(bh - 1, Math.round(((COARSE_H - elev) / COARSE_H) * bh)));
+            const colH = oy + bh - ty;
+            if (colH > 0) {
+              // Sub-surface rock/earth body
+              mainCtx.fillStyle = "rgb(34, 62, 58)";
+              mainCtx.fillRect(ox + dx, ty, 1, colH);
+              if (colH > 3) {
+                mainCtx.fillStyle = "rgb(22, 42, 44)";
+                mainCtx.fillRect(ox + dx, ty + Math.max(1, Math.round(bh * 0.08)), 1, colH);
+              }
+              // Bright emerald/sage surface grass crest (1-2px)
+              mainCtx.fillStyle = elev > seaLevel + 1 ? "rgb(102, 214, 152)" : "rgb(218, 194, 118)";
+              mainCtx.fillRect(ox + dx, ty, 1, Math.max(1, Math.min(2, Math.round(bh / 36))));
+            }
+          }
+
+          // Miniature Towns, Castles, Crystals & Trees on the slope
+          if (bw >= 12 && bh >= 6) {
+            if (Array.isArray(world.Towns)) {
+              for (let i = 0; i < world.Towns.length; i++) {
+                const t = world.Towns[i];
+                const tx = ox + Math.round((t.x / COARSE_W) * bw);
+                const tElev = blocks[Math.max(0, Math.min(COARSE_W - 1, Math.round(t.x)))] || seaLevel;
+                const ty = oy + Math.round(((COARSE_H - tElev) / COARSE_H) * bh);
+                const tw = Math.max(2, Math.round((bw * 4) / COARSE_W));
+                const th = Math.max(2, Math.round((bh * 4) / COARSE_H));
+                mainCtx.fillStyle = "#d97348";
+                mainCtx.fillRect(tx - (tw >> 1), ty - th, tw, th);
+                mainCtx.fillStyle = "#ffe066";
+                mainCtx.fillRect(tx, ty - Math.max(1, th - 1), 1, 1);
+              }
+            }
+            if (Array.isArray(world.Castles)) {
+              for (let i = 0; i < world.Castles.length; i++) {
+                const c = world.Castles[i];
+                const cx = ox + Math.round((c.x / COARSE_W) * bw);
+                const cElev = blocks[Math.max(0, Math.min(COARSE_W - 1, Math.round(c.x)))] || seaLevel;
+                const cy = oy + Math.round(((COARSE_H - cElev) / COARSE_H) * bh);
+                const cw = Math.max(2, Math.round((bw * 5) / COARSE_W));
+                const ch = Math.max(3, Math.round((bh * 7) / COARSE_H));
+                mainCtx.fillStyle = "#8fa6b2";
+                mainCtx.fillRect(cx - (cw >> 1), cy - ch, cw, ch);
+              }
+            }
+            if (Array.isArray(world.Crystals)) {
+              mainCtx.fillStyle = "#66f2ff";
+              for (let i = 0; i < world.Crystals.length; i++) {
+                const cr = world.Crystals[i];
+                const cx = ox + Math.round((cr.x / COARSE_W) * bw);
+                const cElev = blocks[Math.max(0, Math.min(COARSE_W - 1, Math.round(cr.x)))] || seaLevel;
+                const cy = oy + Math.round(((COARSE_H - cElev) / COARSE_H) * bh);
+                mainCtx.fillRect(cx, cy - Math.max(1, Math.round((bh * 2) / COARSE_H)), 1, Math.max(1, Math.round((bh * 2) / COARSE_H)));
+              }
+            }
+          }
+
+          // Miniature Tab-Form Ships in the sky
+          const tfSys = global.SlopesTabForms && Array.isArray(global.SlopesTabForms.tabForms) ? global.SlopesTabForms.tabForms : null;
+          if (tfSys && bw >= 16) {
+            for (let i = 0; i < tfSys.length; i++) {
+              const tf = tfSys[i];
+              const tx = ox + Math.round(((tf.x || 40) / COARSE_W) * bw);
+              const ty = oy + Math.round(((COARSE_H - (tf.y || 30)) / COARSE_H) * bh);
+              const tw = Math.max(2, Math.round((bw * 6) / COARSE_W));
+              const th = Math.max(1, Math.round((bh * 3) / COARSE_H));
+              mainCtx.fillStyle = tf.accentHex || "#78ead4";
+              mainCtx.fillRect(tx - (tw >> 1), ty - th, tw, th);
+            }
+          }
+
+          // Miniature Player Monolith (`TACHIMA-307`) + its nested 2x1 glowing gear-room slot!
+          const mX = ox + Math.round((X0 / NATIVE_W) * bw);
+          const mY = oy + Math.round((Y0 / NATIVE_H) * bh);
+          const mW = Math.max(1, Math.round((11 / NATIVE_W) * bw));
+          const mH = Math.max(2, Math.round((42 / NATIVE_H) * bh));
+          mainCtx.fillStyle = "#1c262e";
+          mainCtx.fillRect(mX, mY, mW, mH);
+          mainCtx.fillStyle = "#78ead4";
+          mainCtx.fillRect(mX, mY, 1, mH);
+          if (mW >= 3 && mH >= 5) {
+            const innerSlotX = ox + Math.round(((X0 + 4) / NATIVE_W) * bw);
+            const innerSlotY = oy + Math.round(((Y0 + 18) / NATIVE_H) * bh);
+            mainCtx.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`;
+            mainCtx.fillRect(innerSlotX, innerSlotY, Math.max(1, Math.round((2 / NATIVE_W) * bw)), Math.max(1, Math.round((1 / NATIVE_H) * bh)));
+          }
+          mainCtx.restore();
+        }
+
+        mainCtx.restore();
+      };
+
       // 1. Head Visor Optic Slot (`dx = 3..7, dy = 4..5`): Horizontally flipped (mirror) + cyan-phosphor filtered world
-      //    with a 1px transparent moiré scanline screen and scanning optic bar!
       const visorSlot = rectZ(3, 4, 4, 1);
       if (visorSlot.w >= 4 && visorSlot.h >= 2 && visorSlot.x + visorSlot.w > 0 && visorSlot.x < NATIVE_W) {
-        mainCtx.save();
-        mainCtx.translate(visorSlot.x + visorSlot.w, visorSlot.y);
-        mainCtx.scale(-1, 1);
-        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, visorSlot.w, visorSlot.h);
-        mainCtx.restore();
-        mainCtx.fillStyle = "rgba(45, 225, 245, 0.34)";
+        renderMiniatureWorldIntoRect(visorSlot, true, false, 0.85);
+        mainCtx.fillStyle = "rgba(45, 225, 245, 0.22)";
         mainCtx.fillRect(visorSlot.x, visorSlot.y, visorSlot.w, visorSlot.h);
-        fillMoireScreenRect(visorSlot.x, visorSlot.y, visorSlot.w, visorSlot.h, "rgba(185, 252, 255, 0.25)", null, 0.32, 0.9);
       }
 
       // 2. Upper-Left & Upper-Right Gear-Room Escapement Windows (`dx = 2..4, dy = 13..14` and `dx = 6..8, dy = 13..14`):
-      //    Left: Vertically flipped (upside-down) + warm amber-brass prime-cycled filter
-      //    Right: Horizontally & vertically inverted + emerald-aether prime-cycled filter
       const auxLeft = rectZ(2, 13, 2, 1);
       if (auxLeft.w >= 3 && auxLeft.h >= 2) {
-        mainCtx.save();
-        mainCtx.translate(auxLeft.x, auxLeft.y + auxLeft.h);
-        mainCtx.scale(1, -1);
-        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, auxLeft.w, auxLeft.h);
-        mainCtx.restore();
-        mainCtx.fillStyle = "rgba(245, 190, 65, 0.34)";
+        renderMiniatureWorldIntoRect(auxLeft, false, true, 0.85);
+        mainCtx.fillStyle = "rgba(245, 190, 65, 0.24)";
         mainCtx.fillRect(auxLeft.x, auxLeft.y, auxLeft.w, auxLeft.h);
       }
       const auxRight = rectZ(6, 13, 2, 1);
       if (auxRight.w >= 3 && auxRight.h >= 2) {
-        mainCtx.save();
-        mainCtx.translate(auxRight.x + auxRight.w, auxRight.y + auxRight.h);
-        mainCtx.scale(-1, -1);
-        mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, auxRight.w, auxRight.h);
-        mainCtx.restore();
-        mainCtx.fillStyle = "rgba(105, 245, 185, 0.32)";
+        renderMiniatureWorldIntoRect(auxRight, true, true, 0.85);
+        mainCtx.fillStyle = "rgba(105, 245, 185, 0.22)";
         mainCtx.fillRect(auxRight.x, auxRight.y, auxRight.w, auxRight.h);
       }
 
       // 3. Lower Torso & Chassis Pixel-Averaged Recursive World Mosaic (`dy = 25..37, dx = 2..8`):
-      //    Each 2x1 cell replaces a Monolith pixel with a miniature copy of the world tinted by the EXACT RGB
-      //    of the Monolith pixel it replaces (sampled from `snapRaw`), so from afar it forms the Monolith's
-      //    circuitry/chassis and as you zoom in it reveals miniature recursive worlds!
       if (mag >= 2.2 && mag <= 110) {
         for (let my = 25; my <= 37; my += 2) {
           for (let mx = 2; mx <= 7; mx += 2) {
@@ -2603,7 +2751,6 @@
             if (cell.w < 3 || cell.h < 2) continue;
             if (cell.x + cell.w < 0 || cell.x >= NATIVE_W || cell.y + cell.h < 0 || cell.y >= NATIVE_H) continue;
 
-            // Sample exact RGB of the Monolith pixel being replaced from `snapRaw`
             let pR = 38, pG = 68, pB = 78;
             if (snapRaw) {
               const sxSample = Math.max(0, Math.min(NATIVE_W - 1, Math.round(X0 + mx)));
@@ -2614,21 +2761,9 @@
               pB = snapRaw[sOff + 2];
             }
 
-            mainCtx.save();
             const mode = (mx + my) % 6;
-            if (mode === 0) {
-              mainCtx.translate(cell.x + cell.w, cell.y);
-              mainCtx.scale(-1, 1);
-              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, cell.w, cell.h);
-            } else if (mode === 2) {
-              mainCtx.translate(cell.x, cell.y + cell.h);
-              mainCtx.scale(1, -1);
-              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, 0, 0, cell.w, cell.h);
-            } else {
-              mainCtx.drawImage(zoomState.snapCanvas, 0, 0, NATIVE_W, NATIVE_H, cell.x, cell.y, cell.w, cell.h);
-            }
-            mainCtx.restore();
-            mainCtx.fillStyle = `rgba(${pR}, ${pG}, ${pB}, 0.48)`;
+            renderMiniatureWorldIntoRect(cell, mode === 0, mode === 2, 0.80);
+            mainCtx.fillStyle = `rgba(${pR}, ${pG}, ${pB}, 0.42)`;
             mainCtx.fillRect(cell.x, cell.y, cell.w, cell.h);
           }
         }
@@ -2638,10 +2773,10 @@
       // D. PRIMARY 2x1 GEAR-ROOM MECHANISM SLOT (`dx = 4..6, dy = 18..19` —
       //    Exact 2 Pixels Across by 1 Pixel High inside the Monolith Gear Room!):
       //    - Locked to the exact 2x1 slot (`rectZ(4, 18, 2, 1)`) at ALL zoom levels!
-      //    - Under our exact homothety (`magX = 504^(zMod/5)`, `magY = 630^(zMod/5)`),
-      //      `rectZ(4, 18, 2, 1)` expands continuously into `(0, 0, 1008, 630)` as `zMod -> 5.0`!
-      //    - When zooming into the final frame (`4 -> 5 ≡ 0`), you zoom straight INTO this
-      //      new screen until it fills the viewport and you are already back where you started!
+      //    - Shows the ACTUAL LIVE WORLD at miniature size (sky, mountain ridge, ocean,
+      //      terrain slope, towns, castles, ships, and nested Monolith) with ZERO moiré
+      //      static over it, and smoothly resolves to 100% 1:1 `snapCanvas` across
+      //      `(0, 0, 1008, 630)` as `zMod -> 5.0`!
       // -----------------------------------------------------------------------
       if (zMod < 0.30) {
         // Smooth C0 cross-fade across the 0/5 origin seam so starting to zoom in (0 -> 1)
@@ -2654,34 +2789,12 @@
 
       const primarySlot = rectZ(4, 18, 2, 1);
       if (primarySlot.w >= 2 && primarySlot.h >= 1) {
-        mainCtx.drawImage(
-          zoomState.snapCanvas,
-          0,
-          0,
-          NATIVE_W,
-          NATIVE_H,
-          primarySlot.x,
-          primarySlot.y,
-          primarySlot.w,
-          primarySlot.h
-        );
-
-        // When the 2x1 slot is mid-sized (`primarySlot.w >= 24 && zMod < 3.6`), overlay subtle 1:1 device-pixel
-        // moiré dither shimmer inside the slot that fades to 0 before the final zoom-in (`zMod: 4 -> 5`)
-        // so the new screen is 100% pure 1:1 world as you arrive back at origin!
-        const moireFade = Math.max(0, Math.min(1, (3.6 - zMod) / 0.8));
-        if (primarySlot.w >= 24 && moireFade > 0.01) {
-          fillMoireScreenRect(
-            primarySlot.x,
-            primarySlot.y,
-            primarySlot.w,
-            primarySlot.h,
-            "rgba(168, 232, 228, 0.10)",
-            null,
-            0.22 * moireFade,
-            0.65
-          );
-        }
+        // At small/medium sizes (`zMod < 4.35`), blend the crisp 1-device-pixel miniature world
+        // synthesis (`miniAlpha`) with the area-averaged `snapCanvas` so the miniature world is
+        // crystal-clear and unmistakable, decaying to 0 by `zMod = 4.35` so `zMod: 4.35 -> 5.0`
+        // is 100% exact 1:1 `snapCanvas`!
+        const miniAlpha = Math.max(0, Math.min(0.88, ((4.35 - zMod) / 1.1) * 0.88));
+        renderMiniatureWorldIntoRect(primarySlot, false, false, miniAlpha);
       }
     }
 
