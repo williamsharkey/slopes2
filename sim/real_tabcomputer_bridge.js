@@ -322,7 +322,7 @@
           "opacity:0",
           "pointer-events:none",
         ].join(";");
-        iframe.src = "./tabcomputer/index.html?profile=tabcomputer&ui=terminal&v=1037_3";
+        iframe.src = "./tabcomputer/index.html?profile=tabcomputer&ui=terminal&v=1038_1";
         screenDiv.appendChild(iframe);
       }
       bridgeState.iframe = iframe;
@@ -374,33 +374,38 @@
   // ==========================================================================
   // 3. WIRE REAL TABCOMPUTER FILESYSTEM, `body`/`tabctl` COMMANDS & XTERM BUFFER
   // ==========================================================================
-  async function resolveBestClaudeCommand(tc, cw, extraArgs) {
+  async function resolveBestClaudeCommand(tc, _cw, extraArgs) {
     const suffix = extraArgs ? " " + extraArgs.trim() : "";
     try {
-      if (tc && tc.fs) {
-        const st = await tc.fs.stat("/var/lib/tabcomputer/claude-vm.json").catch(() => null);
-        if (st && st.size > 0) {
-          delete tc.shell.env["CLAUDE_NATIVE"];
-          return "claude" + suffix;
-        }
+      if (tc && tc.shell && tc.shell.env) {
+        delete tc.shell.env["CLAUDE_NATIVE"];
       }
     } catch (_) {}
-    // While background preinstall of claude-vm is still running (or on first boot),
-    // launch `claude --npm` immediately (~2s startup, no 55MB download wait), and `claude.ts`
-    // automatically adds `--dangerously-skip-permissions` once.
-    return "claude --npm" + suffix;
+    // Build 1038: plain `claude` runs preinstalled fast-startup `claude --vm` (Claude Code 2.1.316):
+    // - Single-pass `modules.js` + `modules.json` worker layout (~5s cold over 16MB compressed `?range=`)
+    // - `CacheStorage` (`tabcomputer-claude-vm`) + lazy module compilation (~1.1s first start, ~0.3s warm)
+    // - Shares any in-progress boot `making` layout promise automatically.
+    return "claude" + suffix;
   }
 
   async function prewarmTabComputerClaude(tc, cw) {
     if (!tc || !tc.fs || bridgeState._claudePrewarmStarted) return;
     bridgeState._claudePrewarmStarted = true;
     try {
-      const live = cw && cw.__tabcomputerLive && typeof cw.__tabcomputerLive.get === "function" ? cw.__tabcomputerLive : null;
-      const claudeMod = live ? live.get("src/commands/claude.ts") : null;
+      const liveImport =
+        cw && typeof cw.__tabcomputerLiveImport === "function"
+          ? cw.__tabcomputerLiveImport.bind(cw)
+          : (key) =>
+              Promise.resolve(
+                cw && cw.__tabcomputerLive && typeof cw.__tabcomputerLive.get === "function"
+                  ? cw.__tabcomputerLive.get(key)
+                  : null
+              );
+      const claudeMod = await liveImport("src/commands/claude.ts").catch(() => null);
       if (claudeMod && typeof claudeMod.ensureCaBundle === "function") {
-        await claudeMod.ensureCaBundle(tc.fs, () => {}).catch(() => {});
+        void claudeMod.ensureCaBundle(tc.fs, () => {}).catch(() => {});
       }
-      const preinstallMod = live ? live.get("src/claude-vm/preinstall.ts") : null;
+      const preinstallMod = await liveImport("src/claude-vm/preinstall.ts").catch(() => null);
       if (preinstallMod && typeof preinstallMod.preinstallClaudeVmInBackground === "function") {
         const home = (tc.shell && tc.shell.env && tc.shell.env["HOME"]) || "/home/user";
         const nativePath = claudeMod && typeof claudeMod.nativeClaudePath === "function"
@@ -3332,7 +3337,7 @@
       } else {
         sendCommandToRealTabComputer(
           tId,
-          'claude --npm --dangerously-skip-permissions -p "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."'
+          'claude -p "Confirm in 1 short sentence that you are real Claude Code running inside TabComputer in Slopes 2, and run `body status`."'
         );
       }
       setTimeout(syncXtermBufferToTabForms, 250);

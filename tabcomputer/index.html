@@ -163,7 +163,67 @@
     .become-active #terminal,
     .become-active #shiro-vkeys { display: none !important; }
   </style>
-  <script type="module">import "./assets/index-C6zxlZK5.js";</script>
+  <script>
+  (function(g) {
+    try {
+      if (g.parent && g.parent !== g && g.HTMLElement && g.HTMLElement.prototype && !g.HTMLElement.prototype.__slopesNoFocusSteal) {
+        g.HTMLElement.prototype.__slopesNoFocusSteal = true;
+        g.HTMLElement.prototype.focus = function() {};
+      }
+    } catch (_) {}
+    if (!g || typeof g.fetch !== "function" || g.__slopesApiFetchWrapped) return;
+    g.__slopesApiFetchWrapped = true;
+    var origFetch = g.fetch.bind(g);
+    function getBaseDir() {
+      try {
+        var p = (g.location && g.location.pathname) || "/";
+        var tcIdx = p.indexOf("/tabcomputer/");
+        if (tcIdx >= 0) return p.slice(0, tcIdx) || "";
+        if (p.indexOf("/slopes2/") >= 0 || /\/slopes2$/.test(p)) return "/slopes2";
+        return "";
+      } catch (_) {
+        return "/slopes2";
+      }
+    }
+    function rewriteUrl(rawUrl) {
+      if (typeof rawUrl !== "string") return rawUrl;
+      var baseDir = getBaseDir();
+      var relClaude = rawUrl.match(/^\/claude-releases(\/.*|$)/);
+      if (relClaude) return (baseDir || "") + "/claude-releases" + (relClaude[1] || "");
+      var hostClaude = rawUrl.match(/^https?:\/\/[^/]+\/claude-releases(\/.*|$)/i);
+      if (hostClaude && rawUrl.indexOf("https://tabcomputer.com/") !== 0) {
+        return (baseDir || "") + "/claude-releases" + (hostClaude[1] || "");
+      }
+      var relAsset = rawUrl.match(/^\/(pkg|engines|debian|fonts|browse|java|vm-sw\.js|preview-sw\.js)(\/.*|$)/);
+      if (relAsset) return (baseDir || "") + "/tabcomputer/" + relAsset[1] + (relAsset[2] || "");
+      var hostAsset = rawUrl.match(/^https?:\/\/[^/]+\/(pkg|engines|debian|fonts|browse|java|vm-sw\.js|preview-sw\.js)(\/.*|$)/i);
+      if (hostAsset && rawUrl.indexOf("https://tabcomputer.com/") !== 0) {
+        return (baseDir || "") + "/tabcomputer/" + hostAsset[1] + (hostAsset[2] || "");
+      }
+      var relApi = rawUrl.match(/^(?:\/slopes2)?\/api\/(github-login|github|platform|anthropic|mcp-proxy|gemini)(\/.*|$)/i);
+      if (relApi) return "https://tabcomputer.com/api/" + relApi[1] + (relApi[2] || "");
+      var hostApi = rawUrl.match(/^https?:\/\/[^/]+(?:\/slopes2)?\/api\/(github-login|github|platform|anthropic|mcp-proxy|gemini)(\/.*|$)/i);
+      if (hostApi && rawUrl.indexOf("https://tabcomputer.com/") !== 0) {
+        return "https://tabcomputer.com/api/" + hostApi[1] + (hostApi[2] || "");
+      }
+      return rawUrl;
+    }
+    g.fetch = function(input, init) {
+      try {
+        if (typeof input === "string") {
+          input = rewriteUrl(input);
+        } else if (input && typeof input === "object" && typeof input.url === "string") {
+          var rw = rewriteUrl(input.url);
+          if (rw !== input.url && typeof g.Request === "function") {
+            input = new g.Request(rw, input);
+          }
+        }
+      } catch (_) {}
+      return origFetch(input, init);
+    };
+  })(typeof window !== "undefined" ? window : globalThis);
+  </script>
+  <script type="module">import "./assets/index-3dop0BuN.js";</script>
   <style>/**
  * Copyright (c) 2014 The xterm.js authors. All rights reserved.
  * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
