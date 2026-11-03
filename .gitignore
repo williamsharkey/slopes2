@@ -4,3 +4,7 @@ node_modules/
 .env
 .env.*
 claude-releases/
+sim/evolve_automata
+sim/sim_civilization
+sim/wasm_sim_native
+

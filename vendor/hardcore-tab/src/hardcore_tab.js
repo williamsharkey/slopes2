@@ -254,6 +254,22 @@
     return segRgb;
   }
 
+  function xterm256ToRgb(n) {
+    const idx = Math.max(0, Math.min(255, n | 0));
+    if (idx < 8) return (HARDCORE_ANSI_COLORS[30 + idx] || HARDCORE_ANSI_COLORS[37]).rgb;
+    if (idx < 16) return (HARDCORE_ANSI_COLORS[90 + (idx - 8)] || HARDCORE_ANSI_COLORS[97]).rgb;
+    if (idx >= 232) {
+      const v = 8 + (idx - 232) * 10;
+      return [v, v, v];
+    }
+    const cube = idx - 16;
+    const r = Math.floor(cube / 36);
+    const g = Math.floor((cube % 36) / 6);
+    const b = cube % 6;
+    const step = (c) => (c === 0 ? 0 : 55 + c * 40);
+    return [step(r), step(g), step(b)];
+  }
+
   function stripAnsi(str) {
     if (!str) return "";
     return String(str).replace(/\x1b\[[0-9;]*m/g, "");
@@ -297,6 +313,14 @@
         } else if (c === 22) {
           bold = false;
           dim = false;
+        } else if (c === 38 && codes[i + 1] === 2 && i + 4 < codes.length) {
+          rgb = [codes[i + 2], codes[i + 3], codes[i + 4]];
+          fg = rgbToHex(rgb);
+          i += 4;
+        } else if (c === 38 && codes[i + 1] === 5 && i + 2 < codes.length) {
+          rgb = xterm256ToRgb(codes[i + 2]);
+          fg = rgbToHex(rgb);
+          i += 2;
         } else if (HARDCORE_ANSI_COLORS[c]) {
           fg = HARDCORE_ANSI_COLORS[c].hex;
           rgb = HARDCORE_ANSI_COLORS[c].rgb;
@@ -558,8 +582,15 @@
       const str = String(text);
 
       for (let i = 0; i < str.length; i++) {
-        const code = str.charCodeAt(i);
-        const rows = glyphs[code - 32];
+        let code = str.charCodeAt(i);
+        if (code === 0x00a0 || (code >= 0x2000 && code <= 0x200b) || code === 0xfeff) {
+          code = 32;
+        } else if (code === 0x2018 || code === 0x2019) {
+          code = 39;
+        } else if (code === 0x201c || code === 0x201d) {
+          code = 34;
+        }
+        const rows = code >= 32 && code <= 126 ? glyphs[code - 32] : null;
         if (rows) {
           for (let r = 0; r < h; r++) {
             const bits = rows[r];

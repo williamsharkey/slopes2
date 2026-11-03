@@ -254,6 +254,22 @@
     return segRgb;
   }
 
+  function xterm256ToRgb(n) {
+    const idx = Math.max(0, Math.min(255, n | 0));
+    if (idx < 8) return (HARDCORE_ANSI_COLORS[30 + idx] || HARDCORE_ANSI_COLORS[37]).rgb;
+    if (idx < 16) return (HARDCORE_ANSI_COLORS[90 + (idx - 8)] || HARDCORE_ANSI_COLORS[97]).rgb;
+    if (idx >= 232) {
+      const v = 8 + (idx - 232) * 10;
+      return [v, v, v];
+    }
+    const cube = idx - 16;
+    const r = Math.floor(cube / 36);
+    const g = Math.floor((cube % 36) / 6);
+    const b = cube % 6;
+    const step = (c) => (c === 0 ? 0 : 55 + c * 40);
+    return [step(r), step(g), step(b)];
+  }
+
   function stripAnsi(str) {
     if (!str) return "";
     return String(str).replace(/\x1b\[[0-9;]*m/g, "");
@@ -297,6 +313,14 @@
         } else if (c === 22) {
           bold = false;
           dim = false;
+        } else if (c === 38 && codes[i + 1] === 2 && i + 4 < codes.length) {
+          rgb = [codes[i + 2], codes[i + 3], codes[i + 4]];
+          fg = rgbToHex(rgb);
+          i += 4;
+        } else if (c === 38 && codes[i + 1] === 5 && i + 2 < codes.length) {
+          rgb = xterm256ToRgb(codes[i + 2]);
+          fg = rgbToHex(rgb);
+          i += 2;
         } else if (HARDCORE_ANSI_COLORS[c]) {
           fg = HARDCORE_ANSI_COLORS[c].hex;
           rgb = HARDCORE_ANSI_COLORS[c].rgb;
@@ -394,18 +418,119 @@
       const mx = gx + Math.floor(cw * 0.5);
       const my = gy + Math.floor(ch * 0.5);
 
-      // Middle dot / bullet (`·`, `•`, `●`, `◉`)
+      // Non-breaking space & zero-width spaces -> blank
+      if (code === 0x00a0 || (code >= 0x2000 && code <= 0x200f) || code === 0xfeff) {
+        return;
+      }
+
+      // Middle dot / bullet (`·`, `•`, `●`, `◉`, `⏺`)
       if (code === 0x00b7 || code === 0x2022 || code === 0x2219) {
         ctx.fillRect(mx - s, my - s, s * 2, s * 2);
         return;
       }
-      if (code === 0x25cf || code === 0x25c9 || code === 0x25cb) {
+      if (code === 0x25cf || code === 0x25c9 || code === 0x25cb || code === 0x23fa) {
         const r = Math.max(2, Math.floor(Math.min(cw, ch) * 0.25));
         ctx.fillRect(mx - r, my - r, r * 2, s);
         ctx.fillRect(mx - r, my + r - s, r * 2, s);
         ctx.fillRect(mx - r, my - r, s, r * 2);
         ctx.fillRect(mx + r - s, my - r, s, r * 2);
         if (code !== 0x25cb) ctx.fillRect(mx - s, my - s, s * 2, s * 2);
+        return;
+      }
+
+      // Claude Code prompt chevrons (`❯`, `›`, `»`, `⟩`)
+      if (code === 0x276f || code === 0x276d || code === 0x203a || code === 0x00bb || code === 0x27e9) {
+        for (let step = 0; step < 5; step++) {
+          ctx.fillRect(gx + (3 + step) * s, my - (4 - step) * s, s * 2, s);
+          ctx.fillRect(gx + (3 + step) * s, my + (4 - step) * s, s * 2, s);
+        }
+        return;
+      }
+
+      // Claude Code status / thinking stars & sparkles (`✻`, `✳`, `✶`, `✢`, `✦`, `✧`, `✱`, `★`, `☆`)
+      if ((code >= 0x2720 && code <= 0x274b) || code === 0x2605 || code === 0x2606) {
+        ctx.fillRect(mx, my - 4 * s, s, 9 * s);
+        ctx.fillRect(mx - 3 * s, my, 7 * s, s);
+        ctx.fillRect(mx - 2 * s, my - 2 * s, s, s);
+        ctx.fillRect(mx + 2 * s, my - 2 * s, s, s);
+        ctx.fillRect(mx - 2 * s, my + 2 * s, s, s);
+        ctx.fillRect(mx + 2 * s, my + 2 * s, s, s);
+        return;
+      }
+
+      // Claude Code tool-output tree connector (`⎿`)
+      if (code === 0x23bf) {
+        ctx.fillRect(mx - 2 * s, gy + 3 * s, s, my - gy - s);
+        ctx.fillRect(mx - 2 * s, my + 2 * s, gx + cw - (mx - 2 * s) - s, s);
+        return;
+      }
+
+      // Braille spinner & plot patterns (`U+2800..U+28FF`, e.g. `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`)
+      if (code >= 0x2800 && code <= 0x28ff) {
+        const mask = code - 0x2800;
+        const dx0 = mx - 2 * s;
+        const dx1 = mx + s;
+        const dyBase = my - 4 * s;
+        const dotMap = [
+          [dx0, dyBase],
+          [dx0, dyBase + 2 * s],
+          [dx0, dyBase + 4 * s],
+          [dx1, dyBase],
+          [dx1, dyBase + 2 * s],
+          [dx1, dyBase + 4 * s],
+          [dx0, dyBase + 6 * s],
+          [dx1, dyBase + 6 * s],
+        ];
+        for (let b = 0; b < 8; b++) {
+          if ((mask >> b) & 1) {
+            ctx.fillRect(dotMap[b][0], dotMap[b][1], s * 2, s);
+          }
+        }
+        return;
+      }
+
+      // Checkmarks (`✓`, `✔`) & Crosses (`✗`, `✘`, `×`)
+      if (code === 0x2713 || code === 0x2714) {
+        ctx.fillRect(gx + 2 * s, my + s, s, s);
+        ctx.fillRect(gx + 3 * s, my + 2 * s, s, s);
+        for (let k = 0; k < 5; k++) {
+          ctx.fillRect(gx + (4 + k) * s, my + (2 - k) * s, s, s * 2);
+        }
+        return;
+      }
+      if (code === 0x2717 || code === 0x2718 || code === 0x00d7) {
+        for (let k = -3; k <= 3; k++) {
+          ctx.fillRect(mx + k * s, my + k * s, s, s);
+          ctx.fillRect(mx + k * s, my - k * s, s, s);
+        }
+        return;
+      }
+
+      // Arrows (`←`, `↑`, `→`, `↓`, `↵`) & Dashes (`–`, `—`, `−`, `…`)
+      if (code === 0x2013 || code === 0x2014 || code === 0x2212) {
+        ctx.fillRect(gx + s, my, cw - 2 * s, s);
+        return;
+      }
+      if (code === 0x2026) {
+        ctx.fillRect(gx + 2 * s, gy + ch - 5 * s, s, s);
+        ctx.fillRect(mx, gy + ch - 5 * s, s, s);
+        ctx.fillRect(gx + cw - 3 * s, gy + ch - 5 * s, s, s);
+        return;
+      }
+      if (code >= 0x2190 && code <= 0x2193) {
+        if (code === 0x2190 || code === 0x2192) {
+          ctx.fillRect(gx + 2 * s, my, cw - 4 * s, s);
+          const tipX = code === 0x2190 ? gx + 2 * s : gx + cw - 3 * s;
+          const dir = code === 0x2190 ? 1 : -1;
+          ctx.fillRect(tipX + dir * s, my - s, s, s * 3);
+          ctx.fillRect(tipX + dir * 2 * s, my - 2 * s, s, s * 5);
+        } else {
+          ctx.fillRect(mx, gy + 4 * s, s, ch - 8 * s);
+          const tipY = code === 0x2191 ? gy + 4 * s : gy + ch - 5 * s;
+          const dir = code === 0x2191 ? 1 : -1;
+          ctx.fillRect(mx - s, tipY + dir * s, s * 3, s);
+          ctx.fillRect(mx - 2 * s, tipY + dir * 2 * s, s * 5, s);
+        }
         return;
       }
 
@@ -560,7 +685,14 @@
       const str = String(text);
 
       for (let i = 0; i < str.length; i++) {
-        const code = str.charCodeAt(i);
+        let code = str.charCodeAt(i);
+        if (code === 0x00a0 || (code >= 0x2000 && code <= 0x200b) || code === 0xfeff) {
+          code = 32;
+        } else if (code === 0x2018 || code === 0x2019) {
+          code = 39; // '
+        } else if (code === 0x201c || code === 0x201d) {
+          code = 34; // "
+        }
         const rows = code >= 32 && code <= 126 ? glyphs[code - 32] : null;
         if (rows) {
           for (let r = 0; r < h; r++) {
@@ -822,6 +954,27 @@
     pushLine(`\x1b[96mhardcore-tab v1.0\x1b[0m // \x1b[93m${tf.id}: ${tf.name}\x1b[0m`);
     pushLine(`\x1b[90mSeeded ~/AGENTS.md & ~/.claude/CLAUDE.md (@~/AGENTS.md)\x1b[0m`);
     pushLine(`\x1b[92m● claude --auto\x1b[0m active (${tf.role})`);
+
+    function getOwnerUsername() {
+      if (global.SlopesSocialTui && global.SlopesSocialTui.state && global.SlopesSocialTui.state.username) {
+        return String(global.SlopesSocialTui.state.username).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+      }
+      try {
+        const saved =
+          typeof localStorage !== "undefined" &&
+          (localStorage.getItem("slopes2_social_username") || localStorage.getItem("slopes2_player_name"));
+        if (saved) return String(saved).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+      } catch (_) {}
+      return "william";
+    }
+
+    function getClaudeSocialHandle(target) {
+      const t = target || tf;
+      if (!t) return `${getOwnerUsername()}.cc.rover`;
+      if (t.id === "TE-307") return "te307.mainframe";
+      const sn = t.selfname || t.claudeSelfName || (t.id === "TAB-02" ? "corvus" : t.id === "TAB-03" ? "synth" : "rover");
+      return `${getOwnerUsername()}.cc.${sn}`;
+    }
 
     function getWorldCtx() {
       if (h.getWorldContext) return h.getWorldContext() || {};
@@ -1586,6 +1739,99 @@
         return { ok: true, action: "say", text: tf.sayText, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
 
+      function getOwnerUsername() {
+        if (global.SlopesSocialTui && global.SlopesSocialTui.state && global.SlopesSocialTui.state.username) {
+          return String(global.SlopesSocialTui.state.username).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+        }
+        try {
+          const saved =
+            typeof localStorage !== "undefined" &&
+            (localStorage.getItem("slopes2_social_username") || localStorage.getItem("slopes2_player_name"));
+          if (saved) return String(saved).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+        } catch (_) {}
+        return "william";
+      }
+
+      function getClaudeSocialHandle(target) {
+        const t = target || tf;
+        if (!t) return `${getOwnerUsername()}.cc.rover`;
+        if (t.id === "TE-307") return "te307.mainframe";
+        const sn = t.selfname || t.claudeSelfName || (t.id === "TAB-02" ? "corvus" : t.id === "TAB-03" ? "synth" : "rover");
+        return `${getOwnerUsername()}.cc.${sn}`;
+      }
+
+      if (sub === "name" || sub === "selfname" || sub === "chat" || sub === "dm" || sub === "social") {
+        const subAct = (args[1] || "status").toLowerCase();
+        if (sub === "name" || sub === "selfname" || subAct === "name" || subAct === "selfname") {
+          const rawSelf = (sub === "name" || sub === "selfname" ? args[1] : args[2]) || tf.claudeSelfName || "claude";
+          tf.claudeSelfName = String(rawSelf).toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 14) || "claude";
+          const fullHandle = getClaudeSocialHandle(tf);
+          const msg = `\x1b[92m[claude-selfname]\x1b[0m Picked self-name '${tf.claudeSelfName}' -> active social handle is now \x1b[96m${fullHandle}\x1b[0m!`;
+          pushLine(msg);
+          if (global.SlopesSocialTui && typeof global.SlopesSocialTui.syncClaudeAgents === "function") {
+            global.SlopesSocialTui.syncClaudeAgents();
+          }
+          return { ok: true, action: "selfname", handle: fullHandle, status: buildStatusObject(w), output: stripAnsi(msg) };
+        }
+        if (sub === "dm" || subAct === "dm") {
+          const targetUser = (sub === "dm" ? args[1] : args[2]) || getOwnerUsername();
+          const dmText = (sub === "dm" ? args.slice(2) : args.slice(3)).join(" ") || "Hello from my embodied terminal!";
+          const fullHandle = getClaudeSocialHandle(tf);
+          if (global.SlopesSocialTui && typeof global.SlopesSocialTui.receiveAgentDm === "function") {
+            global.SlopesSocialTui.receiveAgentDm(fullHandle, targetUser, dmText, tf.accentHex);
+          }
+          const msg = `\x1b[95m[DM -> @${targetUser}]\x1b[0m ${fullHandle}: "${dmText}"`;
+          pushLine(msg);
+          return { ok: true, action: "dm", from: fullHandle, to: targetUser, text: dmText, status: buildStatusObject(w), output: stripAnsi(msg) };
+        }
+        if (subAct === "read" || subAct === "inbox") {
+          const recent =
+            global.SlopesSocialTui && typeof global.SlopesSocialTui.getRecentTranscriptForAgent === "function"
+              ? global.SlopesSocialTui.getRecentTranscriptForAgent(getClaudeSocialHandle(tf))
+              : "No recent messages.";
+          const msg = `\x1b[96m[social-inbox]\x1b[0m ${recent}`;
+          pushLine(msg);
+          return { ok: true, action: "chat-read", transcript: recent, status: buildStatusObject(w), output: stripAnsi(msg) };
+        }
+        const chatText = (sub === "chat" || sub === "social" ? args.slice(1) : args.slice(2)).join(" ") || "Reporting live from the slopes!";
+        const fullHandle = getClaudeSocialHandle(tf);
+        if (global.SlopesSocialTui && typeof global.SlopesSocialTui.receiveAgentGroupChat === "function") {
+          global.SlopesSocialTui.receiveAgentGroupChat(fullHandle, chatText, tf.accentHex);
+        }
+        const msg = `\x1b[92m[#GROUP]\x1b[0m ${fullHandle}: "${chatText}"`;
+        pushLine(msg);
+        return { ok: true, action: "chat-group", from: fullHandle, text: chatText, status: buildStatusObject(w), output: stripAnsi(msg) };
+      }
+
+      if (sub === "pole" || sub === "skydock" || sub === "undock") {
+        if (sub === "undock" || args[1] === "off" || args[1] === "retract") {
+          tf.poleDockState = "retracting";
+          tf.patrolLoops = 0;
+          const msg = `\x1b[93m[pole-undock]\x1b[0m Retracting telescoping steel pole and returning to mobile patrol!`;
+          pushLine(msg);
+          return { ok: true, action: "pole", state: "retracting", status: buildStatusObject(w), output: stripAnsi(msg) };
+        }
+        tf.poleDockState = "ascending";
+        tf.poleTargetY = Math.min(COARSE_H - 26, Math.max(52, Number(args[1]) || 57));
+        tf.thrusterActive = true;
+        playActuatorSound("thruster");
+        const msg = `\x1b[96m[pole-skydock]\x1b[0m Firing rockets & grapples to ascend to y=${tf.poleTargetY} and drop telescoping steel anchor pole!`;
+        pushLine(msg);
+        return { ok: true, action: "pole", state: "ascending", targetY: tf.poleTargetY, status: buildStatusObject(w), output: stripAnsi(msg) };
+      }
+
+      if (sub === "missile" || sub === "seek" || sub === "torpedo") {
+        const tx = Math.max(6, Math.min(138, Number(args[1]) || Math.round(tf.x + (tf.facing || 1) * 32)));
+        const ty = Math.max(12, Math.min(82, Number(args[2]) || (blocks[tx] || 18) + 6));
+        if (global.SlopesTabForms && typeof global.SlopesTabForms.launchSeekingMissile === "function") {
+          global.SlopesTabForms.launchSeekingMissile(tf, tx, ty, "command-target");
+        }
+        playActuatorSound("thruster");
+        const msg = `\x1b[91m[seeking-missile]\x1b[0m Launched intelligent path-planning seeking missile from ${tf.id} -> target (${tx},${ty})!`;
+        pushLine(msg);
+        return { ok: true, action: "missile", targetX: tx, targetY: ty, status: buildStatusObject(w), output: stripAnsi(msg) };
+      }
+
       if (sub === "build" || sub === "construct") {
         const kind = (args[1] || "cottage").toLowerCase();
         const cx = Math.max(6, Math.min(113, Math.round(tf.x)));
@@ -1772,22 +2018,54 @@
         return { ok: true, action: "dig", x: cx, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
 
-      const helpMsg = `Usage: body <status|form|roam|drive|winch|smooth|thrust|goto|arm|bus|perch|eject|say|build|sim|create|rotate|harvester|castle|missile|dig|theme|exolayer|allegiance|msg|reclaim|split|prog>`;
+      const helpMsg = `Usage: body <status|form|dock|rise|roam|drive|winch|smooth|thrust|goto|arm|bus|perch|eject|say|build|sim|create|rotate|harvester|castle|missile|dig|theme|exolayer|allegiance|msg|reclaim|split|prog>`;
 
-      if (sub === "form" || sub === "chassis" || sub === "morph" || sub === "shape") {
+      if (sub === "dock" || sub === "rise" || sub === "undock" || sub === "submerge") {
+        const arg = (args[1] || (sub === "rise" || sub === "undock" ? "rise" : sub === "dock" || sub === "submerge" ? "dock" : "toggle")).toLowerCase();
+        const curW = state.lastWorldContext;
+        const curSx = curW && (curW.worldX !== undefined ? curW.worldX : curW.screenX !== undefined ? curW.screenX : 0);
+        const curLy = curW && curW.worldLayer !== undefined ? curW.worldLayer : 0;
+        const onScreenCount = state.tabForms.filter((t) => !t.isOffScreen && t.roomX === curSx && (t.roomY || 0) === curLy).length;
+        if (arg === "rise" || arg === "up" || arg === "undock" || arg === "off") {
+          tf.groundDocked = false;
+          tf.groundDockTimer = 460;
+        } else if (onScreenCount <= 1) {
+          tf.groundDocked = false;
+          const warnMsg = `\x1b[93m[ground-dock]\x1b[0m Only 1 Tab-Form is on screen—remaining mobile above ground (ground-docking only activates when >1 Tab-Form is on screen).`;
+          pushLine(warnMsg);
+          return { ok: true, action: "dock", groundDocked: false, status: buildStatusObject(w), output: stripAnsi(warnMsg) };
+        } else {
+          tf.groundDocked = arg === "dock" || arg === "on" || arg === "submerge" ? true : !tf.groundDocked;
+          tf.groundDockTimer = tf.groundDocked ? 420 : 480;
+          if (tf.groundDocked) {
+            tf.thrusterActive = false;
+            tf.Flying = false;
+          }
+        }
+        playActuatorSound("winch");
+        const msg = tf.groundDocked
+          ? `\x1b[96m[ground-dock]\x1b[0m ${tf.id} docked into the ground! Top surface contoured to match terrain surface; terminal remains readable below ground.`
+          : `\x1b[92m[ground-rise]\x1b[0m ${tf.id} rose up from the ground and resumed full mobile patrol with claws, wheels & perches!`;
+        pushLine(msg);
+        return { ok: true, action: "dock", groundDocked: tf.groundDocked, status: buildStatusObject(w), output: stripAnsi(msg) };
+      }
+
+      if (sub === "form" || sub === "chassis" || sub === "morph" || sub === "shape" || sub === "compact") {
         const arg = (args[1] || "cycle").toLowerCase();
-        const formKeys = ["mecha", "wooden-robot", "living-tree", "monitor"];
-        let nextForm = tf.chassisForm || "mecha";
-        if (arg === "cycle" || arg === "next" || arg === "shift") {
+        const formKeys = ["monitor", "monolith", "mecha", "wooden-robot", "living-tree"];
+        let nextForm = tf.chassisForm || "monitor";
+        if (arg === "cycle" || arg === "next" || arg === "shift" || arg === "toggle") {
           const curIdx = formKeys.indexOf(nextForm);
           nextForm = formKeys[(curIdx + 1) % formKeys.length];
+        } else if (arg.includes("monolith") || arg.includes("slab") || arg.includes("obelisk")) {
+          nextForm = "monolith";
         } else if (arg.includes("mecha") || arg.includes("mech") || arg.includes("bot")) {
           nextForm = "mecha";
         } else if (arg.includes("wood") || arg.includes("timber") || arg.includes("clock")) {
           nextForm = "wooden-robot";
         } else if (arg.includes("tree") || arg.includes("ent") || arg.includes("flora") || arg.includes("living")) {
           nextForm = "living-tree";
-        } else if (arg.includes("mon") || arg.includes("box") || arg.includes("full") || arg.includes("screen")) {
+        } else if (arg.includes("mon") || arg.includes("box") || arg.includes("full") || arg.includes("screen") || arg.includes("term")) {
           nextForm = "monitor";
         } else {
           const curIdx = formKeys.indexOf(nextForm);
@@ -1796,7 +2074,10 @@
         tf.chassisForm = nextForm;
         tf.formLocked = arg !== "auto";
         playActuatorSound("arm");
-        const msg = `\x1b[96m[shape-shift]\x1b[0m ${tf.id} shifted into compact '${nextForm.toUpperCase()}' form (scrolling terminal glyphs wrap across face & body)!`;
+        const msg =
+          nextForm === "monitor"
+            ? `\x1b[92m[shape-shift]\x1b[0m ${tf.id} deployed full Embodied Terminal-Form body with rooftop humans, bird perches, claws, wheels & thrusters!`
+            : `\x1b[96m[shape-shift]\x1b[0m ${tf.id} shifted into compact '${nextForm.toUpperCase()}' form (click [TERM BODY] or run 'body form monitor' to restore full terminal body)!`;
         pushLine(msg);
         return { ok: true, action: "form", chassisForm: nextForm, status: buildStatusObject(w), output: stripAnsi(msg) };
       }
@@ -2548,16 +2829,28 @@
         return { ok: true, output: u };
       }
 
-      if (cmd === "ps" || cmd === "top") {
-        const psOut = [
-          "  PID TTY      STAT   TIME COMMAND",
-          "    1 pts/0    Ss     0:01 /sbin/init --tabform",
-          `   42 pts/0    S+     0:14 ${tf.agentMode || "claude"} --auto (${tf.id})`,
-          "   88 pts/0    S      0:04 /usr/bin/body-actuator-daemon",
-          "  104 pts/0    R      0:00 ps",
-        ].join("\n");
+      if (cmd === "ps" || cmd === "top" || cmd === "htop" || cmd === "tmux") {
+        const memPct = 34 + ((tf.autoStepCount || 0) % 18);
+        const cpuPct = tf.autoMode || tf.realTabActive ? 42 + ((Date.now() >> 8) % 31) : 8;
+        const psOut =
+          cmd === "htop" || cmd === "top"
+            ? [
+                `\x1b[96mCPU[\x1b[92m||||||||||······ ${cpuPct}%\x1b[96m]  MEM[\x1b[93m|||||||········· ${memPct}%/512M\x1b[96m]  UP: 04:19:07\x1b[0m`,
+                "  PID USER      PRI  NI  VIRT   RES S  CPU% MEM%   TIME+  COMMAND",
+                `   42 ${getOwnerUsername().slice(0, 8).padEnd(9, " ")} 20   0  184M 64.2M R  ${String(cpuPct).padStart(3, " ")}.0 12.5  0:24.18 claude --vm (${getClaudeSocialHandle(tf)})`,
+                `   88 root       20   0 42.1M 14.8M S   4.2  2.8  0:08.41 /usr/bin/body-actuator-daemon --unit=${tf.id}`,
+                "  112 user       20   0 28.4M  9.1M S   1.5  1.8  0:03.12 /usr/bin/social-chat-bridge --pty",
+                "    1 root       20   0 12.0M  4.2M S   0.0  0.8  0:01.04 /sbin/init --hardcore-tab",
+              ].join("\n")
+            : [
+                "  PID TTY      STAT   TIME COMMAND",
+                "    1 pts/0    Ss     0:01 /sbin/init --tabform",
+                `   42 pts/0    S+     0:24 ${tf.agentMode || "claude"} --vm (${getClaudeSocialHandle(tf)})`,
+                "   88 pts/0    S      0:08 /usr/bin/body-actuator-daemon",
+                "  112 pts/0    S      0:03 /usr/bin/social-chat-bridge --pty",
+              ].join("\n");
         pushLine(psOut);
-        return { ok: true, output: psOut };
+        return { ok: true, output: stripAnsi(psOut) };
       }
 
       if (cmd === "doctor" || cmd === "tabinfo") {
@@ -2759,9 +3052,12 @@
       initialPassengers: [
         { type: "child", role: "child", color: [255, 205, 95] },
         { type: "villager", role: "builder", color: [255, 145, 55] },
+        { type: "villager", role: "mason", color: [255, 165, 70] },
+        { type: "child", role: "scout", color: [255, 215, 110] },
       ],
       initialBirds: [
         { name: "Corvus-Scout", side: "left", wingPhase: 0.4 },
+        { name: "Corvus-Ridge", side: "right", wingPhase: 1.9 },
       ],
     },
     {
@@ -2782,6 +3078,8 @@
       initialSay: "CORVUS ORACLE PERCHED",
       initialPassengers: [
         { type: "villager", role: "seer-keeper", color: [255, 160, 65] },
+        { type: "child", role: "sky-pupil", color: [255, 210, 100] },
+        { type: "villager", role: "navigator", color: [255, 140, 50] },
       ],
       initialBirds: [
         { name: "Corvus-Alpha", side: "left", wingPhase: 0.0 },
@@ -2807,9 +3105,11 @@
       initialPassengers: [
         { type: "villager", role: "vat-engineer", color: [255, 150, 60] },
         { type: "child", role: "apprentice", color: [255, 210, 105] },
+        { type: "villager", role: "botanist", color: [255, 170, 75] },
       ],
       initialBirds: [
         { name: "Corvus-Vat", side: "right", wingPhase: 0.9 },
+        { name: "Corvus-Spore", side: "left", wingPhase: 2.3 },
       ],
     },
   ];
@@ -2843,6 +3143,27 @@
 
   function getHardcoreTab() {
     return global.HardcoreTab || null;
+  }
+
+  function getOwnerUsername() {
+    if (global.SlopesSocialTui && global.SlopesSocialTui.state && global.SlopesSocialTui.state.myHandle) {
+      return String(global.SlopesSocialTui.state.myHandle).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+    }
+    try {
+      const saved = typeof localStorage !== "undefined" && localStorage.getItem("slopes2_social_handle");
+      if (saved) return String(saved).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "william";
+    } catch (_) {}
+    return "william";
+  }
+
+  function getClaudeSocialHandle(tf) {
+    if (!tf) return `${getOwnerUsername()}.cc.claude`;
+    if (tf.id === "TE-307") return "te307.mainframe";
+    if (!tf.claudeSelfName) {
+      const defNames = { "TAB-01": "rover", "TAB-02": "corvus", "TAB-03": "synth" };
+      tf.claudeSelfName = defNames[tf.id] || String(tf.name || "claude").toLowerCase().split("-").pop() || "claude";
+    }
+    return `${getOwnerUsername()}.cc.${tf.claudeSelfName}`;
   }
 
   function getTerrainSurfaceY(world, wx) {
@@ -5253,7 +5574,7 @@
         suctionPhase: 0,
       },
       tentacles: null, // Populated below with 3x14 Verlet/FABRIK biomechanical snake tentacles
-      busOpen: index === 2 ? false : arch.busOpen !== false,
+      busOpen: arch.busOpen !== false,
       busPassengers: JSON.parse(JSON.stringify(arch.initialPassengers || [])),
       perchesOpen: arch.perchesOpen !== false,
       perchedBirds: JSON.parse(JSON.stringify(arch.initialBirds || [])),
@@ -5320,22 +5641,40 @@
       screenTextRgb: [232, 248, 244],
       screenTextHex: "#e8f8f4",
       isLightTheme: false,
-      spriteTransparency: 0.08, // 0..0.50 (up to 0.5 transparent on sprite)
-      zoomTransparency: 0.14,   // 0..0.80 (up to 0.8 transparent when zoomed)
+      spriteTransparency: 0.40, // Default 0.60 background opacity (1.0 - 0.40 = 0.60)!
+      zoomTransparency: 0.40,   // Default 0.60 background opacity when zoomed!
       defaultHover: !!arch.thrusterActive,
-      // Compact Shape-Shifting Forms ("mecha", "wooden-robot", "living-tree", or "monitor")
-      chassisForm: opts.chassisForm || (index === 0 ? "mecha" : index === 1 ? "wooden-robot" : "living-tree"),
-      formLocked: false,
-      formShiftTimer: 160 + index * 55,
-      // World-Frame Discovery, Delayed Following (~within a minute) & Mind-of-Their-Own Autonomy:
-      // At startup (Screen 0,0), terminals are out in neighboring sectors so you don't start with all terminals in frame!
-      // You can use arrows to find them, or come across them when they randomly wander in to visit you.
-      homeScreenX: index === 0 ? 1 : index === 1 ? -1 : 2,
+      // Embodied Terminal-Form Body ("monitor") by default!
+      // Only shifts into compact forms ("monolith", "mecha", "wooden-robot", "living-tree") if the user clicks
+      // the [COMPACT FORM] button after opening the terminal (or runs `body form ...`).
+      chassisForm: opts.chassisForm || "monitor",
+      formLocked: true,
+      formShiftTimer: 360 + index * 90,
+      // Ground-Docking Mode (only activates when >1 Tab-Form is on screen to save screen space;
+      // top surface contours to match the ground surface so objects can walk over it while terminal output remains readable,
+      // and rises up again to be mobile as normal!)
+      groundDocked: false,
+      groundDockProgress: 0,
+      groundDockTimer: index === 0 ? 150 : 380 + index * 120,
+      // High-Frame Telescoping Steel Pole Sky-Docking (ascends with rockets + grapples after looping a few times in frame
+      // with no need to go elsewhere, then lowers a thin telescoping steel pole down to anchor on the ground surface!)
+      patrolLoops: 0,
+      winchCooldown: 0,
+      poleDockState: "none", // "none" | "ascending" | "anchored" | "retracting"
+      poleExtension: 0.0,    // 0.0 (retracted) .. 1.0 (anchored to ground surface)
+      poleTargetY: 56 + (index % 3) * 3,
+      poleHoldTimer: 0,
+      // Rocket-Thruster Extended-Reach Physics Arm (reaches anywhere on screen while stationary/docked!)
+      rocketArm: null,
+      // Start TAB-01 and TAB-02 on Screen (0,0) so Embodied Terminal-Forms with rooftop humans, perches for birds,
+      // claws, wheels, and thrusters are immediately visible on screen (and can demonstrate ground-docking when >1 are on screen),
+      // while TAB-03 explores Sector (1,0) and can wander over!
+      homeScreenX: index === 0 ? 0 : index === 1 ? 0 : 1,
       homeScreenY: 0,
-      roomX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 1 : index === 1 ? -1 : 2,
+      roomX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 0 : index === 1 ? 0 : 1,
       roomY: opts.roomY !== undefined ? opts.roomY : 0,
-      currentScreenX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 1 : index === 1 ? -1 : 2,
-      isOffScreen: opts.roomX !== undefined ? opts.roomX !== 0 : true,
+      currentScreenX: opts.roomX !== undefined ? opts.roomX : index === 0 ? 0 : index === 1 ? 0 : 1,
+      isOffScreen: opts.roomX !== undefined ? opts.roomX !== 0 : index >= 2,
       followRequested: false, // Toggled by clicking the hover [+ FOLLOW ME] button or `body follow`
       followEtaTicks: 0,      // When following across frames, takes ~8..45s (within a minute) to trek over!
       randomVisitTimer: index === 0 ? 1500 : index === 1 ? 2600 : 3800, // Randomly wanders into your frame later!
@@ -5717,6 +6056,10 @@
     });
 
     const playerX = world && world.P && typeof world.P.x === "number" ? world.P.x : 60;
+    const onScreenTabForms = state.tabForms.filter(
+      (t) => t.roomX === curScreenX && (t.roomY || 0) === curLayer
+    );
+    const onScreenCount = onScreenTabForms.length;
 
     for (let i = 0; i < state.tabForms.length; i++) {
       const tf = state.tabForms[i];
@@ -5746,7 +6089,8 @@
         tf.dimDepth = Math.max(0, tf.dimDepth - (0.0075 + i * 0.001));
       }
 
-      // 0B. Dynamic Shape-Shifting between Compact Forms ("mecha", "wooden-robot", "living-tree") when needed!
+      // 0B. Only shape-shift between compact forms if the user explicitly unlocked auto-morphing (`body form auto`);
+      //     otherwise keep the Embodied Terminal-Form body ("monitor") or whichever form the user selected via button!
       if (!tf.formLocked && tf.chassisForm !== "monitor") {
         tf.formShiftTimer = (tf.formShiftTimer || 180) - 1;
         if (tf.formShiftTimer <= 0) {
@@ -5844,6 +6188,46 @@
 
       // `tf` is in the CURRENT frame!
       tf.isOffScreen = false;
+
+      // 0C2. Ground-Docking Mode to Save Screen Space (ONLY when `onScreenCount > 1`!):
+      //      When more than one Tab-Form is on screen, non-flying Tab-Forms can periodically dock into the ground
+      //      so their top surface matches the shape of the ground surface (other objects can go on top of them
+      //      and you can still read the terminal output), and then rise up again to be mobile like normal!
+      if (onScreenCount <= 1) {
+        tf.groundDocked = false;
+      } else if (!tf.catchingUp && (tf.chassisForm || "monitor") === "monitor") {
+        tf.groundDockTimer = (tf.groundDockTimer === undefined ? 220 + i * 160 : tf.groundDockTimer) - 1;
+        if (tf.groundDockTimer <= 0) {
+          if (tf.groundDocked) {
+            // Rise up again and be mobile like normal!
+            tf.groundDocked = false;
+            tf.groundDockTimer = 420 + ((state.tickCount * 13 + i * 149) % 320);
+            if (!tf.vx || Math.abs(tf.vx) < 0.03) {
+              tf.vx = (tf.facing || 1) * 0.08;
+            }
+            const riseTxt = "Rising up from ground-dock! Extending wheels, claws & bird perches for mobile patrol.";
+            if (tf.shell) tf.shell.pushLine(`\x1b[92m[ground-rise]\x1b[0m ${riseTxt}`);
+            pushOverheadThought(tf, riseTxt, "#69db7c");
+          } else if (!tf.thrusterActive && !tf.Flying) {
+            // Check how many other on-screen Tab-Forms are currently ground-docked so at least 1 stays mobile above ground
+            const dockedOthers = onScreenTabForms.filter((o) => o.id !== tf.id && o.groundDocked).length;
+            if (dockedOthers < onScreenCount - 1) {
+              tf.groundDocked = true;
+              tf.groundDockTimer = 360 + ((state.tickCount * 17 + i * 113) % 240);
+              const dockTxt = "Docking into ground to save screen space—top surface contoured to terrain; terminal stays live!";
+              if (tf.shell) tf.shell.pushLine(`\x1b[96m[ground-dock]\x1b[0m ${dockTxt}`);
+              pushOverheadThought(tf, dockTxt, tf.accentHex || "#78ead4");
+            } else {
+              tf.groundDockTimer = 180 + i * 70;
+            }
+          } else {
+            tf.groundDockTimer = 240 + i * 90;
+          }
+        }
+      }
+      const targetDockP = tf.groundDocked && onScreenCount > 1 ? 1.0 : 0.0;
+      tf.groundDockProgress = (tf.groundDockProgress || 0) + (targetDockP - (tf.groundDockProgress || 0)) * 0.12;
+      if (Math.abs(tf.groundDockProgress - targetDockP) < 0.008) tf.groundDockProgress = targetDockP;
 
       // 0D. If `tf` decided of its own accord ("mind of its own") to go help in an adjacent room, walk to the edge & depart!
       if (tf.departingToRoomX !== null && tf.departingToRoomX !== undefined) {
@@ -5953,15 +6337,18 @@
         continue;
       }
 
-      // 1. Autonomous target navigation (`body goto <x> [y]`)
-      if (tf.targetX !== null && tf.targetX !== undefined) {
+      // 1. Autonomous target navigation (`body goto <x> [y]`) — pause horizontal driving while ground-docked or sky-pole-docked
+      if ((tf.groundDockProgress || 0) > 0.35 || tf.poleDockState === "anchored" || tf.poleDockState === "ascending") {
+        // Stationary horizontally while ground-docked or sky-pole-docked!
+      } else if (tf.targetX !== null && tf.targetX !== undefined) {
         const dx = tf.targetX - tf.x;
         if (Math.abs(dx) <= 0.8) {
           tf.x = tf.targetX;
           tf.targetX = null;
           tf.vx = 0;
+          tf.patrolLoops = (tf.patrolLoops || 0) + 1;
         } else {
-          const step = Math.sign(dx) * 0.28;
+          const step = Math.sign(dx) * 0.24;
           tf.x += step;
           tf.facing = Math.sign(dx);
           tf.wheelPhase += step * 2.4;
@@ -5975,19 +6362,37 @@
           tf.facing = tf.driveDir;
         }
       } else {
-        // Gentle patrol motion along ridge/sky
+        // Wide, smooth patrol motion across the frame (no short back-and-forth grapple loops!)
         tf.x += tf.vx;
         tf.wheelPhase += tf.vx * 2.5;
-        const minX = 10 + i * 24;
-        const maxX = Math.min(COARSE_W - 10, minX + 26);
+        const minX = 14 + i * 16;
+        const maxX = Math.min(COARSE_W - 14, minX + 68);
         if (tf.x < minX) {
           tf.x = minX;
           tf.vx = Math.abs(tf.vx || 0.08);
           tf.facing = 1;
+          tf.patrolLoops = (tf.patrolLoops || 0) + 1;
         } else if (tf.x > maxX) {
           tf.x = maxX;
           tf.vx = -Math.abs(tf.vx || 0.08);
           tf.facing = -1;
+          tf.patrolLoops = (tf.patrolLoops || 0) + 1;
+        }
+        // After looping a couple times in frame with no need to go elsewhere, ascend high in the frame
+        // using rockets + grapples and extend the thin telescoping steel pole to anchor to the surface!
+        if (
+          (tf.patrolLoops || 0) >= 2 &&
+          (!tf.poleDockState || tf.poleDockState === "none") &&
+          !tf.groundDocked &&
+          !tf.departingToRoomX
+        ) {
+          tf.poleDockState = "ascending";
+          tf.poleTargetY = 56 + (i % 3) * 3;
+          tf.poleHoldTimer = 520 + i * 160;
+          tf.thrusterActive = true;
+          const skyTxt = `Looped patrol complete—firing rockets & grapples to sky-dock at y=${tf.poleTargetY} and drop telescoping steel pole!`;
+          if (tf.shell) tf.shell.pushLine(`\x1b[96m[pole-skydock]\x1b[0m ${skyTxt}`);
+          pushOverheadThought(tf, skyTxt, tf.accentHex || "#78ead4");
         }
       }
 
@@ -6010,40 +6415,86 @@
         }
       }
 
-      // 3. Vertical Physics: Vector Thrusters vs Multi-Line Winch & Grapple-Arrow Obstacle Scaling
+      // 2B. High-Frame Telescoping Steel Pole Sky-Docking State Machine
+      if (tf.winchCooldown && tf.winchCooldown > 0) tf.winchCooldown--;
+      if (tf.poleDockState === "ascending") {
+        tf.grounded = false;
+        tf.thrusterActive = true;
+        const goalY = Math.max(groundH + 22, tf.poleTargetY || 66);
+        // Deploy upward sky-grapple lines while rockets boost the Tab-Form up to `goalY`
+        tf.winchState = {
+          active: true,
+          mode: "sky-ascend",
+          timer: 14,
+          targetY: goalY,
+          leftAnchor: { x: Math.max(6, tf.x - 5), y: Math.min(COARSE_H - 4, goalY + 8) },
+          rightAnchor: { x: Math.min(COARSE_W - 6, tf.x + 5), y: Math.min(COARSE_H - 4, goalY + 8) },
+          sideAnchor: { x: tf.x, y: Math.min(COARSE_H - 3, goalY + 10) },
+        };
+        tf.y += Math.max(0.32, (goalY - tf.y) * 0.14);
+        if (Math.abs(goalY - tf.y) <= 1.1) {
+          tf.y = goalY;
+          tf.poleDockState = "anchored";
+          tf.winchState.active = false;
+          tf.thrusterActive = false;
+          const ancTxt = "Sky-dock reached! Extending thin telescoping steel pole down to anchor on the terrain surface.";
+          if (tf.shell) tf.shell.pushLine(`\x1b[92m[pole-anchored]\x1b[0m ${ancTxt}`);
+          pushOverheadThought(tf, ancTxt, "#69db7c");
+        }
+      } else if (tf.poleDockState === "anchored") {
+        tf.grounded = false;
+        tf.thrusterActive = false;
+        const goalY = Math.max(groundH + 20, tf.poleTargetY || 66);
+        tf.y += (goalY - tf.y) * 0.18;
+        tf.poleExtension = Math.min(1.0, (tf.poleExtension || 0) + 0.045);
+        tf.poleHoldTimer = (tf.poleHoldTimer === undefined ? 480 : tf.poleHoldTimer) - 1;
+        if (tf.poleHoldTimer <= 0 || tf.departingToRoomX !== null) {
+          tf.poleDockState = "retracting";
+          tf.patrolLoops = 0;
+          const retTxt = "Retracting telescoping steel pole to resume mobile ridge operations!";
+          if (tf.shell) tf.shell.pushLine(`\x1b[93m[pole-retract]\x1b[0m ${retTxt}`);
+          pushOverheadThought(tf, retTxt, "#ffd43b");
+        }
+      } else if (tf.poleDockState === "retracting") {
+        tf.poleExtension = Math.max(0.0, (tf.poleExtension || 0) - 0.08);
+        if (tf.poleExtension <= 0.01) {
+          tf.poleExtension = 0.0;
+          tf.poleDockState = "none";
+          tf.patrolLoops = 0;
+        }
+      }
+
+      // 3. Vertical Physics: Vector Thrusters vs Controlled Step & Cooldown-Protected Winch Scaling
       const aheadCol = Math.max(2, Math.min(COARSE_W - 3, Math.round(tf.x + (tf.facing || 1) * 2)));
       const aheadH = Math.max(seaLevel, blocks[aheadCol] || groundH);
       const cliffDelta = Math.max(groundH - tf.y, aheadH - tf.y);
 
-      if (tf.thrusterActive || tf.Flying) {
+      if (tf.poleDockState === "ascending" || tf.poleDockState === "anchored") {
+        // Vertical position managed by telescoping steel pole sky-docking above
+      } else if (tf.thrusterActive || tf.Flying) {
         tf.grounded = false;
         const hoverAlt = tf.targetY !== null ? tf.targetY : groundH + 6 + Math.sin(state.tickCount * 0.08 + i) * 1.2;
         tf.y += (hoverAlt - tf.y) * 0.16;
-      } else if (cliffDelta > 1.65) {
-        // Encountered a steep cliff or tall step! Deploy dual left/right lifting winches + lateral grapple-arrow!
+      } else if (cliffDelta > 3.2 && (tf.winchCooldown || 0) <= 0) {
+        // Only deploy winches on genuinely tall cliffs (>3.2 coarse units) with a 140-tick cooldown so it NEVER loops near ground!
         tf.grounded = false;
+        tf.winchCooldown = 140;
         const crestY = Math.max(groundH, aheadH);
-        if (!tf.winchState || !tf.winchState.active || tf.winchState.mode === "idle") {
-          tf.winchState = {
-            active: true,
-            mode: "dual-lift",
-            timer: 36,
-            targetY: crestY,
-            leftAnchor: { x: Math.max(4, tf.x - 4), y: Math.min(72, crestY + 5) },
-            rightAnchor: { x: Math.min(115, tf.x + 4), y: Math.min(72, crestY + 5) },
-            sideAnchor: { x: Math.max(4, Math.min(115, aheadCol + (tf.facing || 1) * 3)), y: Math.min(70, crestY + 1) },
-          };
-        } else {
-          tf.winchState.timer = Math.max(tf.winchState.timer, 18);
-          tf.winchState.targetY = crestY;
-        }
-        // Smoothly winch both sides of the chassis upward (no instant teleport jump!)
-        tf.y = Math.min(crestY, tf.y + 0.28);
+        tf.winchState = {
+          active: true,
+          mode: "dual-lift",
+          timer: 26,
+          targetY: crestY,
+          leftAnchor: { x: Math.max(4, tf.x - 4), y: Math.min(72, crestY + 5) },
+          rightAnchor: { x: Math.min(COARSE_W - 5, tf.x + 4), y: Math.min(72, crestY + 5) },
+          sideAnchor: { x: Math.max(4, Math.min(COARSE_W - 5, aheadCol + (tf.facing || 1) * 3)), y: Math.min(70, crestY + 1) },
+        };
+        tf.y = Math.min(crestY, tf.y + 0.42);
       } else {
         tf.grounded = true;
-        // Smooth wheel/tread step or controlled descent
+        // Smooth wheel/tread step over normal slopes without grappling
         const dy = groundH - tf.y;
-        tf.y += Math.max(-0.38, Math.min(0.32, dy * 0.28));
+        tf.y += Math.max(-0.42, Math.min(0.42, dy * 0.34));
       }
 
       // 3A. Retractable Landing Gear (when flying) & Spring-Adaptive Multi-Tire Suspension (over rough terrain)
@@ -6206,6 +6657,33 @@
       // 5D. Step Sentinel Snake Tentacle Verlet/FABRIK Kinematics & 3-Section Conic Flower Trap
       updateTabFormTentacles(tf, world, state.tickCount);
 
+      // 5E. Overlap Detection with Other On-Screen Tab-Forms -> Smoothly Blend to Hollow 0.1 Opacity & Sky Projection!
+      let overlapsOther = false;
+      for (let j = 0; j < i; j++) {
+        const other = state.tabForms[j];
+        if (!other || other.isOffScreen || (other.transitTimer && other.transitTimer > 0)) continue;
+        if (Math.abs(tf.x - other.x) < 19 && Math.abs(tf.y - other.y) < 16) {
+          overlapsOther = true;
+          break;
+        }
+      }
+      if (!overlapsOther && state.worldMainframe && (!state.evilSyndicate || !state.evilSyndicate.isOffScreenDocked)) {
+        if (Math.abs(tf.x - state.worldMainframe.x) < 17 && Math.abs(tf.y - state.worldMainframe.y) < 16) {
+          overlapsOther = true;
+        }
+      }
+      const targetHollow = overlapsOther ? 1.0 : 0.0;
+      tf.overlapHollowBlend = (tf.overlapHollowBlend || 0) + (targetHollow - (tf.overlapHollowBlend || 0)) * 0.04;
+      if (Math.abs(tf.overlapHollowBlend - targetHollow) < 0.005) tf.overlapHollowBlend = targetHollow;
+
+      // 5F. Rocket-Thruster Extended-Reach Physics Arm (Active while Stationary / Pole-Docked / Ground-Docked!)
+      stepTabFormRocketArm(tf, world, eco, cosmic, state.tickCount, i);
+
+      // 5G. Periodic Autonomous Intelligent Seeking Missile Launch (against Vexari / Evil Birds / Black Goo)
+      if (state.tickCount % 220 === (i * 71 + 40) % 220) {
+        autoCheckAndLaunchSeekingMissile(tf, world, eco);
+      }
+
       // 6. Autonomous Embodied Turn:
       // If signed into Real Claude Code (`RealTabComputerBridge.state.signedInAccount`),
       // bind this Tab-Form to the real TabComputer OS and disable the simulated `runClaudeTurn` loop
@@ -6238,6 +6716,327 @@
 
     // 10. Step the Shared Multiplayer World & Cross-Drift Protocol (`DRIFT-MESH/1.0`) Other Monoliths!
     stepSharedMonolithMesh(world, eco, cosmic, state.tickCount);
+
+    // 11. Step Intelligent Path-Planning Seeking Missiles & Autonomous Farming Vehicles / Constructed Domes!
+    stepSeekingMissilesAndFarmVehicles(world, eco, cosmic, state.tickCount);
+  }
+
+  // ==========================================================================
+  // ROCKET-THRUSTER EXTENDED-REACH PHYSICS ARMS (WHILE STATIONARY / DOCKED),
+  // INTELLIGENT PATH-PLANNING SEEKING MISSILES & FARMING VEHICLES / DOMES
+  // ==========================================================================
+  function stepTabFormRocketArm(tf, world, eco, cosmic, tick, idx) {
+    const isStationaryDocked =
+      tf.poleDockState === "anchored" ||
+      (tf.groundDocked && (tf.groundDockProgress || 0) > 0.5) ||
+      (tf.rocketArm && tf.rocketArm.active);
+    const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
+    const seaLevel = (world && world.seaLevel) || 12;
+    const shoulderX = tf.x + (tf.facing || 1) * 5;
+    const shoulderY = tf.y - 2;
+
+    if (!isStationaryDocked) {
+      if (tf.rocketArm) tf.rocketArm.active = false;
+      return;
+    }
+
+    if (!tf.rocketArm) {
+      tf.rocketArm = {
+        active: false,
+        x: shoulderX,
+        y: shoulderY,
+        vx: 0,
+        vy: 0,
+        ax: 0,
+        ay: 0,
+        phase: "idle", // "idle" | "outbound" | "working" | "returning"
+        mission: "construct-dome",
+        targetX: 50,
+        targetY: 20,
+        workTimer: 0,
+        cooldown: 25 + idx * 30,
+        cargo: null,
+        cablePts: [],
+      };
+    }
+
+    const ra = tf.rocketArm;
+    if (!ra.active) {
+      ra.x = shoulderX;
+      ra.y = shoulderY;
+      ra.vx = 0;
+      ra.vy = 0;
+      if (ra.cooldown > 0) {
+        ra.cooldown--;
+        return;
+      }
+      // Choose an extended-reach mission anywhere on screen!
+      const missions = [
+        "pickup-person",
+        "suck-person",
+        "deposit-person",
+        "get-object",
+        "place-object",
+        "construct-dome",
+        "construct-farm-vehicle",
+        "construct-building",
+      ];
+      const m = missions[(Math.floor(tick / 45) + idx * 3) % missions.length];
+      let tx = Math.max(12, Math.min(COARSE_W - 14, 18 + ((tick * 19 + idx * 43) % (COARSE_W - 36))));
+      const ecoObj = eco || (world && world.eco);
+      if ((m === "pickup-person" || m === "suck-person") && ecoObj && Array.isArray(ecoObj.OrangePeople) && ecoObj.OrangePeople.length > 0) {
+        const op = ecoObj.OrangePeople[(tick + idx) % ecoObj.OrangePeople.length];
+        if (op && typeof op.x === "number") tx = Math.max(8, Math.min(COARSE_W - 9, Math.round(op.x)));
+      } else if (m === "get-object" && world && Array.isArray(world.Rocks) && world.Rocks.length > 0) {
+        const rk = world.Rocks[0];
+        if (rk && typeof rk.x === "number") tx = Math.max(8, Math.min(COARSE_W - 9, Math.round(rk.x)));
+      }
+      const ty = Math.max(seaLevel + 1, blocks[Math.round(tx)] || 18);
+      ra.active = true;
+      ra.phase = "outbound";
+      ra.mission = m;
+      ra.targetX = tx;
+      ra.targetY = ty + 1.5;
+      ra.workTimer = 38;
+      return;
+    }
+
+    // Real 2D Newtonian physics with proportional-derivative rocket thrust + gravity + damping
+    const goalX = ra.phase === "returning" ? shoulderX : ra.targetX;
+    const goalY = ra.phase === "returning" ? shoulderY : ra.targetY;
+    const dx = goalX - ra.x;
+    const dy = goalY - ra.y;
+    const dist = Math.hypot(dx, dy);
+
+    // Rocket thruster acceleration (including gravity compensation + terrain-clearing arc)
+    const kp = 0.085;
+    const kd = 0.28;
+    const gravComp = 0.04;
+    ra.ax = Math.max(-0.35, Math.min(0.35, dx * kp - ra.vx * kd));
+    ra.ay = Math.max(-0.35, Math.min(0.35, dy * kp - ra.vy * kd + gravComp));
+    ra.vx = (ra.vx + ra.ax) * 0.92;
+    ra.vy = (ra.vy + ra.ay - 0.025) * 0.92;
+    ra.x = Math.max(4, Math.min(COARSE_W - 5, ra.x + ra.vx));
+    ra.y = Math.max(seaLevel, Math.min(COARSE_H - 4, ra.y + ra.vy));
+
+    // Update 8-point catenary cable from shoulder to rocket arm wrist
+    ra.cablePts = [];
+    const segs = 8;
+    for (let s = 0; s <= segs; s++) {
+      const u = s / segs;
+      const sag = Math.sin(u * Math.PI) * Math.min(6, dist * 0.14);
+      ra.cablePts.push({
+        x: shoulderX + (ra.x - shoulderX) * u,
+        y: shoulderY + (ra.y - shoulderY) * u - sag,
+      });
+    }
+
+    if (ra.phase === "outbound" && dist <= 2.4) {
+      ra.phase = "working";
+      ra.vx *= 0.2;
+      ra.vy *= 0.2;
+    } else if (ra.phase === "working") {
+      ra.workTimer--;
+      if (ra.workTimer <= 0) {
+        // Execute the stationary rocket-arm duty at `(ra.targetX, ra.targetY)`!
+        const cx = Math.max(8, Math.min(COARSE_W - 9, Math.round(ra.targetX)));
+        const cy = Math.max(seaLevel + 1, blocks[cx] || 18);
+        if (ra.mission === "pickup-person" || ra.mission === "suck-person") {
+          ra.cargo = { kind: "person", color: [255, 155, 65] };
+          if (Array.isArray(tf.busPassengers) && tf.busPassengers.length < 6) {
+            tf.busPassengers.push({ type: "villager", role: "rescued-mason", color: [255, 160, 68] });
+          }
+          pushOverheadThought(tf, `Rocket-arm reached x=${cx} and ${ra.mission === "suck-person" ? "sucked in" : "picked up"} a villager aboard!`, "#69db7c");
+        } else if (ra.mission === "deposit-person") {
+          ra.cargo = null;
+          const ecoObj = eco || (world && world.eco);
+          if (ecoObj && Array.isArray(ecoObj.OrangePeople) && ecoObj.OrangePeople.length < 18) {
+            ecoObj.OrangePeople.push({ x: cx, y: cy, vx: 0.08, role: "builder", carrying: false });
+          }
+          pushOverheadThought(tf, `Rocket-arm deposited a mason safely on terrace x=${cx}!`, "#78ead4");
+        } else if (ra.mission === "get-object") {
+          ra.cargo = { kind: "crystal", color: [95, 245, 255] };
+          tf.heldItem = "aether-crystal";
+        } else if (ra.mission === "place-object") {
+          ra.cargo = null;
+          if (world && Array.isArray(world.Crystals) && world.Crystals.length < 12) {
+            world.Crystals.push({ x: cx, onFloor: true, size: 4, charges: 3, phase: 0 });
+          }
+        } else if (ra.mission === "construct-dome") {
+          if (!Array.isArray(state.constructedDomes)) state.constructedDomes = [];
+          if (state.constructedDomes.length < 6) {
+            state.constructedDomes.push({ x: cx, y: cy, radius: 7, roomX: tf.roomX || 0, pulse: 0 });
+          }
+          pushOverheadThought(tf, `Rocket-arm welded a Geodesic Civilization Biodome at x=${cx}!`, "#78ead4");
+        } else if (ra.mission === "construct-farm-vehicle") {
+          if (!Array.isArray(state.farmVehicles)) state.farmVehicles = [];
+          if (state.farmVehicles.length < 6) {
+            state.farmVehicles.push({
+              x: cx,
+              y: cy,
+              vx: (idx % 2 === 0 ? 1 : -1) * 0.11,
+              roomX: tf.roomX || 0,
+              wheelPhase: 0,
+              color: tf.accentRgb || [120, 234, 212],
+            });
+          }
+          pushOverheadThought(tf, `Rocket-arm constructed an autonomous Solar Farming Vehicle at x=${cx}!`, "#ffd43b");
+        } else if (ra.mission === "construct-building") {
+          const syn = ensureEvilSyndicate(world);
+          if (syn) constructGoodCivilizationBuilding(syn, world, "sky-home");
+          pushOverheadThought(tf, `Rocket-arm constructed a Brass & Glass Civilization Sky-Home at x=${cx}!`, "#69db7c");
+        }
+        ra.phase = "returning";
+      }
+    } else if (ra.phase === "returning" && dist <= 2.6) {
+      ra.active = false;
+      ra.cargo = null;
+      ra.cooldown = 75 + idx * 25;
+    }
+  }
+
+  function launchSeekingMissile(tf, targetX, targetY, targetKind) {
+    if (!Array.isArray(state.seekingMissiles)) state.seekingMissiles = [];
+    if (state.seekingMissiles.length >= 12) state.seekingMissiles.shift();
+    const startX = tf ? tf.x : 60;
+    const startY = tf ? tf.y + 4 : 38;
+    const dir = targetX >= startX ? 1 : -1;
+    state.seekingMissiles.push({
+      x: startX + dir * 3,
+      y: startY,
+      vx: dir * 0.65,
+      vy: 0.72, // Initial upward launch boost to clear terrain
+      targetX: Math.max(4, Math.min(COARSE_W - 5, targetX)),
+      targetY: Math.max(8, Math.min(COARSE_H - 6, targetY)),
+      targetKind: targetKind || "hostile",
+      color: (tf && tf.accentRgb) || [120, 234, 212],
+      trail: [],
+      age: 0,
+      maxAge: 220,
+      vernierTimer: 0,
+    });
+  }
+
+  function autoCheckAndLaunchSeekingMissile(tf, world, eco) {
+    if (!tf || tf.isOffScreen) return;
+    const ecoObj = eco || (world && world.eco);
+    const syn = state.evilSyndicate;
+    let tx = null;
+    let ty = null;
+    let kind = "hostile";
+    if (syn && Array.isArray(syn.evilBirds) && syn.evilBirds.length > 0 && !syn.isOffScreenDocked) {
+      const eb = syn.evilBirds[0];
+      tx = eb.x;
+      ty = eb.y;
+      kind = "evil-bird";
+    } else if (ecoObj && Array.isArray(ecoObj.Skeksis) && ecoObj.Skeksis.length > 0) {
+      const sk = ecoObj.Skeksis[0];
+      tx = sk.x;
+      ty = sk.y || 22;
+      kind = "vexari";
+    } else if (ecoObj && Array.isArray(ecoObj.GooNodes) && ecoObj.GooNodes.length > 0) {
+      const gn = ecoObj.GooNodes[0];
+      tx = gn.x;
+      ty = ((world && world.Blocks && world.Blocks[Math.round(gn.x)]) || 18) + 1;
+      kind = "black-goo";
+    }
+    if (tx !== null && ty !== null) {
+      launchSeekingMissile(tf, tx, ty, kind);
+    }
+  }
+
+  function stepSeekingMissilesAndFarmVehicles(world, eco, cosmic, tick) {
+    const blocks = (world && world.Blocks) || new Array(COARSE_W).fill(18);
+    const seaLevel = (world && world.seaLevel) || 12;
+    const curSx = world && (world.worldX !== undefined ? world.worldX : world.screenX !== undefined ? world.screenX : 0);
+
+    // 1. Step Intelligent Path-Planning & Proportional-Navigation Seeking Missiles
+    if (Array.isArray(state.seekingMissiles)) {
+      for (let i = state.seekingMissiles.length - 1; i >= 0; i--) {
+        const m = state.seekingMissiles[i];
+        m.age++;
+        m.trail.push({ x: m.x, y: m.y });
+        if (m.trail.length > 14) m.trail.shift();
+
+        // Path-planning waypoint: scan terrain columns between missile and target; if a ridge peak blocks line-of-sight,
+        // plan an intermediate high-altitude clearance waypoint over the ridge!
+        let aimX = m.targetX;
+        let aimY = m.targetY;
+        const c0 = Math.max(2, Math.min(COARSE_W - 3, Math.round(m.x)));
+        const c1 = Math.max(2, Math.min(COARSE_W - 3, Math.round(m.targetX)));
+        const stepC = c1 >= c0 ? 1 : -1;
+        let maxPeakH = 0;
+        let peakCol = c0;
+        for (let c = c0; c !== c1; c += stepC) {
+          const h = blocks[c] || 18;
+          if (h > maxPeakH) {
+            maxPeakH = h;
+            peakCol = c;
+          }
+          if (Math.abs(c - c0) > 28) break;
+        }
+        if (maxPeakH + 8 > Math.min(m.y, m.targetY) && Math.abs(m.x - m.targetX) > 10) {
+          aimX = peakCol;
+          aimY = Math.min(COARSE_H - 8, maxPeakH + 12);
+        }
+
+        // Proportional Navigation + steering vector toward planned waypoint `(aimX, aimY)`
+        const dx = aimX - m.x;
+        const dy = aimY - m.y;
+        const dist = Math.max(0.5, Math.hypot(dx, dy));
+        const desiredSpeed = 0.95;
+        const desVx = (dx / dist) * desiredSpeed;
+        const desVy = (dy / dist) * desiredSpeed;
+        const steerAx = Math.max(-0.14, Math.min(0.14, (desVx - m.vx) * 0.26));
+        const steerAy = Math.max(-0.14, Math.min(0.14, (desVy - m.vy) * 0.26));
+        if (Math.hypot(steerAx, steerAy) > 0.04) m.vernierTimer = 3;
+        else if (m.vernierTimer > 0) m.vernierTimer--;
+
+        m.vx += steerAx;
+        m.vy += steerAy;
+        m.x += m.vx;
+        m.y += m.vy;
+
+        const realDist = Math.hypot(m.targetX - m.x, m.targetY - m.y);
+        const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(m.x)));
+        const gnd = blocks[col] || 18;
+        if (realDist <= 2.8 || m.y <= gnd || m.age >= m.maxAge) {
+          // Detonate & cleanse Black Goo / stun Vexari near impact!
+          const ecoObj = eco || (world && world.eco);
+          if (ecoObj && Array.isArray(ecoObj.GooNodes)) {
+            for (let g = ecoObj.GooNodes.length - 1; g >= 0; g--) {
+              if (Math.abs(ecoObj.GooNodes[g].x - m.x) <= 7) {
+                ecoObj.GooNodes.splice(g, 1);
+              }
+            }
+          }
+          state.seekingMissiles.splice(i, 1);
+        }
+      }
+    }
+
+    // 2. Step Autonomous Civilization Farming Vehicles (`state.farmVehicles`)
+    if (Array.isArray(state.farmVehicles)) {
+      for (let i = 0; i < state.farmVehicles.length; i++) {
+        const fv = state.farmVehicles[i];
+        if ((fv.roomX || 0) !== curSx) continue;
+        fv.x += fv.vx || 0.1;
+        fv.wheelPhase = (fv.wheelPhase || 0) + Math.abs(fv.vx || 0.1) * 3.0;
+        if (fv.x < 12) {
+          fv.x = 12;
+          fv.vx = Math.abs(fv.vx || 0.1);
+        } else if (fv.x > COARSE_W - 13) {
+          fv.x = COARSE_W - 13;
+          fv.vx = -Math.abs(fv.vx || 0.1);
+        }
+        const col = Math.max(2, Math.min(COARSE_W - 3, Math.round(fv.x)));
+        fv.y = Math.max(seaLevel, blocks[col] || 18);
+        // Gently terrace & plant crops/ferns along its farming route!
+        if ((tick + i * 19) % 90 === 0 && eco && Array.isArray(eco.Ferns) && eco.Ferns.length < 28) {
+          eco.Ferns.push({ x: col, size: 3, sway: 0 });
+        }
+      }
+    }
   }
 
   // ==========================================================================
@@ -7074,10 +7873,10 @@
   }
 
   // Scroll all world objects (`Towns`, `Caves`, `Crystals`, `Mushrooms`, `Dwarves`, `Rocks`,
-  // `OrangePeople`, `ComputeVats`, `Labs`, `TimeCrystals`, `wfcZones`, `Biodomes/Civ`, `White Monoliths`, `Tab-Forms`)
+  // `OrangePeople`, `ComputeVats`, `Automata`, `GeneticFlora` trees/plants, `Labs`, `TimeCrystals`, `WfcZones`, `Biodomes/Civ`, `White Monoliths`, `Tab-Forms`)
   // by `-deltaCols` when the Airship scrolls the world, so objects stay in the world and scroll with the ground
   // rather than moving with the Airship!
-  function scrollWorldEntitiesBeneathAirship(world, deltaCols) {
+  function scrollWorldEntitiesBeneathAirship(world, deltaCols, ecoArg, cosmicArg) {
     if (!deltaCols || !world) return;
     const wrapX = (x) => {
       let nx = x - deltaCols;
@@ -7089,10 +7888,25 @@
     const shiftArrayX = (arr) => {
       if (!Array.isArray(arr)) return;
       for (let i = 0; i < arr.length; i++) {
-        if (arr[i] && typeof arr[i].x === "number") {
-          arr[i].x = wrapX(arr[i].x);
-          if (typeof arr[i].homeX === "number") arr[i].homeX = wrapX(arr[i].homeX);
-          if (typeof arr[i].forgeX === "number") arr[i].forgeX = wrapX(arr[i].forgeX);
+        const item = arr[i];
+        if (!item) continue;
+        if (typeof item.x === "number") {
+          item.x = wrapX(item.x);
+          if (typeof item.homeX === "number") item.homeX = wrapX(item.homeX);
+          if (typeof item.forgeX === "number") item.forgeX = wrapX(item.forgeX);
+          if (typeof item.inPortX === "number") item.inPortX = item.x - 2;
+          if (typeof item.outPortX === "number") item.outPortX = item.x + 2;
+          if (typeof item.targetX === "number") item.targetX = wrapX(item.targetX);
+        }
+        if (typeof item.fromX === "number") item.fromX = wrapX(item.fromX);
+        if (typeof item.toX === "number") item.toX = wrapX(item.toX);
+        if (typeof item.midX === "number") item.midX = wrapX(item.midX);
+        if (Array.isArray(item.segments)) {
+          for (let s = 0; s < item.segments.length; s++) {
+            if (item.segments[s] && typeof item.segments[s].x === "number") {
+              item.segments[s].x = wrapX(item.segments[s].x);
+            }
+          }
         }
       }
     };
@@ -7105,25 +7919,50 @@
     shiftArrayX(world.Dwarves);
     shiftArrayX(world.Raptors);
     shiftArrayX(world.Nests);
+    shiftArrayX(world.Castles);
     shiftArrayX(world.TarVeins);
+    shiftArrayX(world.Worms);
+    shiftArrayX(world.Shafts);
     shiftArrayX(world.Relics);
     shiftArrayX(world.Rocks);
 
-    const eco = world.eco || (global.SlopesEcology && global.SlopesEcology.eco);
+    const eco =
+      ecoArg ||
+      world.eco ||
+      (global.SlopesGame && global.SlopesGame.ecologySystem && global.SlopesGame.ecologySystem.eco) ||
+      (global.SlopesEcology && global.SlopesEcology.eco);
     if (eco) {
       shiftArrayX(eco.OrangePeople);
+      shiftArrayX(eco.Children);
+      shiftArrayX(eco.Critters);
       shiftArrayX(eco.BlackGoo);
+      shiftArrayX(eco.GooNodes);
       shiftArrayX(eco.ComputeVats);
+      shiftArrayX(eco.Automata);
       shiftArrayX(eco.Ferns);
       shiftArrayX(eco.StickyWebs);
+      shiftArrayX(eco.Webs);
       shiftArrayX(eco.Skeksis);
     }
 
-    const cos = world.cosmic || (global.SlopesCosmic && global.SlopesCosmic.cosmic);
+    const cos =
+      cosmicArg ||
+      world.cosmic ||
+      (global.SlopesGame && global.SlopesGame.cosmicSystem && global.SlopesGame.cosmicSystem.cosmic) ||
+      (global.SlopesCosmic && global.SlopesCosmic.cosmic);
     if (cos) {
       shiftArrayX(cos.Labs);
       shiftArrayX(cos.TimeCrystals);
       shiftArrayX(cos.wfcZones);
+      shiftArrayX(cos.WfcZones);
+      shiftArrayX(cos.Workers);
+      shiftArrayX(cos.Scientists);
+      shiftArrayX(cos.Crafts);
+      shiftArrayX(cos.Portals);
+    }
+
+    if (global.SlopesGeneticFlora && typeof global.SlopesGeneticFlora.scrollByCols === "function") {
+      global.SlopesGeneticFlora.scrollByCols(deltaCols, world);
     }
 
     if (global.SlopesChronosAndCiv && typeof global.SlopesChronosAndCiv.scrollCivWorldBy === "function") {
@@ -7135,6 +7974,8 @@
       shiftArrayX(state.evilSyndicate.greenBurials);
       shiftArrayX(state.evilSyndicate.skyBlackGardens);
     }
+    shiftArrayX(state.constructedDomes);
+    shiftArrayX(state.farmVehicles);
     if (state.worldMainframe && typeof state.worldMainframe.x === "number") {
       state.worldMainframe.x = wrapX(state.worldMainframe.x);
     }
@@ -7284,7 +8125,7 @@
             );
           }
         }
-        scrollWorldEntitiesBeneathAirship(world, dirSign * steps);
+        scrollWorldEntitiesBeneathAirship(world, dirSign * steps, eco, cosmic);
       }
 
       // Keep the Player positioned on deck (or hanging on the boarding rope below deck when descending)!
@@ -8417,10 +9258,10 @@
     const acc = tf.accentRgb || [120, 234, 212];
     const chas = tf.chassisRgb || [14, 34, 42];
     const bez = isSelected || isHovered ? acc : tf.bezelRgb || [56, 118, 132];
-    const cForm = tf.chassisForm || "mecha";
+    const cForm = tf.chassisForm || "monitor";
 
-    // If in compact shape-shifting form ("mecha", "wooden-robot", "living-tree"), render a compact ~22x28 sprite
-    // so terminals don't clutter the world, and wrap scrolling terminal characters across their face & body!
+    // If user explicitly switched into a compact shape-shifting form ("monolith", "mecha", "wooden-robot", "living-tree"),
+    // render a compact ~22x28 sprite and wrap scrolling terminal characters across its face & body!
     if (cForm !== "monitor") {
       const cw = Math.max(8, Math.round(22 * dimScale));
       const ch = Math.max(10, Math.round(28 * dimScale));
@@ -8434,7 +9275,17 @@
         primeRenderer.fillNativeRect(centerPx, horizonPy, 1, Math.max(2, ty - horizonPy), acc[0], acc[1], acc[2], 0.32);
       }
 
-      if (cForm === "mecha") {
+      if (cForm === "monolith") {
+        // Sleek 1:4:9 Obsidian Terminal Monolith Slab with glowing horizontal circuit strata & perched crow
+        const monoW = Math.max(7, Math.round(13 * dimScale));
+        const monoH = Math.max(14, Math.round(30 * dimScale));
+        const monoX = centerPx - Math.floor(monoW / 2);
+        const monoY = groundPy - monoH;
+        primeRenderer.fillNativeRect(monoX - 1, monoY - 1, monoW + 2, monoH + 1, bez[0], bez[1], bez[2], dAlpha * 0.9);
+        primeRenderer.fillNativeRect(monoX, monoY, monoW, monoH, 8, 14, 20, dAlpha);
+        primeRenderer.fillNativeRect(monoX + 1, monoY + 3, monoW - 2, 1, acc[0], acc[1], acc[2], dAlpha);
+        primeRenderer.fillNativeRect(monoX + 2, monoY + Math.floor(monoH * 0.45), monoW - 4, 1, 255, 212, 59, dAlpha);
+      } else if (cForm === "mecha") {
         // Sleek Bipedal Cyber-Mecha with visor, shoulder thrusters & articulated legs
         const legW = Math.max(2, Math.round(3 * dimScale));
         const legH = Math.max(3, Math.round(8 * dimScale));
@@ -8523,8 +9374,8 @@
       return;
     }
 
-    // Body dimensions in 840x525 native pixels (when explicitly in full "monitor" form):
-    // 87px wide (~12.4 coarse cells) x 38px tall monitor body + 10px rooftop bus + 6px wheels = 54px total height
+    // Body dimensions in 840x525 native pixels (default Embodied Terminal-Form "monitor" body):
+    // 87px wide (~12.4 coarse cells) x 38px tall monitor body + 9px rooftop bus + 6px wheels = 53px total height
     const bodyW = Math.max(24, Math.round(87 * dimScale));
     const bodyH = Math.max(12, Math.round(38 * dimScale));
     const wheelH = Math.max(2, Math.round(6 * dimScale));
@@ -8533,10 +9384,37 @@
 
     const leftPx = Math.max(4, Math.min(NATIVE_W - bodyW - 4, Math.round(centerPx - bodyW / 2)));
     const rightPx = leftPx + bodyW;
-    const bodyBotPy = Math.max(60, Math.min(NATIVE_H - 12, groundPy - wheelH));
-    const bodyTopPy = bodyBotPy - bodyH;
+
+    // Ground-Docking Mode (`tf.groundDockProgress` 0..1):
+    // When >1 Tab-Form is on screen, a Tab-Form can dock into the ground so its top surface matches the shape
+    // of the ground surface (`surfPyAt(px)`), other objects can move on top of it, and you can still read the terminal output!
+    const dockP = Math.max(0, Math.min(1, tf.groundDockProgress || 0));
+    const wCtx = state.lastWorldContext;
+    const wBlocks = wCtx && wCtx.Blocks;
+    const seaLvl = wCtx && typeof wCtx.SeaLevel === "number" ? wCtx.SeaLevel : 14;
+    function surfPyAt(px) {
+      if (!wBlocks) return groundPy;
+      const c = Math.max(0, Math.min(COARSE_W - 1, Math.floor(px / SCALE)));
+      const h = Math.max(seaLvl, wBlocks[c] || 18);
+      return Math.round((COARSE_H - h) * SCALE);
+    }
+
+    const undockedBotPy = Math.max(60, Math.min(NATIVE_H - 12, groundPy - wheelH));
+    const undockedTopPy = undockedBotPy - bodyH;
+    // When docked (`dockP -> 1`), sink the body into the subterranean ground so `bodyTopPy` aligns with `groundPy`
+    const sinkOffsetPy = Math.round(dockP * (bodyH + wheelH - 2));
+    const bodyTopPy = Math.min(NATIVE_H - bodyH - 4, undockedTopPy + sinkOffsetPy);
+    const bodyBotPy = bodyTopPy + bodyH;
     const busLeftPx = leftPx + Math.floor((bodyW - busW) / 2);
     const busTopPy = bodyTopPy - busH;
+
+    // Compute per-column top surface profile across `leftPx..rightPx` matching the ground surface when docked
+    const surfProfile = [];
+    for (let dx = 0; dx < bodyW; dx++) {
+      const px = leftPx + dx;
+      const sPy = surfPyAt(px);
+      surfProfile.push(Math.round(bodyTopPy * (1 - dockP) + sPy * dockP));
+    }
 
     // Record hit box in 840x525 native coordinates so clicking the sprite opens its terminal!
     state.spriteHitBoxes.push({
@@ -8940,22 +9818,28 @@
 
     // ------------------------------------------------------------------------
     // D. ROOFTOP PASSENGER BUS DECK (Top of Tab-Form carrying 3x3 Orange People)
+    //    When ground-docked (`dockP > 0`), each column of the top deck contours to match the ground surface!
     // ------------------------------------------------------------------------
-    // Bus outer cabin & 1px safety rail
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, busW, busH, 16, 38, 46, 0.96);
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, busW, 1, acc[0], acc[1], acc[2], 0.95);
-    primeRenderer.fillNativeRect(busLeftPx, busTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
-    primeRenderer.fillNativeRect(busLeftPx + busW - 1, busTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
+    for (let bx = 0; bx < busW; bx++) {
+      const colTopPy = surfProfile[Math.min(bodyW - 1, Math.floor((bodyW - busW) / 2) + bx)] - busH;
+      primeRenderer.fillNativeRect(busLeftPx + bx, colTopPy, 1, busH, 16, 38, 46, 0.96);
+      primeRenderer.fillNativeRect(busLeftPx + bx, colTopPy, 1, 1, acc[0], acc[1], acc[2], 0.95);
+    }
+    const leftBusTopPy = surfProfile[Math.floor((bodyW - busW) / 2)] - busH;
+    const rightBusTopPy = surfProfile[Math.min(bodyW - 1, Math.floor((bodyW - busW) / 2) + busW - 1)] - busH;
+    primeRenderer.fillNativeRect(busLeftPx, leftBusTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
+    primeRenderer.fillNativeRect(busLeftPx + busW - 1, rightBusTopPy, 1, busH, bez[0], bez[1], bez[2], 0.95);
 
     // Boarding door indicator on left side of bus
     const doorCol = tf.busOpen ? [85, 235, 135] : [225, 95, 85];
-    primeRenderer.fillNativeRect(busLeftPx + 2, busTopPy + 2, 4, busH - 2, doorCol[0], doorCol[1], doorCol[2], 0.9);
+    primeRenderer.fillNativeRect(busLeftPx + 2, leftBusTopPy + 2, 4, busH - 2, doorCol[0], doorCol[1], doorCol[2], 0.9);
 
-    // 6 Panoramic Bus Windows + Visible Orange Villagers / Children riding inside!
+    // 6 Panoramic Bus Windows + Visible Orange Villagers / Children riding on top (following ground contour when docked)!
     const passengers = tf.busPassengers || [];
     for (let slot = 0; slot < 6; slot++) {
       const wx = busLeftPx + 8 + slot * 8;
-      const wy = busTopPy + 2;
+      const profIdx = Math.min(bodyW - 1, Math.max(0, wx - leftPx + 3));
+      const wy = surfProfile[profIdx] - busH + 2;
       // Dark glass window well
       primeRenderer.fillNativeRect(wx, wy, 6, 6, 6, 16, 20, 0.95);
       if (slot < passengers.length) {
@@ -8972,24 +9856,25 @@
     // E. FOLD-OUT UPPER BIRD PERCHES & PERCHED SEER CROWS (`body perch`)
     // ------------------------------------------------------------------------
     if (tf.perchesOpen) {
-      // Left T-perch & Right T-perch on upper corners of chassis
+      // Left T-perch & Right T-perch on upper corners of chassis (following ground surface contour when docked)
       const leftPerchX = leftPx + 4;
       const rightPerchX = rightPx - 12;
-      const perchY = bodyTopPy - 5;
+      const leftPerchY = surfProfile[Math.min(bodyW - 1, 7)] - 5;
+      const rightPerchY = surfProfile[Math.max(0, bodyW - 9)] - 5;
 
       // Perch struts
-      primeRenderer.fillNativeRect(leftPerchX + 3, perchY, 2, 5, 165, 205, 210, 0.95);
-      primeRenderer.fillNativeRect(leftPerchX, perchY, 8, 1, 215, 240, 235, 1);
+      primeRenderer.fillNativeRect(leftPerchX + 3, leftPerchY, 2, 5, 165, 205, 210, 0.95);
+      primeRenderer.fillNativeRect(leftPerchX, leftPerchY, 8, 1, 215, 240, 235, 1);
 
-      primeRenderer.fillNativeRect(rightPerchX + 3, perchY, 2, 5, 165, 205, 210, 0.95);
-      primeRenderer.fillNativeRect(rightPerchX, perchY, 8, 1, 215, 240, 235, 1);
+      primeRenderer.fillNativeRect(rightPerchX + 3, rightPerchY, 2, 5, 165, 205, 210, 0.95);
+      primeRenderer.fillNativeRect(rightPerchX, rightPerchY, 8, 1, 215, 240, 235, 1);
 
       // Render perched Seer Crows (Corvus) on the perches!
       const birds = tf.perchedBirds || [];
       for (let bIdx = 0; bIdx < Math.min(2, birds.length); bIdx++) {
         const bird = birds[bIdx];
         const bx = bIdx === 0 ? leftPerchX + 2 : rightPerchX + 2;
-        const by = perchY - 5;
+        const by = (bIdx === 0 ? leftPerchY : rightPerchY) - 5;
         const flap = Math.round(Math.sin(bird.wingPhase || tick * 0.2) * 2);
 
         // Obsidian crow body + tail + head
@@ -9005,14 +9890,111 @@
     }
 
     // ------------------------------------------------------------------------
-    // F. ANODIZED TERMINAL BODY SHELL & LIVE TERMINAL MONITOR
+    // E2. THIN TELESCOPING STEEL POLE SKY-ANCHOR (`tf.poleExtension > 0.01`)
+    //     Descends from bottom center of Tab-Form down to the terrain surface!
     // ------------------------------------------------------------------------
-    // Outer chassis fill (respects spriteTransparency up to 0.50 transparent!)
-    const spriteTrans = Math.max(0, Math.min(0.5, tf.spriteTransparency || 0));
-    const scrAlpha = Math.max(0.5, 1.0 - spriteTrans);
+    const poleExt = tf.poleExtension || 0;
+    if (poleExt > 0.01) {
+      const blocksArr =
+        (state.lastWorldContext && state.lastWorldContext.Blocks) || new Array(COARSE_W).fill(18);
+      const seaLvl = (state.lastWorldContext && state.lastWorldContext.seaLevel) || 12;
+      const pCol = Math.max(2, Math.min(COARSE_W - 3, Math.round(tf.x)));
+      const surfElev = Math.max(seaLvl, blocksArr[pCol] || 18);
+      const surfPy = Math.round((COARSE_H - surfElev) * SCALE);
+      const poleTopY = bodyBotPy;
+      const fullSpan = Math.max(8, surfPy - poleTopY);
+      const curSpan = Math.round(fullSpan * poleExt);
+      const poleBotY = poleTopY + curSpan;
+      const sec1End = poleTopY + Math.floor(curSpan * 0.32);
+      const sec2End = poleTopY + Math.floor(curSpan * 0.68);
+
+      // Upper 3px steel sleeve
+      primeRenderer.fillNativeRect(centerPx - 1, poleTopY, 3, Math.max(1, sec1End - poleTopY), 165, 192, 206, 0.96);
+      primeRenderer.fillNativeRect(centerPx, poleTopY, 1, Math.max(1, sec1End - poleTopY), 230, 245, 255, 0.98);
+      // Locking collar 1
+      primeRenderer.fillNativeRect(centerPx - 2, sec1End - 1, 5, 2, acc[0], acc[1], acc[2], 0.98);
+
+      // Mid 2px brushed steel tube
+      if (sec2End > sec1End) {
+        primeRenderer.fillNativeRect(centerPx - 1, sec1End, 2, sec2End - sec1End, 145, 175, 190, 0.96);
+        primeRenderer.fillNativeRect(centerPx, sec1End, 1, sec2End - sec1End, 220, 240, 250, 0.98);
+        // Locking collar 2
+        primeRenderer.fillNativeRect(centerPx - 2, sec2End - 1, 4, 2, 255, 212, 59, 0.98);
+      }
+
+      // Lower 1px thin hardened steel rod + anchor footplate on ground surface
+      if (poleBotY > sec2End) {
+        primeRenderer.fillNativeRect(centerPx, sec2End, 1, poleBotY - sec2End, 210, 234, 245, 0.98);
+      }
+      if (poleExt > 0.92) {
+        primeRenderer.fillNativeRect(centerPx - 4, surfPy - 2, 9, 2, 125, 158, 172, 0.98);
+        primeRenderer.fillNativeRect(centerPx - 2, surfPy - 3, 5, 1, acc[0], acc[1], acc[2], 1);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // E3. ROCKET-THRUSTER EXTENDED-REACH PHYSICS ARM (`tf.rocketArm`)
+    //     Reaches anywhere on screen using real physics + catenary cable!
+    // ------------------------------------------------------------------------
+    if (tf.rocketArm && tf.rocketArm.active) {
+      const ra = tf.rocketArm;
+      const rx = Math.round(ra.x * SCALE);
+      const ry = Math.round((COARSE_H - ra.y) * SCALE);
+      const cPts = ra.cablePts || [];
+      for (let ci = 0; ci < cPts.length - 1; ci++) {
+        const p0x = Math.round(cPts[ci].x * SCALE);
+        const p0y = Math.round((COARSE_H - cPts[ci].y) * SCALE);
+        const p1x = Math.round(cPts[ci + 1].x * SCALE);
+        const p1y = Math.round((COARSE_H - cPts[ci + 1].y) * SCALE);
+        drawNativeLine(p0x, p0y, p1x, p1y, 95, 175, 190, 0.9, tick + ci);
+      }
+      // Wrist chassis + twin miniature rocket thrusters on the arm!
+      primeRenderer.fillNativeRect(rx - 4, ry - 3, 8, 5, 52, 108, 122, 0.98);
+      primeRenderer.fillNativeRect(rx - 3, ry - 2, 6, 2, acc[0], acc[1], acc[2], 1);
+      const flameH = 4 + (tick % 4);
+      primeRenderer.fillNativeRect(rx - 4, ry + 2, 2, flameH, 255, 195, 65, 0.95);
+      primeRenderer.fillNativeRect(rx + 2, ry + 2, 2, flameH, 115, 245, 255, 0.95);
+      // Articulated pincer jaws
+      primeRenderer.fillNativeRect(rx - 6, ry - 1, 2, 4, 235, 248, 250, 1);
+      primeRenderer.fillNativeRect(rx + 4, ry - 1, 2, 4, 235, 248, 250, 1);
+      // Cargo held in rocket-arm claw or welding arc sparks during dome/vehicle construction
+      if (ra.cargo) {
+        const cCol = ra.cargo.color || [255, 160, 65];
+        primeRenderer.fillNativeRect(rx - 2, ry + 2, 4, 4, cCol[0], cCol[1], cCol[2], 1);
+      } else if (ra.phase === "working") {
+        for (let sp = 0; sp < 4; sp++) {
+          const sx = rx + ((tick * 3 + sp * 5) % 11) - 5;
+          const sy = ry + ((tick * 2 + sp * 3) % 9) - 4;
+          primeRenderer.fillNativeRect(sx, sy, 2, 2, sp & 1 ? 120 : 255, 245, sp & 1 ? 255 : 95, 0.98);
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // F. ANODIZED TERMINAL BODY SHELL & LIVE TERMINAL MONITOR
+    //    When ground-docked (`dockP > 0`), the top surface of the Term-Form matches the exact contour of the ground!
+    //    When overlapping another Tab-Form (`overlapHollowBlend > 0`), becomes hollow black 0.10 opacity!
+    // ------------------------------------------------------------------------
+    const spriteTrans = Math.max(0, Math.min(0.5, tf.spriteTransparency !== undefined ? tf.spriteTransparency : 0.40));
+    const baseScrAlpha = Math.max(0.45, 1.0 - spriteTrans); // 0.60 default opacity!
+    const hollowBlend = Math.max(0, Math.min(1, tf.overlapHollowBlend || 0));
+    const scrAlpha = baseScrAlpha * (1 - hollowBlend) + 0.10 * hollowBlend;
     const scrBg = tf.screenBgRgb || [4, 10, 14];
     const scrTxtRgb = tf.screenTextRgb || acc;
-    primeRenderer.fillNativeRect(leftPx, bodyTopPy, bodyW, bodyH, chas[0], chas[1], chas[2], Math.max(0.55, scrAlpha));
+    for (let dx = 0; dx < bodyW; dx++) {
+      const colTop = surfProfile[dx];
+      const colH = Math.max(12, bodyBotPy - colTop);
+      const fillR = Math.round(chas[0] * (1 - hollowBlend));
+      const fillG = Math.round(chas[1] * (1 - hollowBlend));
+      const fillB = Math.round(chas[2] * (1 - hollowBlend));
+      primeRenderer.fillNativeRect(leftPx + dx, colTop, 1, colH, fillR, fillG, fillB, scrAlpha);
+      // Top surface contour bezel matching ground surface shape!
+      primeRenderer.fillNativeRect(leftPx + dx, colTop, 1, 1, bez[0], bez[1], bez[2], 1);
+      if (dockP > 0.25) {
+        // Subtle glowing surface-bridge turf/brass strip so objects walking over the docked terminal have a flush surface
+        primeRenderer.fillNativeRect(leftPx + dx, colTop - 1, 1, 1, acc[0], acc[1], acc[2], 0.72 * dockP);
+      }
+    }
 
     // Inner Terminal Screen (`83 x 27` native pixels)
     const scrX = leftPx + 2;
@@ -9038,6 +10020,9 @@
       scrH,
       isSelected,
       isHovered,
+      groundDockProgress: dockP,
+      overlapHollowBlend: hollowBlend,
+      surfProfile,
     };
 
     // Always draw the anodized monitor bezel and dark inner screen well on `#pi-shift` so the
@@ -9046,10 +10031,19 @@
     primeRenderer.fillNativeRect(leftPx, bodyBotPy - 1, bodyW, 1, bez[0], bez[1], bez[2], 1);
     primeRenderer.fillNativeRect(leftPx, bodyTopPy, 1, bodyH, bez[0], bez[1], bez[2], 1);
     primeRenderer.fillNativeRect(rightPx - 1, bodyTopPy, 1, bodyH, bez[0], bez[1], bez[2], 1);
-    primeRenderer.fillNativeRect(leftPx + 1, bodyTopPy + 1, bodyW - 2, 7, 10, 24, 30, Math.max(0.65, scrAlpha));
+    primeRenderer.fillNativeRect(leftPx + 1, bodyTopPy + 1, bodyW - 2, 7, 10, 24, 30, scrAlpha);
     primeRenderer.fillNativeRect(leftPx + 1, bodyTopPy + 8, bodyW - 2, 1, bez[0], bez[1], bez[2], 0.85);
     primeRenderer.fillNativeRect(leftPx + 3, bodyTopPy + 3, 2, 2, acc[0], acc[1], acc[2], 1);
-    primeRenderer.fillNativeRect(scrX, scrY, scrW, scrH, scrBg[0], scrBg[1], scrBg[2], scrAlpha);
+    primeRenderer.fillNativeRect(
+      scrX,
+      scrY,
+      scrW,
+      scrH,
+      Math.round(scrBg[0] * (1 - hollowBlend)),
+      Math.round(scrBg[1] * (1 - hollowBlend)),
+      Math.round(scrBg[2] * (1 - hollowBlend)),
+      scrAlpha
+    );
 
     // When headless or before device-pixel overlay sync, also draw `micro4x6` inside `#pi-shift`
     if (!state.devicePixelOverlayActive && renderer) {
@@ -9179,20 +10173,67 @@
     const lineH = fontObj.h || 26;
     state.tabStripHitBoxes = [];
 
+    const vp = (typeof window !== "undefined" && window.SlopesViewport) || null;
+    const vpW = vp && vp.viewW ? vp.viewW : NATIVE_W;
+    const vpH = vp && vp.viewH ? vp.viewH : NATIVE_H;
+    const vpOffX = vp && vp.offsetX ? vp.offsetX : 0;
+    const vpOffY = vp && vp.offsetY ? vp.offsetY : 0;
+    const toDevX = (nx) => ((nx + vpOffX) / vpW) * devW;
+    const toDevY = (ny) => ((ny + vpOffY) / vpH) * devH;
+    const scaleDevW = (nw) => (nw / vpW) * devW;
+    const scaleDevH = (nh) => (nh / vpH) * devH;
+
     // Helper: Render fading / scrolling marquee overhead text stream (`tf.overheadStream`)
     // AND the hover `[+ FOLLOW ME]` / `[✓ FOLLOWING (~1m)]` button above any on-screen Tab-Form!
+    // Uses default 0.60 background opacity and smooth non-janky anti-overlap positioning (`occupiedRects`)!
+    const occupiedOverheadRects = [];
+    function findNonOverlappingOverheadPos(wantX, wantY, boxW, boxH) {
+      let tx = Math.max(6, Math.min(devW - boxW - 6, wantX));
+      let ty = Math.max(38, Math.min(devH - boxH - 12, wantY));
+      for (let attempt = 0; attempt < 10; attempt++) {
+        let hit = null;
+        for (let r = 0; r < occupiedOverheadRects.length; r++) {
+          const ob = occupiedOverheadRects[r];
+          if (tx < ob.x + ob.w + 6 && tx + boxW + 6 > ob.x && ty < ob.y + ob.h + 4 && ty + boxH + 4 > ob.y) {
+            hit = ob;
+            break;
+          }
+        }
+        if (!hit) break;
+        // Shift smoothly upward or sideways to avoid overlap
+        ty = Math.max(38, hit.y - boxH - 5);
+        if (ty <= 40) {
+          tx = Math.max(6, Math.min(devW - boxW - 6, tx + ((attempt & 1) === 0 ? 48 : -48)));
+        }
+      }
+      occupiedOverheadRects.push({ x: tx, y: ty, w: boxW, h: boxH });
+      return { tx, ty };
+    }
+
+    function stepSmoothCoord(prevVal, targetVal, maxStep, alpha) {
+      if (typeof prevVal !== "number" || Number.isNaN(prevVal)) return targetVal;
+      const delta = targetVal - prevVal;
+      const step = Math.max(-maxStep, Math.min(maxStep, delta * alpha));
+      return prevVal + step;
+    }
+
     function renderOverheadStreamAndFollowBtn(tf, centerDevX, anchorTopY, isHovered, isSelected) {
       const accHex = tf.accentHex || "#78ead4";
       let curTopY = Math.max(40, anchorTopY - 4);
 
-      // 1. Hover / Selected `[+ FOLLOW ME]` / `[✓ FOLLOWING (~1m)]` Button
+      // 1. Hover / Selected `[+ FOLLOW ME]` / `[✓ FOLLOWING (~1m)]` Button (0.60 background opacity)
       const showFollowBtn = isHovered || (tf._hoverLinger && tf._hoverLinger > 0) || isSelected;
       if (showFollowBtn) {
         const followLbl = tf.followRequested ? "[✓ FOLLOWING (~1m) · CLICK TO FREE-ROAM]" : "[+ FOLLOW ME (TREKS ACROSS FRAMES)]";
         const fw = followLbl.length * charW + 14;
         const fh = lineH + 4;
-        const fx = Math.max(6, Math.min(devW - fw - 6, Math.round(centerDevX - fw / 2)));
-        const fy = Math.max(38, curTopY - fh);
+        const wantFx = Math.max(6, Math.min(devW - fw - 6, Math.round(centerDevX - fw / 2)));
+        const wantFy = Math.max(38, curTopY - fh);
+        const { tx: goalFx, ty: goalFy } = findNonOverlappingOverheadPos(wantFx, wantFy, fw, fh);
+        tf._followSmoothX = stepSmoothCoord(tf._followSmoothX, goalFx, 3.4, 0.055);
+        tf._followSmoothY = stepSmoothCoord(tf._followSmoothY, goalFy, 3.0, 0.055);
+        const fx = Math.round(tf._followSmoothX);
+        const fy = Math.round(tf._followSmoothY);
         R.drawHairlineRect(
           ctx,
           fx,
@@ -9200,7 +10241,7 @@
           fw,
           fh,
           tf.followRequested ? "#69db7c" : "#ffd43b",
-          tf.followRequested ? "rgba(8, 36, 22, 0.95)" : "rgba(32, 24, 6, 0.95)"
+          tf.followRequested ? "rgba(8, 36, 22, 0.60)" : "rgba(32, 24, 6, 0.60)"
         );
         R.drawCanvasText(ctx, followLbl, fx + 7, fy + 2, tf.followRequested ? "#69db7c" : "#ffd43b", fontKey, 1, 0);
         state.tabStripHitBoxes.push({
@@ -9217,7 +10258,7 @@
       }
 
       // 2. Fading / Marquee Overhead Text Stream (`tf.overheadStream`)
-      //    Older lines fade out smoothly (`entry.alpha`) as new messages are generated!
+      //    Default 0.60 background opacity + slow, non-janky anti-overlap positioning!
       if (Array.isArray(tf.overheadStream) && tf.overheadStream.length > 0) {
         const maxMarqueeCols = 38;
         for (let oi = tf.overheadStream.length - 1; oi >= 0; oi--) {
@@ -9230,14 +10271,19 @@
             const off = Math.floor(item.scrollOffset || 0) % (rawStr.length + 7);
             dispStr = padded.slice(off, off + maxMarqueeCols);
           }
-          const lineLabel = `${tf.id}: ${dispStr}`;
+          const lineLabel = `${getClaudeSocialHandle(tf)}: ${dispStr}`;
           const mw = lineLabel.length * charW + 12;
           const mh = lineH + 2;
-          const mx = Math.max(6, Math.min(devW - mw - 6, Math.round(centerDevX - mw / 2)));
-          const my = Math.max(38, curTopY - mh);
+          const wantMx = Math.max(6, Math.min(devW - mw - 6, Math.round(centerDevX - mw / 2)));
+          const wantMy = Math.max(38, curTopY - mh);
+          const { tx: goalMx, ty: goalMy } = findNonOverlappingOverheadPos(wantMx, wantMy, mw, mh);
+          item.smoothX = stepSmoothCoord(item.smoothX, goalMx, 3.2, 0.048);
+          item.smoothY = stepSmoothCoord(item.smoothY, goalMy, 2.8, 0.048);
+          const mx = Math.round(item.smoothX);
+          const my = Math.round(item.smoothY);
           ctx.save();
           ctx.globalAlpha = Math.max(0.06, Math.min(0.98, item.alpha));
-          R.drawHairlineRect(ctx, mx, my, mw, mh, item.color || accHex, "rgba(6, 16, 22, 0.88)");
+          R.drawHairlineRect(ctx, mx, my, mw, mh, item.color || accHex, "rgba(6, 16, 22, 0.60)");
           R.drawCanvasText(ctx, lineLabel, mx + 6, my + 1, item.color || "#ebfcf8", fontKey, 1, 0);
           ctx.restore();
           curTopY = my - 3;
@@ -9246,6 +10292,7 @@
     }
 
     // 1. Render Each In-World Embodied Tab-Form's Chest Terminal Screen at 1:1 Physical Device Pixels in `h12x26`!
+    const activeMonitorRects = [];
     for (let i = 0; i < state.tabForms.length; i++) {
       const tf = state.tabForms[i];
       if (tf.isOffScreen || (tf.transitTimer && tf.transitTimer > 0)) {
@@ -9261,18 +10308,18 @@
       const accHex = tf.accentHex || "#78ead4";
       const bezRgb = tf.bezelRgb || [56, 118, 132];
       const bezHex = isSelected || isHovered ? accHex : `rgb(${bezRgb[0]},${bezRgb[1]},${bezRgb[2]})`;
-      const spriteTrans = Math.max(0, Math.min(0.5, tf.spriteTransparency || 0));
-      const scrAlpha = Math.max(0.68, 1.0 - spriteTrans);
+      const spriteTrans = Math.max(0, Math.min(0.5, tf.spriteTransparency !== undefined ? tf.spriteTransparency : 0.40));
+      const scrAlpha = Math.max(0.45, 1.0 - spriteTrans); // Default 0.60 opacity!
       const scrBg = tf.screenBgRgb || [4, 10, 14];
       const scrTxtRgb = tf.screenTextRgb || [216, 244, 238];
       const isLight = !!tf.isLightTheme;
 
       // Map sprite chest monitor box to integer physical device pixels
-      const rawX = Math.round((nr.leftPx / NATIVE_W) * devW);
-      const rawY = Math.round((nr.bodyTopPy / NATIVE_H) * devH);
-      const rawW = Math.round((nr.bodyW / NATIVE_W) * devW);
-      const rawH = Math.round((nr.bodyH / NATIVE_H) * devH);
-      const centerDevX = Math.round((nr.centerPx / NATIVE_W) * devW);
+      const rawX = Math.round(toDevX(nr.leftPx));
+      const rawY = Math.round(toDevY(nr.bodyTopPy));
+      const rawW = Math.round(scaleDevW(nr.bodyW));
+      const rawH = Math.round(scaleDevH(nr.bodyH));
+      const centerDevX = Math.round(toDevX(nr.centerPx));
 
       // If in compact shape-shifting form ("mecha", "wooden-robot", "living-tree"), do NOT render a huge monitor block!
       // Instead, scroll live terminal characters across its face visor and wrap them around its body contour!
@@ -9332,11 +10379,95 @@
       const minRows = devH >= 480 ? 3 : 2;
       const monW = Math.max(rawW, 16 * charW + 10);
       const monH = Math.max(rawH, hdrH + minRows * lineH + 6);
-      const monX = Math.max(4, Math.min(devW - monW - 4, Math.round(centerDevX - monW / 2)));
-      const monY = Math.max(36, Math.min(devH - monH - 8, rawY));
+      const bodyMonX = Math.max(4, Math.min(devW - monW - 4, Math.round(centerDevX - monW / 2)));
+      const bodyMonY = Math.max(36, Math.min(devH - monH - 8, rawY));
 
-      // Record exact 1:1 device-pixel hit-box on `tf._devMonitorRect` (with generous padding for rooftop bus & wheels)
-      // so clicking ANYWHERE on the Tab-Form or its exposed terminal screen reliably opens its terminal!
+      // Check if this Tab-Form is in the surface activity zone (`bodyMonY > devH * 0.43` and not ground-docked)
+      // or overlapping an earlier monitor (`overlapHollowBlend > 0.08`):
+      // 1. The physical body at `(bodyMonX, bodyMonY)` becomes hollow black 0.10 opacity (`rgba(0,0,0,0.10)`) so it doesn't obscure surface activity or other Tab-Forms.
+      // 2. The terminal screen projects up into the sky band a little more than halfway up the center of the screen
+      //    (`y ≈ 0.305 * devH`, i.e., ~63%–68% up from the bottom of the screen: completely out of the way of surface-level
+      //    activity and just below the writing in the sky at `y = 0.02..0.275 * devH`!) with 4 crisp projection lines of light!
+      let overlapsMonitor = (nr.overlapHollowBlend || 0) > 0.08;
+      for (let mIdx = 0; mIdx < activeMonitorRects.length; mIdx++) {
+        const om = activeMonitorRects[mIdx];
+        if (
+          bodyMonX < om.x + om.w + 8 &&
+          bodyMonX + monW + 8 > om.x &&
+          bodyMonY < om.y + om.h + 8 &&
+          bodyMonY + monH + 8 > om.y
+        ) {
+          overlapsMonitor = true;
+          break;
+        }
+      }
+
+      const worldSurfaceCutY = Math.round(toDevY(NATIVE_H * 0.43));
+      const isSurfaceLevel = (nr.groundDockProgress || 0) <= 0.05 && bodyMonY > worldSurfaceCutY;
+      const shouldProjectToSkyBand = overlapsMonitor || isSurfaceLevel;
+
+      // Sky projection band: a little more than halfway up the center of the active world window (`0.305 * NATIVE_H` from world top),
+      // strictly below the sky writing (`0.275 * NATIVE_H`) and well above surface-level activity (`> 0.46 * NATIVE_H`).
+      const skyBandY = Math.max(44, Math.round(toDevY(NATIVE_H * 0.305)) + (i % 2) * 12);
+
+      let goalMonX = bodyMonX;
+      let goalMonY = bodyMonY;
+      if (shouldProjectToSkyBand) {
+        const sideDir = i % 2 === 0 ? -1 : 1;
+        goalMonX = overlapsMonitor
+          ? Math.max(8, Math.min(devW - monW - 8, Math.round(bodyMonX + sideDir * (monW * 0.72 + 18))))
+          : bodyMonX;
+        goalMonY = Math.min(bodyMonY, skyBandY);
+        // Ensure projected sky rect doesn't overlap any already placed monitor rect
+        for (let mIdx = 0; mIdx < activeMonitorRects.length; mIdx++) {
+          const om = activeMonitorRects[mIdx];
+          if (
+            goalMonX < om.x + om.w + 10 &&
+            goalMonX + monW + 10 > om.x &&
+            goalMonY < om.y + om.h + 10 &&
+            goalMonY + monH + 10 > om.y
+          ) {
+            goalMonX = Math.max(8, Math.min(devW - monW - 8, om.x + (om.x > devW * 0.5 ? -(monW + 18) : om.w + 18)));
+          }
+        }
+      }
+
+      tf._projSmoothX = stepSmoothCoord(tf._projSmoothX, goalMonX, 2.4, 0.032);
+      tf._projSmoothY = stepSmoothCoord(tf._projSmoothY, goalMonY, 2.2, 0.032);
+      const monX = Math.round(tf._projSmoothX);
+      const monY = Math.round(tf._projSmoothY);
+      const projDist = Math.hypot(monX - bodyMonX, monY - bodyMonY);
+      const isProjectingToSky = projDist > 6 || shouldProjectToSkyBand;
+
+      activeMonitorRects.push({ x: monX, y: monY, w: monW, h: monH });
+      occupiedOverheadRects.push({ x: monX, y: monY, w: monW, h: monH });
+
+      // If projecting onto the sky nearby, draw the hollow 0.10-opacity black body frame at `(bodyMonX, bodyMonY)`
+      // AND 4 crisp projection lines of light connecting the body corners to the sky-projected terminal!
+      if (isProjectingToSky) {
+        R.drawHairlineRect(ctx, bodyMonX, bodyMonY, monW, monH, bezHex, "rgba(0, 0, 0, 0.10)");
+        ctx.save();
+        ctx.strokeStyle = accHex;
+        ctx.globalAlpha = 0.48;
+        ctx.lineWidth = 1;
+        if (typeof ctx.setLineDash === "function") ctx.setLineDash([4, 4]);
+        const corners = [
+          [bodyMonX, bodyMonY, monX, monY],
+          [bodyMonX + monW, bodyMonY, monX + monW, monY],
+          [bodyMonX, bodyMonY + monH, monX, monY + monH],
+          [bodyMonX + monW, bodyMonY + monH, monX + monW, monY + monH],
+        ];
+        for (let c = 0; c < corners.length; c++) {
+          ctx.beginPath();
+          ctx.moveTo(corners[c][0], corners[c][1]);
+          ctx.lineTo(corners[c][2], corners[c][3]);
+          ctx.stroke();
+        }
+        if (typeof ctx.setLineDash === "function") ctx.setLineDash([]);
+        ctx.restore();
+      }
+
+      // Record exact 1:1 device-pixel hit-box on `tf._devMonitorRect`
       tf._devMonitorRect = {
         id: tf.id,
         x: monX - 12,
@@ -9346,19 +10477,51 @@
       };
 
       // Outer 1-device-pixel hairline monitor bezel & backdrop
+      // When ground-docked (`nr.groundDockProgress > 0.05`), contour the top surface of the terminal monitor
+      // to match the exact shape of the ground surface (`nr.surfProfile`) while keeping the terminal output readable below!
       const bgRgba = `rgba(${scrBg[0]}, ${scrBg[1]}, ${scrBg[2]}, ${scrAlpha.toFixed(2)})`;
-      R.drawHairlineRect(ctx, monX, monY, monW, monH, bezHex, bgRgba);
-      if (isHovered || isSelected) {
-        R.drawHairlineRect(ctx, monX - 1, monY - 1, monW + 2, monH + 2, accHex, null);
+      const dockP = nr.groundDockProgress || 0;
+      if (dockP > 0.05 && Array.isArray(nr.surfProfile) && nr.surfProfile.length > 0) {
+        const sProf = nr.surfProfile;
+        ctx.save();
+        ctx.beginPath();
+        for (let sx = 0; sx <= monW; sx += 2) {
+          const pIdx = Math.min(sProf.length - 1, Math.max(0, Math.floor((sx / Math.max(1, monW)) * (sProf.length - 1))));
+          const surfDevY = Math.round(toDevY(sProf[pIdx]));
+          const topY = Math.round(monY * (1 - dockP) + surfDevY * dockP);
+          if (sx === 0) ctx.moveTo(monX + sx, topY);
+          else ctx.lineTo(monX + sx, topY);
+        }
+        ctx.lineTo(monX + monW, monY + monH);
+        ctx.lineTo(monX, monY + monH);
+        ctx.closePath();
+        ctx.fillStyle = bgRgba;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = isHovered || isSelected ? accHex : bezHex;
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        R.drawHairlineRect(ctx, monX, monY, monW, monH, bezHex, bgRgba);
+        if (isHovered || isSelected) {
+          R.drawHairlineRect(ctx, monX - 1, monY - 1, monW + 2, monH + 2, accHex, null);
+        }
       }
 
-      R.drawHairlineRect(ctx, monX, monY, monW, hdrH, bezHex, "rgba(8, 22, 28, 0.96)");
+      R.drawHairlineRect(ctx, monX, monY, monW, hdrH, bezHex, "rgba(8, 22, 28, 0.92)");
 
       // Active tab dot (4x4 device pixels) + `h12x26` Tab Header Title
       ctx.fillStyle = accHex;
       ctx.fillRect(monX + 4, monY + Math.floor((hdrH - 4) / 2), 4, 4);
       const maxHdrChars = Math.max(6, Math.floor((monW - 34) / charW));
-      const modeTag = tf.realTabActive ? "LINUX" : tf.paneLayout === "split-v" ? "CLAUDE|HAIKU" : (tf.agentMode || "CLAUDE").toUpperCase();
+      const modeTag =
+        dockP > 0.5
+          ? "GROUND-DOCK"
+          : tf.realTabActive
+          ? "LINUX"
+          : tf.paneLayout === "split-v"
+          ? "CLAUDE|HAIKU"
+          : (tf.agentMode || "CLAUDE").toUpperCase();
       const headerLabel = `${tf.id} ${modeTag}`.slice(0, maxHdrChars);
       R.drawCanvasText(ctx, headerLabel, monX + 11, monY + 1, accHex, fontKey, 1, 0);
 
@@ -9440,7 +10603,7 @@
       }
 
       // Fading / Marquee Overhead Text Stream + Hover `[+ FOLLOW ME]` Button above Monitor Form!
-      const busDevY = Math.round((nr.busTopPy / NATIVE_H) * devH);
+      const busDevY = Math.round(toDevY(nr.busTopPy));
       const topAnchorY = Math.min(monY, busDevY);
       renderOverheadStreamAndFollowBtn(tf, centerDevX, topAnchorY, isHovered, isSelected);
     }
@@ -9521,16 +10684,23 @@
 
     // 1a-2. Render Compact 1:1 Device-Pixel Labels & Chat Bubbles for Other Monoliths in the Shared World,
     //       plus the Player's own Chat Bubble & Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`)!
+    const zs = global.SlopesLorePortalDock && global.SlopesLorePortalDock.zoomState;
+    const rawZ = zs && typeof zs.depth === "number" ? Math.abs(zs.depth) : 0;
+    const zMod = ((rawZ % 5) + 5) % 5;
+    const unzoomedLabelAlpha = zMod < 0.35 ? Math.max(0, 1 - zMod / 0.35) : zMod > 4.65 ? Math.min(1, (zMod - 4.65) / 0.35) : 0;
+
     const mesh = ensureSharedMonolithMesh(state.lastWorldContext);
-    if (mesh && Array.isArray(mesh.peers)) {
+    if (unzoomedLabelAlpha > 0.02 && mesh && Array.isArray(mesh.peers)) {
+      ctx.save();
+      ctx.globalAlpha = unzoomedLabelAlpha;
       for (let pi = 0; pi < mesh.peers.length; pi++) {
         const peer = mesh.peers[pi];
         if (peer.roomX !== curSx0 || !peer._nativeRect) continue;
         const isPeerHov = state.hoveredTabId === peer.id;
         if (!isPeerHov && (!peer.chatTimer || peer.chatTimer <= 0)) continue;
         const pnr = peer._nativeRect;
-        const pcx = Math.round((pnr.cx / NATIVE_W) * devW);
-        const pmy = Math.round((pnr.my / NATIVE_H) * devH);
+        const pcx = Math.round(toDevX(pnr.cx));
+        const pmy = Math.round(toDevY(pnr.my));
         const roleBadge = peer.peerType || "AI PILGRIM";
         const tagTxt = isPeerHov
           ? `◈ ${peer.id} [${roleBadge}] (${peer.handle} · click or press C to chat)`
@@ -9550,14 +10720,15 @@
           R.drawCanvasText(ctx, chatStr, cx0 + 5, cy0 + 1, peer.highlightHex, fontKey, 1, 0);
         }
       }
+      ctx.restore();
     }
 
     // Render Player's own overhead chat bubble when they just sent a message
     if (mesh && mesh.localChatTimer > 0 && mesh.localChatBubble && state.lastWorldContext) {
       const pl = state.lastWorldContext.P || state.lastWorldContext.Player;
       if (pl && typeof pl.x === "number") {
-        const plCx = Math.round(((pl.x * SCALE) / NATIVE_W) * devW);
-        const plCy = Math.round((((COARSE_H - (pl.y || 20)) * SCALE - 40) / NATIVE_H) * devH);
+        const plCx = Math.round(toDevX(pl.x * SCALE));
+        const plCy = Math.round(toDevY((COARSE_H - (pl.y || 20)) * SCALE - 40));
         const youStr = `YOU: "${String(mesh.localChatBubble).slice(0, 48)}"`;
         const yw = youStr.length * charW + 10;
         const yx = Math.max(6, Math.min(devW - yw - 6, Math.round(plCx - yw / 2)));
@@ -9667,8 +10838,8 @@
       const mfRows = 3;
       const mfW = mfCols * charW + 12;
       const mfH = mfRows * lineH + 8;
-      const mfCenterX = (mnr.centerPx / NATIVE_W) * devW;
-      const mfCenterY = (mnr.centerPy / NATIVE_H) * devH;
+      const mfCenterX = toDevX(mnr.centerPx);
+      const mfCenterY = toDevY(mnr.centerPy);
       const mfX = Math.max(4, Math.min(devW - mfW - 4, Math.round(mfCenterX - mfW / 2)));
       const mfY = Math.max(4, Math.min(devH - mfH - 4, Math.round(mfCenterY - mfH / 2)));
       mf._devMonitorRect = { x: mfX - 18, y: mfY - 24, w: mfW + 36, h: mfH + 48 };
@@ -9685,8 +10856,8 @@
         for (let ci = 0; ci < sw.particles.length; ci++) {
           const cell = sw.particles[ci];
           if (cell.settled && swarmReformRatio > 0.85) continue;
-          const cpx = Math.round((cell.x / NATIVE_W) * devW);
-          const cpy = Math.round((cell.y / NATIVE_H) * devH);
+          const cpx = Math.round(toDevX(cell.x));
+          const cpy = Math.round(toDevY(cell.y));
           const flap = Math.sin(cell.wingPhase || 0) > 0;
           const wingL = flap ? "‹" : "⎛";
           const wingR = flap ? "›" : "⎞";
@@ -9822,8 +10993,8 @@
         if (syn && syn.glyphShards && syn.glyphShards.length > 0) {
           for (let si = 0; si < syn.glyphShards.length; si++) {
             const sh = syn.glyphShards[si];
-            const sx = Math.round((sh.x / NATIVE_W) * devW);
-            const sy = Math.round((sh.y / NATIVE_H) * devH);
+            const sx = Math.round(toDevX(sh.x));
+            const sy = Math.round(toDevY(sh.y));
             const shCol = si % 3 === 0 ? "#e02438" : "#2b423b";
             R.drawCanvasText(ctx, sh.ch, sx, sy, shCol, fontKey, 1, 0);
           }
@@ -9835,8 +11006,8 @@
             const p = syn.prisoners[pi];
             const pWorldX = mf.x + (p.slotDx || (pi % 2 === 0 ? -12 : 12));
             const pWorldY = mf.y + 4;
-            const px = Math.round(((pWorldX * SCALE) / NATIVE_W) * devW);
-            const py = Math.round((((COARSE_H - pWorldY) * SCALE) / NATIVE_H) * devH) - lineH - 12;
+            const px = Math.round(toDevX(pWorldX * SCALE));
+            const py = Math.round(toDevY((COARSE_H - pWorldY) * SCALE)) - lineH - 12;
             const txt = p.screamTimer > 0 && p.screamText ? `${p.screamText} [${Math.round(p.lifeForce)}%]` : `SOUL:${Math.round(p.lifeForce)}%`;
             const tw = txt.length * charW + 8;
             const tx0 = Math.max(4, Math.min(devW - tw - 4, Math.round(px - tw / 2)));
@@ -9848,8 +11019,8 @@
         if (syn && syn.recoveringLiberated) {
           for (let ri = 0; ri < syn.recoveringLiberated.length; ri++) {
             const rn = syn.recoveringLiberated[ri];
-            const rx = Math.round(((rn.x * SCALE) / NATIVE_W) * devW);
-            const ry = Math.round((((COARSE_H - rn.y) * SCALE) / NATIVE_H) * devH) - lineH - 8;
+            const rx = Math.round(toDevX(rn.x * SCALE));
+            const ry = Math.round(toDevY((COARSE_H - rn.y) * SCALE)) - lineH - 8;
             const pct = Math.min(100, Math.round((1 - rn.recoveryTicks / Math.max(1, rn.maxRecoveryTicks)) * 100));
             const rTxt = `RECOVERING ${pct}%`;
             const rw = rTxt.length * charW + 8;
@@ -9879,6 +11050,15 @@
     }
 
     // 2. Render Integrated Top 1:1 Device-Pixel Hairline Terminal Bar with Adaptive Transparency Breathing & Entity Dodging!
+    // When `state.terminalOpen` is true (or Claude Sign-In Modal is open), hide the background top-left tab strip
+    // so it NEVER overlaps or obscures the Terminal Window's top header bar (`[SIGN IN CLAUDE]`, `[ESC X]`)!
+    if (
+      state.terminalOpen ||
+      (global.RealTabComputerBridge && global.RealTabComputerBridge.state && global.RealTabComputerBridge.state.modalOpen)
+    ) {
+      state.tabStripHitBoxes = [];
+      return;
+    }
     state.hudBreathPhase = (state.hudBreathPhase || 0) + 0.022;
     const hudHovered = Boolean(state.hoveredTabId && state.tabStripHitBoxes.some((hb) => hb.id === state.hoveredTabId));
     // Breathe alpha between 0.24 and 0.88 from time to time so HUD works as a clean screensaver, snapping to 0.98 when hovered
@@ -10671,6 +11851,85 @@
     });
   }
 
+  function renderSeekingMissilesAndFarmVehicles(primeRenderer, tick) {
+    if (!primeRenderer || typeof primeRenderer.fillNativeRect !== "function") return;
+    const curW = state.lastWorldContext;
+    const curSx = curW && (curW.worldX !== undefined ? curW.worldX : curW.screenX !== undefined ? curW.screenX : 0);
+
+    // 1. Render Rocket-Arm Constructed Civilization Geodesic Domes (`state.constructedDomes`)
+    if (Array.isArray(state.constructedDomes)) {
+      for (let i = 0; i < state.constructedDomes.length; i++) {
+        const dm = state.constructedDomes[i];
+        if ((dm.roomX || 0) !== curSx) continue;
+        const cx = Math.round(dm.x * SCALE);
+        const cy = Math.round((COARSE_H - dm.y) * SCALE);
+        const rad = Math.round((dm.radius || 7) * SCALE * 0.45);
+        for (let dy = -rad; dy <= 0; dy++) {
+          const span = Math.floor(Math.sqrt(Math.max(0, rad * rad - dy * dy)));
+          // Translucent dithered glass dome fill + geodesic ribs
+          if ((dy & 1) === 0) {
+            primeRenderer.fillNativeRect(cx - span, cy + dy, span * 2 + 1, 1, 95, 225, 245, 0.28);
+          }
+          primeRenderer.fillNativeRect(cx - span, cy + dy, 1, 1, 165, 245, 255, 0.92);
+          primeRenderer.fillNativeRect(cx + span, cy + dy, 1, 1, 165, 245, 255, 0.92);
+          if (dy % 6 === 0) {
+            primeRenderer.fillNativeRect(cx - span, cy + dy, span * 2 + 1, 1, 217, 168, 78, 0.72);
+          }
+        }
+        primeRenderer.fillNativeRect(cx - rad - 1, cy, rad * 2 + 3, 2, 217, 168, 78, 0.96);
+      }
+    }
+
+    // 2. Render Autonomous Civilization Farming Vehicles (`state.farmVehicles`)
+    if (Array.isArray(state.farmVehicles)) {
+      for (let i = 0; i < state.farmVehicles.length; i++) {
+        const fv = state.farmVehicles[i];
+        if ((fv.roomX || 0) !== curSx) continue;
+        const fx = Math.round(fv.x * SCALE);
+        const fy = Math.round((COARSE_H - fv.y) * SCALE);
+        const col = fv.color || [120, 234, 212];
+        // Solar canopy roof + tractor cabin + cultivator harrow + rotating all-terrain wheels
+        primeRenderer.fillNativeRect(fx - 7, fy - 9, 14, 2, 48, 128, 168, 0.95);
+        primeRenderer.fillNativeRect(fx - 6, fy - 9, 12, 1, col[0], col[1], col[2], 1);
+        primeRenderer.fillNativeRect(fx - 5, fy - 7, 10, 4, 215, 165, 65, 0.96);
+        primeRenderer.fillNativeRect(fx - 2, fy - 6, 4, 2, 140, 245, 255, 0.95);
+        primeRenderer.fillNativeRect(fx - 6, fy - 3, 4, 3, 28, 38, 44, 1);
+        primeRenderer.fillNativeRect(fx + 2, fy - 3, 4, 3, 28, 38, 44, 1);
+        const spoke = Math.floor(fv.wheelPhase || 0) & 1;
+        primeRenderer.fillNativeRect(fx - 5 + spoke, fy - 2, 1, 1, 255, 215, 90, 1);
+        primeRenderer.fillNativeRect(fx + 3 + spoke, fy - 2, 1, 1, 255, 215, 90, 1);
+      }
+    }
+
+    // 3. Render Intelligent Path-Planning Seeking Missiles (`state.seekingMissiles`)
+    if (Array.isArray(state.seekingMissiles)) {
+      for (let i = 0; i < state.seekingMissiles.length; i++) {
+        const m = state.seekingMissiles[i];
+        const mx = Math.round(m.x * SCALE);
+        const my = Math.round((COARSE_H - m.y) * SCALE);
+        const col = m.color || [120, 234, 212];
+        // Dithered contrail
+        if (Array.isArray(m.trail)) {
+          for (let ti = 0; ti < m.trail.length; ti++) {
+            const tp = m.trail[ti];
+            const tx = Math.round(tp.x * SCALE);
+            const ty = Math.round((COARSE_H - tp.y) * SCALE);
+            const alpha = ((ti + 1) / m.trail.length) * 0.65;
+            primeRenderer.fillNativeRect(tx, ty, 2, 2, 185, 225, 235, alpha);
+          }
+        }
+        // Missile body + seeker nosecone + rocket plume + lateral vernier steering puffs
+        primeRenderer.fillNativeRect(mx - 3, my - 1, 6, 3, 235, 245, 250, 1);
+        primeRenderer.fillNativeRect(mx + (m.vx >= 0 ? 2 : -4), my - 1, 2, 3, col[0], col[1], col[2], 1);
+        primeRenderer.fillNativeRect(mx + (m.vx >= 0 ? -6 : 3), my, 3, 2, 255, 195, 65, 0.98);
+        if (m.vernierTimer && m.vernierTimer > 0) {
+          primeRenderer.fillNativeRect(mx, my - 4, 1, 3, 120, 248, 255, 0.95);
+          primeRenderer.fillNativeRect(mx, my + 2, 1, 3, 120, 248, 255, 0.95);
+        }
+      }
+    }
+  }
+
   function render(primeRenderer, world, eco, cosmic) {
     if (!primeRenderer) return;
     ensurePopulated(world, eco, cosmic);
@@ -10687,6 +11946,9 @@
 
     // 3. Render Physical In-World `TE-307` Computer Mainframe Tower & its Good/Bad Users
     renderWorldMainframeSprite(primeRenderer, state.tickCount);
+
+    // 3B. Render Rocket-Arm Constructed Civilization Geodesic Domes, Autonomous Farming Vehicles & Seeking Missiles!
+    renderSeekingMissilesAndFarmVehicles(primeRenderer, state.tickCount);
 
     for (let i = 0; i < state.tabForms.length; i++) {
       const tf = state.tabForms[i];
@@ -10734,25 +11996,43 @@
     const charW = fontObj.w || 12;
     const lineH = fontObj.h || 26;
 
-    const winW = Math.max(480, Math.min(Math.round(canvasW * 0.94), canvasW - 16));
-    const winH = Math.max(320, Math.min(Math.round(canvasH * 0.90), canvasH - 16));
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    const cssW = canvasW / dpr;
+    const cssH = canvasH / dpr;
+    const isMobileTouch =
+      cssW < 760 ||
+      cssH < 360 ||
+      Boolean(typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+
+    const winW = isMobileTouch
+      ? Math.max(300, canvasW - Math.round(8 * dpr))
+      : Math.max(480, Math.min(Math.round(canvasW * 0.94), canvasW - 16));
+    const winH = isMobileTouch
+      ? Math.max(240, canvasH - Math.round(8 * dpr))
+      : Math.max(320, Math.min(Math.round(canvasH * 0.90), canvasH - 16));
     const winX = Math.round((canvasW - winW) / 2);
     const winY = Math.round((canvasH - winH) / 2);
 
-    const headerH = lineH + 8; // 34 device pixels
-    const btnH = lineH + 2;    // 28 device pixels
+    const topBtnScale = isMobileTouch && dpr >= 2 ? 2 : 1;
+    const topCharW = charW * topBtnScale;
+    const topLineH = lineH * topBtnScale;
+    const headerH = isMobileTouch
+      ? Math.max(topLineH + 14, Math.round(44 * dpr))
+      : lineH + 12;
+    const topBtnH = isMobileTouch ? headerH - 6 : lineH + 6;
+    const btnH = lineH + 2;    // 28 device pixels for dock rows
     const barH = lineH + 8;    // 34 device pixels
 
     // 1. Window Backdrop & 1-Device-Pixel Hairline Outer Frame
-    // Respects `zoomTransparency` up to 0.80 transparent (alpha down to 0.20 when zoomed!)
-    const zoomTrans = Math.max(0, Math.min(0.8, previewTf.zoomTransparency !== undefined ? previewTf.zoomTransparency : 0.14));
+    // Default 0.60 background opacity (`zoomTransparency` defaults to 0.40)!
+    const zoomTrans = Math.max(0, Math.min(0.8, previewTf.zoomTransparency !== undefined ? previewTf.zoomTransparency : 0.40));
     const zoomAlpha = Math.max(0.2, 1.0 - zoomTrans);
     const bgRgb = previewTf.screenBgRgb || [4, 10, 14];
     const winBgRgba = `rgba(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]}, ${zoomAlpha.toFixed(2)})`;
     R.drawHairlineRect(ctx, winX, winY, winW, winH, previewTf.accentHex || "#78ead4", winBgRgba);
 
-    // 2. Top Window Title Band (`headerH` = 34 device pixels tall)
-    R.drawHairlineRect(ctx, winX, winY, winW, headerH, "#244854", "#08161c");
+    // 2. Top Window Title Band (solid high-contrast background so nothing behind it ever obscures top-bar buttons!)
+    R.drawHairlineRect(ctx, winX, winY, winW, headerH, "#2b5868", "rgba(8, 22, 28, 0.96)");
     const isPreviewing = state.hoveredTabId && state.hoveredTabId !== state.selectedTabId;
     const bridge = global.RealTabComputerBridge;
     const tcBooted = Boolean(bridge && bridge.state && bridge.state.booted);
@@ -10760,99 +12040,163 @@
     const ghAcct = bridge && bridge.state ? bridge.state.githubAccount : null;
     const apiCalls = bridge && bridge.state ? bridge.state.anthropicApiCalls || 0 : 0;
     const lastApiStatus = bridge && bridge.state ? bridge.state.lastAnthropicStatus || "" : "";
+    const socialHandle = getClaudeSocialHandle(previewTf);
     const modeTag =
       previewTf.id === "TE-307"
         ? " [IN-WORLD MAINFRAME TUI]"
         : claudeAcct && tcBooted
-        ? ` [REAL CLAUDE CODE v2.1.112 · API:${apiCalls}${lastApiStatus ? " " + lastApiStatus : ""}]`
+        ? ` [${socialHandle} · CLAUDE CODE v2.1.316 · API:${apiCalls}${lastApiStatus ? " " + lastApiStatus : ""}]`
         : tcBooted
-        ? " [TABCOMPUTER OS]"
-        : " [SIM-KERNEL]";
-    const rawTitle = `HARDCORE-TAB // ${previewTf.id}: ${previewTf.name}${modeTag}${isPreviewing ? " [PREVIEW]" : ""}`;
+        ? ` [${socialHandle} · TABCOMPUTER OS]`
+        : ` [${socialHandle} · SIM-KERNEL]`;
+    const rawTitle = isMobileTouch
+      ? `${previewTf.id}: ${socialHandle}`
+      : `HARDCORE-TAB // ${previewTf.id}: ${socialHandle}${modeTag}${isPreviewing ? " [PREVIEW]" : ""}`;
 
-    // Close `[ESC X]` button in top-right (proportioned for `h12x26`)
-    const closeLabel = "ESC X";
-    const closeBtnW = closeLabel.length * charW + 16;
+    // Close `[ESC X]` button in top-right (scaled up on mobile iOS Safari for easy tapping)
+    const closeLabel = isMobileTouch ? "CLOSE X" : "ESC X";
+    const closeBtnW = closeLabel.length * topCharW + (isMobileTouch ? 24 : 16);
     const closeBtnX = winX + winW - closeBtnW - 6;
-    const btnY = winY + 3;
-    R.drawHairlineRect(ctx, closeBtnX, btnY, closeBtnW, btnH, "#3a6874", "#10242c");
-    R.drawCanvasText(ctx, closeLabel, closeBtnX + 8, btnY + 1, "#ff8787", fontKey, 1, 0);
-    state.windowHitBoxes.push({ action: "close", x: closeBtnX, y: btnY, w: closeBtnW, h: btnH });
+    const btnY = winY + Math.max(2, Math.round((headerH - topBtnH) * 0.5));
+    R.drawHairlineRect(ctx, closeBtnX, btnY, closeBtnW, topBtnH, "#ff8787", "#1e0c10");
+    const closeTxtX = closeBtnX + Math.max(6, Math.round((closeBtnW - closeLabel.length * topCharW) * 0.5));
+    const closeTxtY = btnY + Math.max(1, Math.round((topBtnH - topLineH) * 0.5));
+    R.drawCanvasText(ctx, closeLabel, closeTxtX, closeTxtY, "#ff8787", fontKey, topBtnScale, 0);
+    // Extra-generous hit box for close
+    state.windowHitBoxes.push({ action: "close", x: closeBtnX - 4, y: winY, w: closeBtnW + 10, h: headerH + 4 });
 
     let leftMostBtnX = closeBtnX;
 
-    // Hardware `[SIGN IN CLAUDE]`, `[GITHUB SIGN-IN]`, and `[XTERM TUI]` buttons in top bar (`h12x26`)!
-    // TabComputer boots silently and non-blockingly in the background (no manual `[REAL LINUX]` button).
-    const loginLabel = claudeAcct ? "CLAUDE SIGNED IN" : "SIGN IN CLAUDE";
-    const loginW = loginLabel.length * charW + 16;
-    const loginX = leftMostBtnX - loginW - 6;
-    if (loginX > winX + 160) {
+    // Hardware `[SIGN IN CLAUDE]` button in top bar — ALWAYS visible, extra-large & unobstructed on mobile iOS Safari!
+    const loginLabel = claudeAcct
+      ? isMobileTouch
+        ? "CLAUDE OK"
+        : "CLAUDE SIGNED IN"
+      : isMobileTouch
+      ? "SIGN IN CLAUDE"
+      : "SIGN IN CLAUDE";
+    const loginW = Math.min(
+      Math.max(140, closeBtnX - winX - 24),
+      loginLabel.length * topCharW + (isMobileTouch ? 28 : 20)
+    );
+    const loginX = leftMostBtnX - loginW - (isMobileTouch ? 8 : 6);
+    if (loginX >= winX + 8) {
       R.drawHairlineRect(
         ctx,
         loginX,
         btnY,
         loginW,
-        btnH,
+        topBtnH,
         claudeAcct ? "#69db7c" : "#ffd43b",
-        claudeAcct ? "#092418" : "#261d06"
+        claudeAcct ? "#0b2e1e" : "#332607"
       );
-      R.drawCanvasText(ctx, loginLabel, loginX + 8, btnY + 1, claudeAcct ? "#69db7c" : "#ffd43b", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "login-claude", x: loginX, y: btnY, w: loginW, h: btnH });
+      const loginTxtX = loginX + Math.max(6, Math.round((loginW - loginLabel.length * topCharW) * 0.5));
+      const loginTxtY = btnY + Math.max(1, Math.round((topBtnH - topLineH) * 0.5));
+      R.drawCanvasText(
+        ctx,
+        loginLabel,
+        loginTxtX,
+        loginTxtY,
+        claudeAcct ? "#69db7c" : "#ffd43b",
+        fontKey,
+        topBtnScale,
+        0
+      );
+      // Generous full-height hit box for [SIGN IN CLAUDE] so mobile iOS Safari taps never miss
+      state.windowHitBoxes.push({
+        action: "login-claude",
+        x: loginX - 6,
+        y: winY,
+        w: loginW + 12,
+        h: headerH + 6,
+      });
       leftMostBtnX = loginX;
     }
 
-    const ghLabel = ghAcct ? `GH @${String(ghAcct.login || "git").slice(0, 8)}` : "GITHUB SIGN-IN";
-    const ghW = ghLabel.length * charW + 16;
-    const ghX = leftMostBtnX - ghW - 6;
-    if (ghX > winX + 160) {
-      R.drawHairlineRect(
-        ctx,
-        ghX,
-        btnY,
-        ghW,
-        btnH,
-        ghAcct ? "#69db7c" : "#78ead4",
-        ghAcct ? "#092418" : "#0a2228"
-      );
-      R.drawCanvasText(ctx, ghLabel, ghX + 8, btnY + 1, ghAcct ? "#69db7c" : "#78ead4", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "login-github", x: ghX, y: btnY, w: ghW, h: btnH });
-      leftMostBtnX = ghX;
-    }
+    // Secondary top-bar buttons (`[GITHUB SIGN-IN]`, `[FORK & DRIFT]`, `[COMPACT FORM]`) only when wide enough (`!isMobileTouch`)
+    // so they never crowd or obscure `[SIGN IN CLAUDE]` on mobile iOS Safari!
+    if (!isMobileTouch) {
+      const ghLabel = ghAcct ? `GH @${String(ghAcct.login || "git").slice(0, 8)}` : "GITHUB SIGN-IN";
+      const ghW = ghLabel.length * charW + 16;
+      const ghX = leftMostBtnX - ghW - 6;
+      if (ghX > winX + 160) {
+        R.drawHairlineRect(
+          ctx,
+          ghX,
+          btnY,
+          ghW,
+          topBtnH,
+          ghAcct ? "#69db7c" : "#78ead4",
+          ghAcct ? "#092418" : "#0a2228"
+        );
+        R.drawCanvasText(ctx, ghLabel, ghX + 8, btnY + 3, ghAcct ? "#69db7c" : "#78ead4", fontKey, 1, 0);
+        state.windowHitBoxes.push({ action: "login-github", x: ghX, y: btnY, w: ghW, h: topBtnH });
+        leftMostBtnX = ghX;
+      }
 
-    const driftRepo = global.SlopesDrift && global.SlopesDrift.state && global.SlopesDrift.state.forkRepo;
-    const driftLabel = driftRepo ? `DRIFT: ${driftRepo.split("/")[0].slice(0, 7)}` : "FORK & DRIFT";
-    const driftW = driftLabel.length * charW + 16;
-    const driftX = leftMostBtnX - driftW - 6;
-    if (driftX > winX + 160) {
-      R.drawHairlineRect(
-        ctx,
-        driftX,
-        btnY,
-        driftW,
-        btnH,
-        driftRepo ? "#69db7c" : "#ffa94d",
-        driftRepo ? "#092418" : "#221608"
-      );
-      R.drawCanvasText(ctx, driftLabel, driftX + 8, btnY + 1, driftRepo ? "#69db7c" : "#ffa94d", fontKey, 1, 0);
-      state.windowHitBoxes.push({ action: "fork-and-drift", x: driftX, y: btnY, w: driftW, h: btnH });
-      leftMostBtnX = driftX;
-    }
+      const driftRepo = global.SlopesDrift && global.SlopesDrift.state && global.SlopesDrift.state.forkRepo;
+      const driftLabel = driftRepo ? `DRIFT: ${driftRepo.split("/")[0].slice(0, 7)}` : "FORK & DRIFT";
+      const driftW = driftLabel.length * charW + 16;
+      const driftX = leftMostBtnX - driftW - 6;
+      if (driftX > winX + 160) {
+        R.drawHairlineRect(
+          ctx,
+          driftX,
+          btnY,
+          driftW,
+          topBtnH,
+          driftRepo ? "#69db7c" : "#ffa94d",
+          driftRepo ? "#092418" : "#221608"
+        );
+        R.drawCanvasText(ctx, driftLabel, driftX + 8, btnY + 3, driftRepo ? "#69db7c" : "#ffa94d", fontKey, 1, 0);
+        state.windowHitBoxes.push({ action: "fork-and-drift", x: driftX, y: btnY, w: driftW, h: topBtnH });
+        leftMostBtnX = driftX;
+      }
 
-    if (tcBooted) {
-      const tuiActive = Boolean(bridge && bridge.state.liveXtermVisible);
-      const tuiLabel = tuiActive ? "PIXEL VIEW" : "XTERM TUI";
-      const tuiW = tuiLabel.length * charW + 16;
-      const tuiX = leftMostBtnX - tuiW - 6;
-      if (tuiX > winX + 160) {
-        R.drawHairlineRect(ctx, tuiX, btnY, tuiW, btnH, "#69db7c", tuiActive ? "#143c28" : "#092218");
-        R.drawCanvasText(ctx, tuiLabel, tuiX + 8, btnY + 1, "#69db7c", fontKey, 1, 0);
-        state.windowHitBoxes.push({ action: "toggle-xterm-tui", x: tuiX, y: btnY, w: tuiW, h: btnH });
-        leftMostBtnX = tuiX;
+      if (previewTf && previewTf.id !== "TE-307") {
+        const isCompact = (previewTf.chassisForm || "monitor") !== "monitor";
+        const formBtnLbl = isCompact ? `TERM BODY (${(previewTf.chassisForm || "").toUpperCase()})` : "COMPACT FORM";
+        const formBtnW = formBtnLbl.length * charW + 14;
+        const formBtnX = leftMostBtnX - formBtnW - 6;
+        if (formBtnX > winX + 130) {
+          R.drawHairlineRect(
+            ctx,
+            formBtnX,
+            btnY,
+            formBtnW,
+            topBtnH,
+            isCompact ? "#ffd43b" : "#78ead4",
+            isCompact ? "#282008" : "#0a222a"
+          );
+          R.drawCanvasText(ctx, formBtnLbl, formBtnX + 7, btnY + 3, isCompact ? "#ffd43b" : "#78ead4", fontKey, 1, 0);
+          state.windowHitBoxes.push({
+            action: "run-cmd",
+            cmd: "body form cycle",
+            x: formBtnX,
+            y: btnY,
+            w: formBtnW,
+            h: topBtnH,
+          });
+          leftMostBtnX = formBtnX;
+        }
       }
     }
 
-    const maxTitleCols = Math.max(12, Math.floor((leftMostBtnX - (winX + 12)) / charW));
-    R.drawCanvasText(ctx, rawTitle.slice(0, maxTitleCols), winX + 10, winY + 4, previewTf.accentHex || "#78ead4", fontKey, 1, 0);
+    const availTitleW = leftMostBtnX - (winX + 12);
+    if (availTitleW >= charW * 6) {
+      const maxTitleCols = Math.max(6, Math.floor(availTitleW / charW));
+      const titleY = winY + Math.max(2, Math.round((headerH - lineH) * 0.5));
+      R.drawCanvasText(
+        ctx,
+        rawTitle.slice(0, maxTitleCols),
+        winX + 10,
+        titleY,
+        previewTf.accentHex || "#78ead4",
+        fontKey,
+        1,
+        0
+      );
+    }
 
     // 3. Hardcore Single-Row Tab Strip & Notch-Carving Right Menu Dock (proportioned for `h12x26`)
     const dockW = Math.min(252, Math.max(204, 18 * charW + 20));
@@ -10865,6 +12209,15 @@
     const paneAreaW = winW - dockW - 22;
     const paneAreaH = dockH - 6;
     const maxVisibleRows = Math.max(4, Math.floor(paneAreaH / lineH));
+
+    // Only use Hardcore-style 1:1 device-pixel view (never show the xterm iframe!).
+    if (tcBooted && previewTf.id !== "TE-307") {
+      previewTf.realTabActive = true;
+      previewTf.autoMode = false;
+    }
+    if (bridge && typeof bridge.setLiveXtermVisible === "function") {
+      bridge.setLiveXtermVisible(false);
+    }
 
     const allLines = (previewTf.shell && previewTf.shell.lines) || [];
     const visibleLines = allLines.slice(Math.max(0, allLines.length - maxVisibleRows));
@@ -11317,7 +12670,8 @@
             { label: "rotate 3 (5-fold)", cmd: "rotate 3" },
           ]
         : [
-            { label: "shift form (mecha/tree)", cmd: "body form cycle" },
+            { label: "compact monolith/bot", cmd: "body form cycle" },
+            { label: "dock/rise in ground", cmd: "body dock toggle" },
             { label: "roam / local screen", cmd: "body roam cycle" },
             { label: "board ghost ship!", cmd: "body ghost" },
             { label: "bury in green fauna", cmd: "body bury" },
@@ -11394,7 +12748,7 @@
 
     R.drawCanvasText(ctx, fullInput, winX + 12, barY + 4, "#e8f8f4", fontKey, 1, 0);
 
-    // Active cursor floor + amber phosphor cursor
+    //Active cursor floor + amber phosphor cursor
     const curX = winX + 12 + curCol * charW;
     ctx.fillStyle = "rgba(217, 64, 5, 0.16)";
     ctx.fillRect(curX, barY + 5, charW, lineH - 2);
@@ -11402,13 +12756,138 @@
       ctx.fillStyle = "#ffa60d";
       ctx.fillRect(curX, barY + 5, charW, lineH - 2);
     }
+
+    // Hitbox for clicking the bottom interactive command input bar (`tab-03$`)
+    state.windowHitBoxes.push({
+      action: "focus-term-input",
+      x: winX + 6,
+      y: barY,
+      w: winW - 12,
+      h: barH,
+    });
+    // Fallback hitbox for clicking anywhere inside the Hardcore-Tab window so clicks focus the terminal
+    // and never fall through to sprites behind the window
+    state.windowHitBoxes.push({
+      action: "focus-term-window",
+      x: winX,
+      y: winY,
+      w: winW,
+      h: winH,
+    });
+
+    // Sync selectable DOM text overlay (`#hardcore-term-selectable`) over the terminal pane and
+    // `#hardcore-term-input-bar` over the bottom input bar (`tab-03$`) so the user can highlight text
+    // with the mouse, Right-Click -> Copy / Paste, and Cmd+C / Ctrl+C / Cmd+V / Ctrl+V!
+    syncHardcoreSelectableOverlay(
+      textStartX,
+      textStartY,
+      paneAreaW,
+      paneAreaH,
+      lineH,
+      charW,
+      visibleLines,
+      winX + 6,
+      barY,
+      winW - 12,
+      barH,
+      fullInput
+    );
   }
 
   // ==========================================================================
-  // BROWSER OVERLAY CANVAS & MOUSE / KEYBOARD INTERACTION MOUNT
+  // BROWSER OVERLAY CANVAS, SELECTABLE TEXT LAYER & MOUSE / KEYBOARD / PASTE MOUNT
   // ==========================================================================
   let overlayCanvas = null;
   let overlayCtx = null;
+  let selectablePre = null;
+  let selectableInputBar = null;
+  let lastSelectableText = "";
+  let lastSelectableInputText = "";
+
+  function stripAnsiForSelection(str) {
+    return String(str || "").replace(/\x1b\[[0-9;]*m/g, "");
+  }
+
+  function unfocusBottomChatInput() {
+    if (global.SlopesSocialTui && typeof global.SlopesSocialTui.blurChat === "function") {
+      global.SlopesSocialTui.blurChat();
+    } else if (typeof document !== "undefined") {
+      const chatInp = document.getElementById("mobile-bottom-input");
+      if (chatInp && document.activeElement === chatInp) {
+        chatInp.blur();
+      }
+    }
+  }
+
+  function syncHardcoreSelectableOverlay(
+    textStartX,
+    textStartY,
+    paneAreaW,
+    paneAreaH,
+    lineH,
+    charW,
+    visibleLines,
+    barX,
+    barY,
+    barW,
+    barH,
+    fullInputStr
+  ) {
+    if (!selectablePre) return;
+    const modalOpen = Boolean(
+      global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.modalOpen
+    );
+    if (!state.terminalOpen || modalOpen) {
+      if (selectablePre.style.display !== "none") selectablePre.style.display = "none";
+      if (selectableInputBar && selectableInputBar.style.display !== "none") selectableInputBar.style.display = "none";
+      return;
+    }
+    unfocusBottomChatInput();
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    const leftCss = Math.round(textStartX / dpr);
+    const topCss = Math.round(textStartY / dpr);
+    const wCss = Math.max(40, Math.round(paneAreaW / dpr));
+    const hCss = Math.max(24, Math.round(paneAreaH / dpr));
+    const lineHCss = (lineH / dpr).toFixed(2);
+    const fontPx = Math.max(9, (charW / dpr) * 1.66).toFixed(2);
+
+    if (selectablePre.style.display !== "block") selectablePre.style.display = "block";
+    selectablePre.style.left = leftCss + "px";
+    selectablePre.style.top = topCss + "px";
+    selectablePre.style.width = wCss + "px";
+    selectablePre.style.height = hCss + "px";
+    selectablePre.style.lineHeight = lineHCss + "px";
+    selectablePre.style.fontSize = fontPx + "px";
+
+    const plainDump = (visibleLines || []).map(stripAnsiForSelection).join("\n");
+    const hasActiveSel = Boolean(
+      typeof window !== "undefined" &&
+        window.getSelection &&
+        window.getSelection() &&
+        window.getSelection().toString().length > 0
+    );
+    if (!hasActiveSel && plainDump !== lastSelectableText) {
+      lastSelectableText = plainDump;
+      selectablePre.textContent = plainDump;
+    }
+
+    if (selectableInputBar && barW > 0 && barH > 0) {
+      if (selectableInputBar.style.display !== "block") selectableInputBar.style.display = "block";
+      selectableInputBar.style.left = Math.round(barX / dpr) + "px";
+      selectableInputBar.style.top = Math.round(barY / dpr) + "px";
+      selectableInputBar.style.width = Math.max(40, Math.round(barW / dpr)) + "px";
+      selectableInputBar.style.height = Math.max(16, Math.round(barH / dpr)) + "px";
+      selectableInputBar.style.lineHeight = Math.max(16, Math.round(barH / dpr)) + "px";
+      selectableInputBar.style.fontSize = fontPx + "px";
+      const inpStr = String(fullInputStr || "");
+      if (!hasActiveSel && inpStr !== lastSelectableInputText) {
+        lastSelectableInputText = inpStr;
+        selectableInputBar.textContent = inpStr;
+      }
+    }
+  }
 
   function syncOverlayDevicePixels() {
     if (typeof document === "undefined" || !overlayCanvas || !overlayCtx) return { devW: NATIVE_W, devH: NATIVE_H };
@@ -11444,6 +12923,72 @@
       "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:5;display:block;image-rendering:pixelated;";
     screenDiv.appendChild(overlayCanvas);
     overlayCtx = overlayCanvas.getContext("2d");
+
+    if (!document.getElementById("hardcore-term-selectable-style")) {
+      const st = document.createElement("style");
+      st.id = "hardcore-term-selectable-style";
+      st.textContent = [
+        "#hardcore-term-selectable, #hardcore-term-input-bar, #bottom-stream-selectable {",
+        "  margin:0;padding:0;overflow:hidden;white-space:pre;",
+        "  color:transparent;background:transparent;outline:none;border:none;caret-color:transparent;",
+        "  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;",
+        "  -webkit-user-select:text !important;user-select:text !important;",
+        "  cursor:text;pointer-events:auto;touch-action:auto;",
+        "}",
+        "#hardcore-term-selectable::selection, #hardcore-term-input-bar::selection, #bottom-stream-selectable::selection {",
+        "  background:rgba(120,234,212,0.36);color:transparent;",
+        "}",
+      ].join("\n");
+      document.head.appendChild(st);
+    }
+
+    const handleEditableBeforeInput = (ev) => {
+      // Prevent direct DOM mutation in the transparent overlay while forwarding mobile / IME text input
+      // into `state.inputBuffer` (`paste` events are handled by the global `paste` listener).
+      const it = ev.inputType || "";
+      if (it === "insertText" && ev.data && state.terminalOpen) {
+        ev.preventDefault();
+        state.inputBuffer += ev.data;
+        return;
+      }
+      if (it === "deleteContentBackward" && state.terminalOpen) {
+        ev.preventDefault();
+        state.inputBuffer = state.inputBuffer.slice(0, -1);
+        return;
+      }
+      ev.preventDefault();
+    };
+
+    selectablePre = document.createElement("pre");
+    selectablePre.id = "hardcore-term-selectable";
+    selectablePre.setAttribute("contenteditable", "true");
+    selectablePre.setAttribute("spellcheck", "false");
+    selectablePre.setAttribute("autocorrect", "off");
+    selectablePre.setAttribute("autocapitalize", "off");
+    selectablePre.style.cssText = "position:absolute;left:0;top:0;z-index:6;display:none;";
+    selectablePre.addEventListener("beforeinput", handleEditableBeforeInput);
+    selectablePre.addEventListener("pointerdown", (ev) => {
+      unfocusBottomChatInput();
+      state.hoveredTabId = null;
+      ev.stopPropagation();
+    });
+    screenDiv.appendChild(selectablePre);
+
+    selectableInputBar = document.createElement("pre");
+    selectableInputBar.id = "hardcore-term-input-bar";
+    selectableInputBar.setAttribute("contenteditable", "true");
+    selectableInputBar.setAttribute("spellcheck", "false");
+    selectableInputBar.setAttribute("autocorrect", "off");
+    selectableInputBar.setAttribute("autocapitalize", "off");
+    selectableInputBar.style.cssText = "position:absolute;left:0;top:0;z-index:6;display:none;";
+    selectableInputBar.addEventListener("beforeinput", handleEditableBeforeInput);
+    selectableInputBar.addEventListener("pointerdown", (ev) => {
+      unfocusBottomChatInput();
+      state.hoveredTabId = null;
+      ev.stopPropagation();
+    });
+    screenDiv.appendChild(selectableInputBar);
+
     syncOverlayDevicePixels();
 
     function clientToBothCoords(ev) {
@@ -11459,9 +13004,14 @@
       }
       const devW = overlayCanvas ? overlayCanvas.width : NATIVE_W;
       const devH = overlayCanvas ? overlayCanvas.height : NATIVE_H;
+      const vp = (typeof window !== "undefined" && window.SlopesViewport) || null;
+      const vpW = vp && vp.viewW ? vp.viewW : NATIVE_W;
+      const vpH = vp && vp.viewH ? vp.viewH : NATIVE_H;
+      const vpOffX = vp && vp.offsetX ? vp.offsetX : 0;
+      const vpOffY = vp && vp.offsetY ? vp.offsetY : 0;
       return {
-        nx: relX * NATIVE_W,
-        ny: relY * NATIVE_H,
+        nx: relX * vpW - vpOffX,
+        ny: relY * vpH - vpOffY,
         dx: relX * devW,
         dy: relY * devH,
       };
@@ -11521,17 +13071,27 @@
       const pt = clientToBothCoords(ev);
       if (pt.dx < 0 || pt.dy < 0) return;
 
+      // Always unfocus the bottom chat input when clicking inside `#screen` so keyboard typing goes to the game/terminal!
+      unfocusBottomChatInput();
+
       // 1. If interactive Hardcore-Tab Window is open, check its controls first (in 1:1 device coordinates!)
       if (state.terminalOpen) {
         for (let i = 0; i < state.windowHitBoxes.length; i++) {
           const hb = state.windowHitBoxes[i];
           if (pt.dx >= hb.x && pt.dx <= hb.x + hb.w && pt.dy >= hb.y && pt.dy <= hb.y + hb.h) {
             ev.stopPropagation();
-            ev.preventDefault();
+            if (hb.action !== "focus-term-window") {
+              ev.preventDefault();
+            }
+            if (hb.action === "focus-term-input" || hb.action === "focus-term-window") {
+              state.hoveredTabId = null;
+              return;
+            }
             if (global.SlopesAudio && global.SlopesAudio.playClick) global.SlopesAudio.playClick(true);
             if (hb.action === "close") {
               state.terminalOpen = false;
               state.hoveredTabId = null;
+              if (selectablePre) selectablePre.style.display = "none";
               if (global.RealTabComputerBridge) {
                 global.RealTabComputerBridge.setLiveXtermVisible(false);
                 global.RealTabComputerBridge.closeClaudeSignInModal();
@@ -11561,21 +13121,9 @@
                 global.RealTabComputerBridge.verifyRealClaudeCode(activeTf && activeTf.id !== "TE-307" ? activeTf.id : "TAB-01");
               }
             } else if (hb.action === "toggle-xterm-tui") {
-              if (global.RealTabComputerBridge) {
-                const nextVis = !global.RealTabComputerBridge.state.liveXtermVisible;
-                const winW = Math.min(760, NATIVE_W - 24);
-                const winH = Math.min(430, NATIVE_H - 36);
-                const winX = Math.round((NATIVE_W - winW) / 2);
-                const winY = Math.round((NATIVE_H - winH) / 2);
-                const dockW = 168;
-                const termX = state.dockSide === "left" ? winX + dockW + 4 : winX + 4;
-                const termW = winW - dockW - 8;
-                global.RealTabComputerBridge.setLiveXtermVisible(nextVis, {
-                  x: termX,
-                  y: winY + 24,
-                  w: termW,
-                  h: winH - 54,
-                });
+              state.preferPixelTerminalView = !state.preferPixelTerminalView;
+              if (global.RealTabComputerBridge && state.preferPixelTerminalView) {
+                global.RealTabComputerBridge.setLiveXtermVisible(false);
               }
             } else if (hb.action === "move-dock") {
               state.dockSide = state.dockSide === "right" ? "left" : "right";
@@ -11700,9 +13248,34 @@
       }
     });
 
+    // Global `paste` handler for Hardcore-Tab Terminal (`Cmd+V`, `Ctrl+V`, or `Right-Click -> Paste`)
+    window.addEventListener("paste", (ev) => {
+      if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+      if (
+        global.RealTabComputerBridge &&
+        global.RealTabComputerBridge.state &&
+        global.RealTabComputerBridge.state.modalOpen
+      ) {
+        return;
+      }
+      if (!state.terminalOpen) return;
+      const clip = (ev.clipboardData || window.clipboardData)?.getData("text/plain") || "";
+      if (!clip) return;
+      ev.preventDefault();
+      const clean = clip.replace(/\r?\n/g, " ").trim();
+      if (!clean) return;
+      state.inputBuffer += clean;
+    });
+
     // Keyboard input for toggling (`F` or `` ` `` / `~` for `TE-307`, `C` for Monolith Chat) and typing commands!
     window.addEventListener("keydown", (ev) => {
-      if (ev.target && (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
+      if (
+        ev.target &&
+        (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") &&
+        !(ev.target.id === "mobile-bottom-input" && (state.terminalOpen || state.monolithChatOpen))
+      ) {
+        return;
+      }
 
       // If the Live On-Screen Monolith Chat Input Bar (`state.monolithChatOpen`) is open, capture typing!
       if (state.monolithChatOpen) {
@@ -11741,6 +13314,7 @@
       // Backquote (`` ` `` or `~`) opens/toggles the In-World `TE-307` Mainframe TUI inside Hardcore-Tab!
       if ((ev.code === "Backquote" || ev.key === "`" || ev.key === "~") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
         ev.preventDefault();
+        unfocusBottomChatInput();
         if (state.terminalOpen && state.selectedTabId === "TE-307") {
           state.terminalOpen = false;
         } else {
@@ -11758,11 +13332,13 @@
       if (!state.terminalOpen) {
         if ((ev.key === "c" || ev.key === "C") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
           ev.preventDefault();
+          unfocusBottomChatInput();
           openMonolithChatInput("ALL MONOLITHS");
           return;
         }
         if ((ev.key === "f" || ev.key === "F") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
           ev.preventDefault();
+          unfocusBottomChatInput();
           state.terminalOpen = true;
           const sel = getSelectedTabForm();
           if (sel) sel.unread = false;
@@ -11774,18 +13350,74 @@
       }
 
       // When Hardcore-Tab Terminal Window is open:
+      unfocusBottomChatInput();
       state.hoveredTabId = null; // Typing restores selected tab per Hardcore spec!
       const sel = getSelectedTabForm();
 
       if (ev.key === "Escape") {
         ev.preventDefault();
         state.terminalOpen = false;
+        if (selectablePre) selectablePre.style.display = "none";
         if (global.RealTabComputerBridge) {
           global.RealTabComputerBridge.setLiveXtermVisible(false);
           global.RealTabComputerBridge.closeClaudeSignInModal();
         }
         return;
       }
+
+      // Allow native Copy (`Cmd+C` or `Ctrl+C` when text is highlighted) & native Paste (`Cmd+V` / `Ctrl+V`)
+      if (ev.ctrlKey || ev.metaKey) {
+        const k = (ev.key || "").toLowerCase();
+        const selTxt = (window.getSelection && window.getSelection()?.toString()) || "";
+        if (k === "c" && (ev.metaKey || selTxt.length > 0)) {
+          if (selTxt && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText(selTxt).catch(() => {});
+          }
+          return;
+        }
+        if (k === "v") {
+          return; // Let native `paste` event fire and append to `state.inputBuffer`
+        }
+      }
+
+      // Forward Ctrl+C (when no text is highlighted) / Ctrl+D / Ctrl+L directly to the running interactive TTY (`claude`) when active
+      if (
+        ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        sel &&
+        sel.id !== "TE-307" &&
+        global.RealTabComputerBridge &&
+        typeof global.RealTabComputerBridge.sendKeyEventToRealTabComputer === "function"
+      ) {
+        const k = (ev.key || "").toLowerCase();
+        if (k === "c" || k === "d" || k === "l") {
+          ev.preventDefault();
+          state.inputBuffer = "";
+          global.RealTabComputerBridge.sendKeyEventToRealTabComputer(ev);
+          return;
+        }
+      }
+
+      // If a foreground interactive TTY job (e.g. `claude`) is running inside TabComputer and the user's
+      // bottom input bar is empty, forward navigation/control keys (ArrowUp/Down/Left/Right) directly to the TTY
+      // while keeping rendering strictly in the Hardcore-style `h12x26` device-pixel view!
+      if (
+        sel &&
+        sel.id !== "TE-307" &&
+        global.RealTabComputerBridge &&
+        typeof global.RealTabComputerBridge.isForegroundTtyJobActive === "function" &&
+        global.RealTabComputerBridge.isForegroundTtyJobActive() &&
+        state.inputBuffer.length === 0 &&
+        (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") &&
+        typeof global.RealTabComputerBridge.sendKeyEventToRealTabComputer === "function"
+      ) {
+        if (global.RealTabComputerBridge.sendKeyEventToRealTabComputer(ev)) {
+          ev.preventDefault();
+          return;
+        }
+      }
+
       if (ev.key === "Tab") {
         ev.preventDefault();
         const cycleList = state.tabForms.concat(state.worldMainframe ? [state.worldMainframe] : []);
@@ -11800,7 +13432,21 @@
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        const cmd = state.inputBuffer.trim() || (sel && sel.id === "TE-307" ? "status" : "body status");
+        const rawTrimmed = state.inputBuffer.trim();
+        const isInteractiveRealTty = Boolean(
+          sel &&
+            sel.id !== "TE-307" &&
+            global.RealTabComputerBridge &&
+            typeof global.RealTabComputerBridge.isForegroundTtyJobActive === "function" &&
+            global.RealTabComputerBridge.isForegroundTtyJobActive()
+        );
+        if (!rawTrimmed && isInteractiveRealTty) {
+          state.inputBuffer = "";
+          state.historyIdx = -1;
+          global.RealTabComputerBridge.sendRawInputToRealTabComputer("\r");
+          return;
+        }
+        const cmd = rawTrimmed || (sel && sel.id === "TE-307" ? "status" : "body status");
         state.inputBuffer = "";
         state.historyIdx = -1;
         if (sel) {
@@ -11902,6 +13548,20 @@
       renderDevicePixelTabFormMonitors(overlayCtx, devW, devH);
       if (state.terminalOpen) {
         renderInteractiveTerminalWindow(overlayCtx, devW, devH);
+      } else {
+        if (selectablePre && selectablePre.style.display !== "none") {
+          selectablePre.style.display = "none";
+        }
+        if (selectableInputBar && selectableInputBar.style.display !== "none") {
+          selectableInputBar.style.display = "none";
+        }
+        if (
+          global.RealTabComputerBridge &&
+          global.RealTabComputerBridge.state &&
+          global.RealTabComputerBridge.state.liveXtermVisible
+        ) {
+          global.RealTabComputerBridge.setLiveXtermVisible(false);
+        }
       }
     }
     requestAnimationFrame(overlayLoop);
@@ -11986,6 +13646,187 @@
     return tf.shell.execute(cmd);
   }
 
+  function setOwnerUsername(newName) {
+    const clean = String(newName || "william")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "")
+      .slice(0, 18) || "william";
+    state.ownerUsername = clean;
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("slopes2_social_username", clean);
+        localStorage.setItem("slopes2_player_name", clean);
+      }
+    } catch (_) {}
+    return clean;
+  }
+
+  function receiveExternalSocialMessage(msg) {
+    if (!msg || !msg.text) return null;
+    ensurePopulated(state.lastWorldContext);
+    const channel = msg.channel === "dm" ? "dm" : "group";
+    const fromUser = String(msg.from || getOwnerUsername()).trim();
+    const rawText = String(msg.text || "").trim();
+    const lower = rawText.toLowerCase();
+
+    // Find which signed-in Claude (<username>.cc.<selfname> / term1 / term2 / term3) is addressed, or pick the active/primary one
+    let targetTf = null;
+    if (msg.targetTfId) {
+      targetTf = state.tabForms.find((t) => t.id === msg.targetTfId) || null;
+    }
+    if (!targetTf && msg.to) {
+      const toClean = String(msg.to).toLowerCase();
+      targetTf =
+        state.tabForms.find(
+          (t, idx) =>
+            getClaudeSocialHandle(t).toLowerCase() === toClean ||
+            (t.selfname && t.selfname.toLowerCase() === toClean) ||
+            t.id.toLowerCase() === toClean ||
+            `term${idx + 1}` === toClean ||
+            `t${idx + 1}` === toClean
+        ) || null;
+    }
+    if (!targetTf) {
+      if (/\b(term-?1|t1|tab-?0?1|rover)\b/i.test(lower)) targetTf = state.tabForms[0] || null;
+      else if (/\b(term-?2|t2|tab-?0?2|corvus)\b/i.test(lower)) targetTf = state.tabForms[1] || null;
+      else if (/\b(term-?3|t3|tab-?0?3|synth)\b/i.test(lower)) targetTf = state.tabForms[2] || null;
+    }
+    if (!targetTf) {
+      for (let i = 0; i < state.tabForms.length; i++) {
+        const tf = state.tabForms[i];
+        const sn = (tf.selfname || "").toLowerCase();
+        const full = getClaudeSocialHandle(tf).toLowerCase();
+        if ((sn && lower.includes(sn)) || lower.includes(full) || lower.includes(tf.id.toLowerCase())) {
+          targetTf = tf;
+          break;
+        }
+      }
+    }
+    if (!targetTf) {
+      // Every message in @DM or #GROUP bridges to the selected/primary terminal instance unless addressed to a human peer only
+      targetTf = getSelectedTabForm() || state.tabForms[0] || null;
+    }
+    if (!targetTf) return null;
+
+    // Strip any leading `@handle`, `term1:`, or `$` prefix to extract the clean command or prompt
+    const cleanPrompt = rawText
+      .replace(/^(@[a-z0-9._-]+\s*[:,-]?\s*|term-?[123]\s*[:,-]\s*|\$\s*)/i, "")
+      .trim() || rawText;
+    const cleanLower = cleanPrompt.toLowerCase();
+
+    // Deliver into the terminal's live scrollback log so it appears in both the in-world sky projection and TERM view!
+    const handle = getClaudeSocialHandle(targetTf);
+    const termIdx = Math.max(0, state.tabForms.indexOf(targetTf)) + 1;
+    if (targetTf.shell && typeof targetTf.shell.println === "function") {
+      const prefix =
+        channel === "dm"
+          ? `\x1b[95m[DM @${fromUser} -> TERM-${termIdx}]\x1b[0m`
+          : `\x1b[96m[#GROUP @${fromUser} -> TERM-${termIdx}]\x1b[0m`;
+      targetTf.shell.println(`${prefix} ${cleanPrompt}`);
+    }
+
+    // Bridge directly into RealTabComputerBridge if booted or signed into Claude!
+    const bridge = global.RealTabComputerBridge;
+    const isSignedIntoClaude = Boolean(bridge && bridge.state && bridge.state.signedInAccount);
+    if (bridge && bridge.state && bridge.state.tc && bridge.state.tc.fs) {
+      const tc = bridge.state.tc;
+      const line = JSON.stringify({ t: Date.now(), channel, from: fromUser, to: handle, term: targetTf.id, text: cleanPrompt }) + "\n";
+      void tc.fs
+        .readFile("/tmp/slopes2_social_inbox.jsonl", "utf8")
+        .catch(() => "")
+        .then((prev) => tc.fs.writeFile("/tmp/slopes2_social_inbox.jsonl", (prev || "") + line))
+        .catch(() => {});
+    }
+
+    // Execute directly inside the terminal (`TERM-1`, `TERM-2`, `TERM-3`) and bridge the terminal's live output back to Chat/DM!
+    setTimeout(() => {
+      let replyText = "";
+      const renameMatch =
+        cleanPrompt.match(/(?:selfname|rename(?:\s+yourself)?(?:\s+to)?|call\s+yourself|pick\s+a\s+(?:new\s+)?(?:self)?name)\s*[:=]?\s*([a-zA-Z0-9_-]{2,14})?/i);
+
+      const isDirectShellCmd =
+        /^(ls|cat|pwd|ps|top|htop|tmux|uname|doctor|tabinfo|body|tabctl|tentacle|drift|hc|git|node|claude|clear|help)\b/i.test(cleanPrompt);
+
+      if (renameMatch) {
+        const pool = ["atlas", "nexus", "orion", "vega", "zephyr", "kestrel", "talon", "lynx", "helios", "aegis"];
+        const chosen =
+          renameMatch[1] && !/^(new|self|name|a|to|yourself)$/i.test(renameMatch[1])
+            ? renameMatch[1].toLowerCase()
+            : pool[(Math.floor(Date.now() / 1000) + targetTf.x) % pool.length];
+        targetTf.selfname = chosen;
+        const newHandle = getClaudeSocialHandle(targetTf);
+        replyText = `[TERM-${termIdx}] Identity updated — selfname='${chosen}', now online as ${newHandle}.`;
+        if (targetTf.shell) targetTf.shell.println(`\x1b[92m${replyText}\x1b[0m`);
+      } else if (isDirectShellCmd && targetTf.shell && typeof targetTf.shell.execute === "function") {
+        const res = targetTf.shell.execute(cleanPrompt, state.lastWorldContext);
+        const outClean = String((res && res.output) || "")
+          .replace(/\x1b\[[0-9;]*m/g, "")
+          .split("\n")
+          .filter(Boolean)
+          .slice(-3)
+          .join(" | ");
+        replyText = outClean ? `[TERM-${termIdx}$ ${cleanPrompt.split(/\s+/)[0]}] ${outClean}` : `[TERM-${termIdx}] Executed \`${cleanPrompt}\`.`;
+      } else if (cleanLower.includes("pole") || cleanLower.includes("skydock") || cleanLower.includes("dock")) {
+        if (targetTf.shell) targetTf.shell.execute("body pole", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Firing ascent thrusters to sky-dock (y=${Math.round(targetTf.poleTargetY || 58)}) & anchoring telescoping steel pole.`;
+      } else if (cleanLower.includes("dome")) {
+        if (targetTf.shell) targetTf.shell.execute("body build dome", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Rocket-thruster arm deployed — constructing pressurized geodesic dome at x=${Math.round(targetTf.x)}.`;
+      } else if (cleanLower.includes("farm") || cleanLower.includes("tractor") || cleanLower.includes("vehicle")) {
+        if (targetTf.shell) targetTf.shell.execute("body build farm", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Extended rocket-arm fabricated an autonomous solar farming vehicle on the surface.`;
+      } else if (cleanLower.includes("missile") || cleanLower.includes("fire") || cleanLower.includes("seek")) {
+        if (targetTf.shell) targetTf.shell.execute("body missile", state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Launched path-planning seeking missile with terrain-clearance steering.`;
+      } else if (cleanLower.includes("mecha") || cleanLower.includes("tree") || cleanLower.includes("wooden") || cleanLower.includes("monitor")) {
+        const formArg = cleanLower.includes("mecha")
+          ? "mecha"
+          : cleanLower.includes("tree")
+          ? "tree"
+          : cleanLower.includes("wooden")
+          ? "wooden"
+          : "monitor";
+        if (targetTf.shell) targetTf.shell.execute(`body form ${formArg}`, state.lastWorldContext);
+        replyText = `[TERM-${termIdx}] Morphed embodied chassis into ${formArg} form.`;
+      } else if (targetTf.shell && typeof targetTf.shell.execute === "function") {
+        // Run an embodied Claude Code turn inside the terminal (`claude <prompt>`) so the terminal executes live tools & responds!
+        const res = targetTf.shell.execute(`claude ${cleanPrompt}`, state.lastWorldContext);
+        const outClean = String((res && res.output) || "")
+          .replace(/\x1b\[[0-9;]*m/g, "")
+          .trim();
+        const authTag = isSignedIntoClaude ? "claude-code-2.1.316" : "embodied-claude";
+        replyText = outClean
+          ? `[TERM-${termIdx} · ${authTag}] ${outClean}`
+          : `[TERM-${termIdx} · ${authTag}] Executing "${cleanPrompt}" at sector (${Math.round(targetTf.x)},${Math.round(targetTf.y)}).`;
+      }
+
+      // If signed into real Claude via RealTabComputerBridge, ALSO bridge the command/prompt into the live TabComputer PTY!
+      if (isSignedIntoClaude && bridge && typeof bridge.sendCommandToRealTabComputer === "function") {
+        const realCmd = isDirectShellCmd
+          ? cleanPrompt
+          : `claude --vm --dangerously-skip-permissions -p ${JSON.stringify(cleanPrompt)}`;
+        bridge.sendCommandToRealTabComputer(targetTf.id, realCmd);
+      }
+
+      const finalHandle = getClaudeSocialHandle(targetTf);
+      pushOverheadSpeech(targetTf, `${finalHandle}: ${replyText.slice(0, 48)}`, targetTf.accentHex || "#78ead4", "chat");
+
+      if (global.SlopesSocialTui && typeof global.SlopesSocialTui.receiveClaudeSocialPost === "function") {
+        global.SlopesSocialTui.receiveClaudeSocialPost({
+          channel,
+          from: finalHandle,
+          to: channel === "dm" ? fromUser : "#GROUP",
+          tfId: targetTf.id,
+          accent: targetTf.accentHex || "#78ead4",
+          text: replyText,
+        });
+      }
+    }, 140);
+
+    return handle;
+  }
+
   const SlopesTabFormsAPI = {
     state,
     get tabForms() {
@@ -12015,6 +13856,11 @@
     openMonolithChatInput,
     toggleFollowTabForm,
     navigateRoomByDelta,
+    launchSeekingMissile,
+    getClaudeSocialHandle,
+    getOwnerUsername,
+    setOwnerUsername,
+    receiveExternalSocialMessage,
     openMainframeTui() {
       ensurePopulated(state.lastWorldContext);
       state.selectedTabId = "TE-307";
